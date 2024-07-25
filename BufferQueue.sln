@@ -1,0 +1,55 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{69204DF7-1591-49B9-9F74-994090FE6624}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{2C05123D-18FB-46FE-92FC-DC5DA1C66ADB}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "samples", "samples", "{1BB75919-5A40-4430-9435-382837261C99}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BufferQueue", "src\BufferQueue\BufferQueue.csproj", "{6DBD3023-1540-44BB-BB8B-BBE621E642CF}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BufferQueue.Benchmarks", "tests\BufferQueue.Benchmarks\BufferQueue.Benchmarks.csproj", "{BEC98768-F7B7-47E0-9CB8-E45076271DC3}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BufferQueue.Tests", "tests\BufferQueue.Tests\BufferQueue.Tests.csproj", "{F2566B35-9090-4B06-8C92-69A6B071E27C}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WebAPI", "samples\WebAPI\WebAPI.csproj", "{65715B81-214E-4619-8F7C-E7B24F353140}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{D99466A8-2AAA-436B-A3EF-FC4A94EADF69}"
+	ProjectSection(SolutionItems) = preProject
+		.editorconfig = .editorconfig
+		.gitignore = .gitignore
+		LICENSE = LICENSE
+		README.md = README.md
+		README.zh-CN.md = README.zh-CN.md
+	EndProjectSection
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{6DBD3023-1540-44BB-BB8B-BBE621E642CF} = {69204DF7-1591-49B9-9F74-994090FE6624}
+		{BEC98768-F7B7-47E0-9CB8-E45076271DC3} = {2C05123D-18FB-46FE-92FC-DC5DA1C66ADB}
+		{F2566B35-9090-4B06-8C92-69A6B071E27C} = {2C05123D-18FB-46FE-92FC-DC5DA1C66ADB}
+		{65715B81-214E-4619-8F7C-E7B24F353140} = {1BB75919-5A40-4430-9435-382837261C99}
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{6DBD3023-1540-44BB-BB8B-BBE621E642CF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6DBD3023-1540-44BB-BB8B-BBE621E642CF}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6DBD3023-1540-44BB-BB8B-BBE621E642CF}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6DBD3023-1540-44BB-BB8B-BBE621E642CF}.Release|Any CPU.Build.0 = Release|Any CPU
+		{BEC98768-F7B7-47E0-9CB8-E45076271DC3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{BEC98768-F7B7-47E0-9CB8-E45076271DC3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{BEC98768-F7B7-47E0-9CB8-E45076271DC3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{BEC98768-F7B7-47E0-9CB8-E45076271DC3}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F2566B35-9090-4B06-8C92-69A6B071E27C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F2566B35-9090-4B06-8C92-69A6B071E27C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F2566B35-9090-4B06-8C92-69A6B071E27C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F2566B35-9090-4B06-8C92-69A6B071E27C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{65715B81-214E-4619-8F7C-E7B24F353140}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{65715B81-214E-4619-8F7C-E7B24F353140}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{65715B81-214E-4619-8F7C-E7B24F353140}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{65715B81-214E-4619-8F7C-E7B24F353140}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
