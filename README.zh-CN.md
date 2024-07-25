@@ -45,7 +45,7 @@ Producer 以轮询的方式往每个 Partition 中写入数据。
 
 每个 Partition 上会记录不同消费组的消费进度，不同组之间的消费进度互不干扰。
 
-![BufferQueue](docs/assets/partition.png)
+![BufferQueue](docs/assets/Partition.png)
 
 ### 动态调整缓冲区大小
 支持动态调整缓冲区大小，以适应生产和消费速度不断变化的场景。
