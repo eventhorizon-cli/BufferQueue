@@ -36,7 +36,8 @@ jobs:
             /p:Authors="Event Horizon" \
             /p:RepositoryUrl="https://github.com/eventhorizon-cli/BufferQueue" \
             /p:RepositoryType=git \
-            /p:PackageLicenseExpression=MIT
+            /p:PackageLicenseUrl=https://raw.githubusercontent.com/eventhorizon-cli/BufferQueue/main/LICENSE \
+            /p:PackageReadmeFile=https://raw.githubusercontent.com/eventhorizon-cli/BufferQueue/main/README.md
 
       - name: Publish to NuGet
         env:
