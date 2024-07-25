@@ -49,7 +49,7 @@ When a consumer is assigned multiple partitions, it consumes in a round-robin ma
 
 Different consumption groups' consumption progress is recorded on each partition, and the consumption progress of different groups does not interfere with each other.
 
-![BufferQueue](docs/assets/partition.png)
+![BufferQueue](docs/assets/Partition.png)
 
 ### Dynamically Adjust Buffer Size
 
