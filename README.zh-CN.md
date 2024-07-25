@@ -2,6 +2,7 @@ BufferQueue
 ===========
 
 [![codecov](https://codecov.io/gh/eventhorizon-cli/BufferQueue/graph/badge.svg?token=GYTOIKCXD5)](https://codecov.io/gh/eventhorizon-cli/BufferQueue)
+[![Nuget](https://img.shields.io/nuget/v/BufferQueue)](https://www.nuget.org/packages/BufferQueue/)
 
 English | [简体中文](./README.zh-CN.md)
 
@@ -51,6 +52,13 @@ Producer 以轮询的方式往每个 Partition 中写入数据。
 支持动态调整缓冲区大小，以适应生产和消费速度不断变化的场景。
 
 ## 使用示例
+
+安装 Nuget 包：
+
+```shell
+dotnet add package BufferQueue
+```
+
 项目基于 Microsoft.Extensions.DependencyInjection，使用时需要先注册服务。
 
 BufferQueue 支持两种消费模式：pull 模式和 push 模式。

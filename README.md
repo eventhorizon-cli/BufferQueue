@@ -2,6 +2,7 @@ BufferQueue
 ===========
 
 [![codecov](https://codecov.io/gh/eventhorizon-cli/BufferQueue/graph/badge.svg?token=GYTOIKCXD5)](https://codecov.io/gh/eventhorizon-cli/BufferQueue)
+[![Nuget](https://img.shields.io/nuget/v/BufferQueue)](https://www.nuget.org/packages/BufferQueue/)
 
 English | [简体中文](./README.zh-CN.md)
 
@@ -56,6 +57,12 @@ Different consumption groups' consumption progress is recorded on each partition
 Supports dynamically adjusting the buffer size to adapt to scenarios where the production and consumption speeds are constantly changing.
 
 ## Usage Example
+
+Install the Nuget package:
+
+```shell
+dotnet add package BufferQueue
+```
 
 The project is based on Microsoft.Extensions.DependencyInjection, and services need to be registered before use.
 
