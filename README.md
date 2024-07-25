@@ -1,6 +1,8 @@
 BufferQueue
 ===========
 
+[![codecov](https://codecov.io/gh/eventhorizon-cli/BufferQueue/graph/badge.svg?token=GYTOIKCXD5)](https://codecov.io/gh/eventhorizon-cli/BufferQueue)
+
 English | [简体中文](./README.zh-CN.md)
 
 BufferQueue is a high-performance buffer queue implementation written in .NET, which supports multi-threaded concurrent operations.

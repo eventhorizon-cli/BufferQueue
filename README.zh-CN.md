@@ -1,7 +1,7 @@
-[TOC]
-
 BufferQueue
 ===========
+
+[![codecov](https://codecov.io/gh/eventhorizon-cli/BufferQueue/graph/badge.svg?token=GYTOIKCXD5)](https://codecov.io/gh/eventhorizon-cli/BufferQueue)
 
 English | [简体中文](./README.zh-CN.md)
 
