@@ -21,7 +21,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 		LICENSE = LICENSE
 		README.md = README.md
 		README.zh-CN.md = README.zh-CN.md
-		dotnet-test.yml = .github\workflows\dotnet-test.yml
+		dotnet-test.yml = .github\workflows\dotnet-build.yml
 		dotnet-publish.yml = .github\workflows\dotnet-publish.yml
 	EndProjectSection
 EndProject
