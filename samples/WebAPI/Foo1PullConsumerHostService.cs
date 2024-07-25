@@ -21,7 +21,10 @@ public class Foo1PullConsumerHostService(
         var consumers = bufferQueue.CreatePullConsumers<Foo>(
             new BufferPullConsumerOptions
             {
-                TopicName = "topic-foo1", GroupName = "group-foo1", AutoCommit = true, BatchSize = 100,
+                TopicName = "topic-foo1",
+                GroupName = "group-foo1",
+                AutoCommit = true,
+                BatchSize = 100,
             }, consumerNumber: 4);
 
         foreach (var consumer in consumers)
