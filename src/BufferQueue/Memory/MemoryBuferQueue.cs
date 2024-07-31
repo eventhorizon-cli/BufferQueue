@@ -37,7 +37,7 @@ internal sealed class MemoryBufferQueue<T> : IBufferQueue<T>
 
     public string TopicName { get; }
 
-    public IBufferProducer<T> CreateProducer() => _producer;
+    public IBufferProducer<T> GetProducer() => _producer;
 
     public IBufferPullConsumer<T> CreateConsumer(BufferPullConsumerOptions options)
     {

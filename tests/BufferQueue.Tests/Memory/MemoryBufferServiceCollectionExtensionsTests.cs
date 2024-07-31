@@ -20,11 +20,11 @@ public class MemoryBufferServiceCollectionExtensionsTests
         var provider = services.BuildServiceProvider();
         var bufferQueue = provider.GetRequiredService<IBufferQueue>();
 
-        var topic1Producer = bufferQueue.CreateProducer<int>("topic1");
+        var topic1Producer = bufferQueue.GetProducer<int>("topic1");
         var topic1Consumer =
             bufferQueue.CreatePullConsumer<int>(new BufferPullConsumerOptions { TopicName = "topic1", GroupName = "test" });
 
-        var topic2Producer = bufferQueue.CreateProducer<int>("topic2");
+        var topic2Producer = bufferQueue.GetProducer<int>("topic2");
         var topic2Consumers =
             bufferQueue.CreatePullConsumers<int>(new BufferPullConsumerOptions { TopicName = "topic2", GroupName = "test" }, 2)
                 .ToList();
@@ -52,7 +52,7 @@ public class MemoryBufferServiceCollectionExtensionsTests
         var provider = services.BuildServiceProvider();
         var bufferQueue = provider.GetRequiredService<IBufferQueue>();
 
-        var topic1Producer = bufferQueue.CreateProducer<int>("topic1");
+        var topic1Producer = bufferQueue.GetProducer<int>("topic1");
         var topic1Consumer =
             bufferQueue.CreatePullConsumer<int>(new BufferPullConsumerOptions { TopicName = "topic1", GroupName = "test" });
         var topic2Consumer =
@@ -90,7 +90,7 @@ public class MemoryBufferServiceCollectionExtensionsTests
         var provider = services.BuildServiceProvider();
         var bufferQueue = provider.GetRequiredService<IBufferQueue>();
 
-        Assert.Throws<ArgumentException>(() => bufferQueue.CreateProducer<int>("topic3"));
+        Assert.Throws<ArgumentException>(() => bufferQueue.GetProducer<int>("topic3"));
         Assert.Throws<ArgumentException>(() =>
             bufferQueue.CreatePullConsumer<int>(new BufferPullConsumerOptions { TopicName = "topic3", GroupName = "test" }));
         Assert.Throws<ArgumentException>(() =>

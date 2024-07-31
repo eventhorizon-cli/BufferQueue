@@ -188,3 +188,40 @@ public class BarPushConsumer(ILogger<BarPushConsumer> logger) : IBufferManualCom
         }
     }
 }
+```
+
+Producer 示例：
+
+通过 IBufferQueue 获取到指定的 Producer，然后调用 ProduceAsync 方法发送数据。
+
+```csharp
+[ApiController]
+[Route("/api/[controller]")]
+public class TestController(IBufferQueue bufferQueue) : ControllerBase
+{
+    [HttpPost("foo1")]
+    public async Task<IActionResult> PostFoo1([FromBody] Foo foo)
+    {
+        var producer = bufferQueue.GetProducer<Foo>("topic-foo1");
+        await producer.ProduceAsync(foo);
+        return Ok();
+    }
+
+    [HttpPost("foo2")]
+    public async Task<IActionResult> PostFoo2([FromBody] Foo foo)
+    {
+        var producer = bufferQueue.GetProducer<Foo>("topic-foo2");
+        await producer.ProduceAsync(foo);
+        return Ok();
+    }
+
+    [HttpPost("bar")]
+    public async Task<IActionResult> PostBar([FromBody] Bar bar)
+    {
+        var producer = bufferQueue.GetProducer<Bar>("topic-bar");
+        await producer.ProduceAsync(bar);
+        return Ok();
+    }
+}
+```
+

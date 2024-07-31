@@ -9,7 +9,7 @@ namespace BufferQueue;
 
 internal class BufferQueue(IServiceProvider serviceProvider) : IBufferQueue
 {
-    public IBufferProducer<T> CreateProducer<T>(string topicName)
+    public IBufferProducer<T> GetProducer<T>(string topicName)
     {
         if (string.IsNullOrWhiteSpace(topicName))
         {
@@ -18,7 +18,7 @@ internal class BufferQueue(IServiceProvider serviceProvider) : IBufferQueue
 
         var queue = serviceProvider.GetKeyedService<IBufferQueue<T>>(topicName) ??
                     throw new ArgumentException($"The topic '{topicName}' has not been registered.");
-        return queue.CreateProducer();
+        return queue.GetProducer();
     }
 
     public IBufferPullConsumer<T> CreatePullConsumer<T>(BufferPullConsumerOptions options)

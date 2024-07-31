@@ -192,4 +192,39 @@ public class BarPushConsumer(ILogger<BarPushConsumer> logger) : IBufferManualCom
     }
 }
 
+Producer example:
+
+Get the specified producer through the IBufferQueue service and send the data by calling the ProduceAsync method.
+
+```csharp
+[ApiController]
+[Route("/api/[controller]")]
+public class TestController(IBufferQueue bufferQueue) : ControllerBase
+{
+    [HttpPost("foo1")]
+    public async Task<IActionResult> PostFoo1([FromBody] Foo foo)
+    {
+        var producer = bufferQueue.GetProducer<Foo>("topic-foo1");
+        await producer.ProduceAsync(foo);
+        return Ok();
+    }
+
+    [HttpPost("foo2")]
+    public async Task<IActionResult> PostFoo2([FromBody] Foo foo)
+    {
+        var producer = bufferQueue.GetProducer<Foo>("topic-foo2");
+        await producer.ProduceAsync(foo);
+        return Ok();
+    }
+
+    [HttpPost("bar")]
+    public async Task<IActionResult> PostBar([FromBody] Bar bar)
+    {
+        var producer = bufferQueue.GetProducer<Bar>("topic-bar");
+        await producer.ProduceAsync(bar);
+        return Ok();
+    }
+}
+```
+
 
