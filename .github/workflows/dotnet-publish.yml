@@ -23,14 +23,14 @@ jobs:
         run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_ENV
 
       - name: Restore dependencies
-        run: dotnet restore
+        run: dotnet restore src/BufferQueue
 
       - name: Build
-        run: dotnet build --configuration Release --no-restore
+        run: dotnet build src/BufferQueue --configuration Release --no-restore
 
       - name: Pack
         run: |
-          dotnet pack --configuration Release --no-build --output ./output \
+          dotnet pack src/BufferQueue --configuration Release --no-build --output ./output \
             /p:PackageVersion=${{ env.VERSION }} \
             /p:PackageId=BufferQueue \
             /p:Authors="Event Horizon" \
