@@ -9,12 +9,12 @@ namespace BufferQueue;
 public interface IBufferQueue
 {
     /// <summary>
-    /// Create a producer for the specified topic.
+    /// Get the producer for the specified topic.
     /// </summary>
     /// <param name="topicName">The topic name.</param>
     /// <typeparam name="T">The type of the item.</typeparam>
     /// <returns>The producer.</returns>
-    IBufferProducer<T> CreateProducer<T>(string topicName);
+    IBufferProducer<T> GetProducer<T>(string topicName);
 
     /// <summary>
     /// Create a pull consumer for the specified topic.

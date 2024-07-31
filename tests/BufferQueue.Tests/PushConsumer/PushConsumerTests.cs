@@ -38,21 +38,21 @@ public class PushConsumerTests
 
         var bufferQueue = serviceProvider.GetRequiredService<IBufferQueue>();
 
-        var foo1Producer = bufferQueue.CreateProducer<Foo>("topic-foo1");
+        var foo1Producer = bufferQueue.GetProducer<Foo>("topic-foo1");
 
         for (var i = 0; i < 105; i++)
         {
             await foo1Producer.ProduceAsync(new Foo { Id = i });
         }
 
-        var foo2Producer = bufferQueue.CreateProducer<Foo>("topic-foo2");
+        var foo2Producer = bufferQueue.GetProducer<Foo>("topic-foo2");
 
         for (var i = 0; i < 301; i++)
         {
             await foo2Producer.ProduceAsync(new Foo { Id = i });
         }
 
-        var barProducer = bufferQueue.CreateProducer<Bar>("topic-bar");
+        var barProducer = bufferQueue.GetProducer<Bar>("topic-bar");
 
         for (var i = 0; i < 105; i++)
         {

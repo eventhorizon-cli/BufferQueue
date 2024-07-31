@@ -9,7 +9,7 @@ internal interface IBufferQueue<T>
 {
     string TopicName { get; }
 
-    IBufferProducer<T> CreateProducer();
+    IBufferProducer<T> GetProducer();
 
     IBufferPullConsumer<T> CreateConsumer(BufferPullConsumerOptions options);
 

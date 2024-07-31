@@ -39,7 +39,7 @@ public class MemoryBufferQueueProduceBenchmark
     public async Task MemoryBufferQueue_Concurrent_Producing_Partition_1()
     {
         var queue = new MemoryBufferQueue<int>("test", 1);
-        var producer = queue.CreateProducer();
+        var producer = queue.GetProducer();
         var tasks = _chunks.Select(chunk => Task.Run(async () =>
         {
             foreach (var item in chunk)
@@ -59,7 +59,7 @@ public class MemoryBufferQueueProduceBenchmark
     public async Task MemoryBufferQueue_Concurrent_Producing_Partition_ProcessorCount()
     {
         var queue = new MemoryBufferQueue<int>("test", Environment.ProcessorCount);
-        var producer = queue.CreateProducer();
+        var producer = queue.GetProducer();
         var tasks = _chunks.Select(chunk => Task.Run(async () =>
         {
             foreach (var item in chunk)

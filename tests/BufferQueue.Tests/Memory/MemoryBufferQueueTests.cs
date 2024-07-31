@@ -14,7 +14,7 @@ public class MemoryBufferQueueTests
     public async Task Produce_And_Consume()
     {
         var queue = new MemoryBufferQueue<int>("test", 1);
-        var producer = queue.CreateProducer();
+        var producer = queue.GetProducer();
         var consumer = queue.CreateConsumer(new BufferPullConsumerOptions
         {
             TopicName = "test",
@@ -55,7 +55,7 @@ public class MemoryBufferQueueTests
     public async Task Produce_And_Consume_AutoCommit()
     {
         var queue = new MemoryBufferQueue<int>("test", 1);
-        var producer = queue.CreateProducer();
+        var producer = queue.GetProducer();
         var consumer = queue.CreateConsumer(
             new BufferPullConsumerOptions
             {
@@ -91,7 +91,7 @@ public class MemoryBufferQueueTests
     public async Task Produce_And_Consume_With_Multiple_Partitions()
     {
         var queue = new MemoryBufferQueue<int>("test", 2);
-        var producer = queue.CreateProducer();
+        var producer = queue.GetProducer();
         var consumer = queue.CreateConsumer(
             new BufferPullConsumerOptions
             {
@@ -132,7 +132,7 @@ public class MemoryBufferQueueTests
     public async Task Produce_And_Consume_With_Multiple_Consumers()
     {
         var queue = new MemoryBufferQueue<int>("test", 2);
-        var producer = queue.CreateProducer();
+        var producer = queue.GetProducer();
         var consumers = queue
             .CreateConsumers(
                 new BufferPullConsumerOptions
@@ -195,7 +195,7 @@ public class MemoryBufferQueueTests
     public async Task Offset_Will_Not_Change_If_Consumer_Not_Commit()
     {
         var queue = new MemoryBufferQueue<int>("test", 1);
-        var producer = queue.CreateProducer();
+        var producer = queue.GetProducer();
         var consumer = queue.CreateConsumer(
             new BufferPullConsumerOptions
             {
@@ -239,7 +239,7 @@ public class MemoryBufferQueueTests
     public async Task Consumer_Will_Wait_Until_Produce()
     {
         var queue = new MemoryBufferQueue<int>("test", 1);
-        var producer = queue.CreateProducer();
+        var producer = queue.GetProducer();
         var consumer =
             queue.CreateConsumer(new BufferPullConsumerOptions
             {
@@ -346,7 +346,7 @@ public class MemoryBufferQueueTests
             }
         });
 
-        var producer = queue.CreateProducer();
+        var producer = queue.GetProducer();
         var chunkSize = (int)Math.Ceiling(messageSize * 1.0d / Environment.ProcessorCount);
         var chunks = Enumerable.Range(0, messageSize).Chunk(chunkSize);
         foreach (var chunk in chunks)
@@ -393,7 +393,7 @@ public class MemoryBufferQueueTests
             }
         });
 
-        var producer = queue.CreateProducer();
+        var producer = queue.GetProducer();
         var chunkSize = (int)Math.Ceiling(messageSize * 1.0d / Environment.ProcessorCount);
         var chunks = Enumerable.Range(0, messageSize).Chunk(chunkSize);
         foreach (var chunk in chunks)
@@ -469,7 +469,7 @@ public class MemoryBufferQueueTests
             }
         }
 
-        var producer = queue.CreateProducer();
+        var producer = queue.GetProducer();
 
         _ = Task.Run(async () =>
         {
@@ -528,7 +528,7 @@ public class MemoryBufferQueueTests
             }
         }
 
-        var producer = queue.CreateProducer();
+        var producer = queue.GetProducer();
         var chunkSize = (int)Math.Ceiling(messageSize * 1.0d / partitionNumber);
         var chunks = Enumerable.Range(0, messageSize).Chunk(chunkSize);
 
