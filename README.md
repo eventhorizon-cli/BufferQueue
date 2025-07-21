@@ -191,6 +191,7 @@ public class BarPushConsumer(ILogger<BarPushConsumer> logger) : IBufferManualCom
         }
     }
 }
+```
 
 Producer example:
 
@@ -226,5 +227,3 @@ public class TestController(IBufferQueue bufferQueue) : ControllerBase
     }
 }
 ```
-
-
