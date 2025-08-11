@@ -92,23 +92,16 @@ internal sealed class MemoryBufferSegment<T>
         return new MemoryBufferSegment<T>(_slots, startOffset);
     }
 
-    private class DebugView
+    private class DebugView(MemoryBufferSegment<T> segment)
     {
-        private readonly MemoryBufferSegment<T> _segment;
+        public MemoryBufferPartitionOffset StartOffset => segment._startOffset;
 
-        public DebugView(MemoryBufferSegment<T> segment)
-        {
-            _segment = segment;
-        }
+        public MemoryBufferPartitionOffset EndOffset => segment._endOffset;
 
-        public MemoryBufferPartitionOffset StartOffset => _segment._startOffset;
+        public int Capacity => segment.Capacity;
 
-        public MemoryBufferPartitionOffset EndOffset => _segment._endOffset;
+        public int Count => segment.Count;
 
-        public int Capacity => _segment.Capacity;
-
-        public int Count => _segment.Count;
-
-        public T[] Items => _segment._slots.Take(_segment._writePosition + 1).ToArray();
+        public T[] Items => segment._slots.Take(segment._writePosition + 1).ToArray();
     }
 }

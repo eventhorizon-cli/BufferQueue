@@ -1,8 +1,6 @@
 // Licensed to the .NET Core Community under one or more agreements.
 // The .NET Core Community licenses this file to you under the MIT license.
 
-using System;
-
 namespace BufferQueue.Memory;
 
 public class MemoryBufferQueueOptions
@@ -20,7 +18,7 @@ public class MemoryBufferQueueOptions
     /// <summary>
     /// The segment size for each segment. Default is 1024.
     /// </summary>
-    public long SegmentSize { get; set; } = 1024;
+    public int SegmentSize { get; set; } = 1024;
 
     /// <summary>
     /// The maximum capacity of the bounded memory buffer queue. Default is null, which means unbounded.

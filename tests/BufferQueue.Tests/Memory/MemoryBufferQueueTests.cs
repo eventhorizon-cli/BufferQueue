@@ -8,7 +8,7 @@ namespace BufferQueue.Tests.Memory;
 
 public class MemoryBufferQueueTests
 {
-    private static int MemoryBufferPartitionSegmentSize => new MemoryBufferPartition<int>(0)._segmentSize;
+    private static int DefaultSegmentSize => new MemoryBufferQueueOptions().SegmentSize;
 
     [Fact]
     public async Task Produce_And_Consume()
@@ -353,7 +353,7 @@ public class MemoryBufferQueueTests
     [Fact]
     public void Concurrent_Producer_Single_Partition()
     {
-        var messageSize = MemoryBufferPartitionSegmentSize * 4;
+        var messageSize = DefaultSegmentSize * 4;
 
         var queue = new MemoryBufferQueue<int>(new MemoryBufferQueueOptions
         {
@@ -404,7 +404,7 @@ public class MemoryBufferQueueTests
     [Fact]
     public void Concurrent_Producer_Multiple_Partition()
     {
-        var messageSize = MemoryBufferPartitionSegmentSize * 4;
+        var messageSize = DefaultSegmentSize * 4;
 
         var queue = new MemoryBufferQueue<int>(new MemoryBufferQueueOptions
         {
@@ -470,7 +470,7 @@ public class MemoryBufferQueueTests
     [InlineData(3, 10000)]
     public void Concurrent_Consumer_Multiple_Groups(int groupNumber, int batchSize)
     {
-        var messageSize = MemoryBufferPartitionSegmentSize * 4;
+        var messageSize = DefaultSegmentSize * 4;
         var partitionNumber = Environment.ProcessorCount * 2;
         var consumerNumberPerGroup = Environment.ProcessorCount;
 
@@ -534,7 +534,7 @@ public class MemoryBufferQueueTests
     [InlineData(3)]
     public void Concurrent_Producer_And_Concurrent_Consumer_Multiple_Groups(int groupNumber)
     {
-        var messageSize = MemoryBufferPartitionSegmentSize * 4;
+        var messageSize = DefaultSegmentSize * 4;
         var partitionNumber = Environment.ProcessorCount * 2;
         var consumerNumberPerGroup = Environment.ProcessorCount;
 

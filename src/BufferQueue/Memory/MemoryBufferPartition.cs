@@ -26,7 +26,7 @@ internal sealed class MemoryBufferPartition<T>
 
     private readonly object _createSegmentLock;
 
-    public MemoryBufferPartition(int id, int segmentSize = 1024)
+    public MemoryBufferPartition(int id, int segmentSize)
     {
         _segmentSize = segmentSize;
         PartitionId = id;

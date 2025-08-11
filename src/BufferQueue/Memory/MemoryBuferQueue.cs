@@ -11,7 +11,6 @@ internal sealed class MemoryBufferQueue<T> : IBufferQueue<T>
 {
     private readonly MemoryBufferPartition<T>[] _partitions;
     private readonly int _partitionNumber;
-    private readonly int _segmentSize = 1024;
 
     private readonly IBufferProducer<T> _producer;
 
@@ -22,7 +21,7 @@ internal sealed class MemoryBufferQueue<T> : IBufferQueue<T>
 
     public MemoryBufferQueue(MemoryBufferQueueOptions options)
     {
-        var topicName = options.TopicName;
+        var topicName = options.TopicName!;
         var partitionNumber = options.PartitionNumber;
 
         TopicName = topicName;
@@ -30,7 +29,7 @@ internal sealed class MemoryBufferQueue<T> : IBufferQueue<T>
         _partitions = new MemoryBufferPartition<T>[partitionNumber];
         for (var i = 0; i < partitionNumber; i++)
         {
-            _partitions[i] = new MemoryBufferPartition<T>(i);
+            _partitions[i] = new MemoryBufferPartition<T>(i, options.SegmentSize);
         }
 
         _producer = new MemoryBufferProducer<T>(options, _partitions);
