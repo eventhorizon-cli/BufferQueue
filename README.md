@@ -92,7 +92,7 @@ builder.Services.AddBufferQueue(bufferOptionsBuilder =>
                 {
                     options.TopicName = "topic-bar";
                     options.PartitionNumber = 8;
-                    // 可以设置缓冲区的最大容量
+                    // You can set the maximum capacity of the buffer
                     options.BoundedCapacity = 100_000;
                 });
         })
