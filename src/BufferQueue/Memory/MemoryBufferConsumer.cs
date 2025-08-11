@@ -25,7 +25,7 @@ internal sealed class MemoryBufferConsumer<T> : IBufferPullConsumer<T>
     public MemoryBufferConsumer(BufferPullConsumerOptions options)
     {
         _options = options;
-        _assignedPartitions = Array.Empty<MemoryBufferPartition<T>>();
+        _assignedPartitions = [];
         _pendingDataValueTaskSource = new PendingDataValueTaskSource<MemoryBufferPartition<T>>();
         _pendingDataVersion = 0;
         _pendingDataLock = new ReaderWriterLockSlim();

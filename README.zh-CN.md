@@ -64,15 +64,30 @@ dotnet add package BufferQueue
 BufferQueue 支持两种消费模式：pull 模式和 push 模式。
 
 ```csharp
-
-builder.Services.AddBufferQueue(options =>
+builder.Services.AddBufferQueue(bufferOptionsBuilder =>
 {
-    options.UseMemory(bufferOptions =>
+    bufferOptionsBuilder
+        .UseMemory(memoryBufferOptionsBuilder =>
         {
             // 每一对 Topic 和数据类型对应一个独立的缓冲区，可以设置 partitionNumber
-            bufferOptions.AddTopic<Foo>("topic-foo1", partitionNumber: 6);
-            bufferOptions.AddTopic<Foo>("topic-foo2", partitionNumber: 4);
-            bufferOptions.AddTopic<Bar>("topic-bar", partitionNumber: 8);
+            memoryBufferOptionsBuilder
+                .AddTopic<Foo>(options =>
+                {
+                    options.TopicName = "topic-foo1";
+                    options.PartitionNumber = 6;
+                })
+                .AddTopic<Foo>(options =>
+                {
+                    options.TopicName = "topic-foo2";
+                    options.PartitionNumber = 4;
+                })
+                .AddTopic<Bar>(options =>
+                {
+                    options.TopicName = "topic-bar";
+                    options.PartitionNumber = 8;
+                    // 可以设置缓冲区的最大容量
+                    options.BoundedCapacity = 100_000;
+                });
         })
         // 添加 push 模式的消费者
         // 扫描指定程序集中的标记了 BufferPushCustomerAttribute 的类，
@@ -141,9 +156,7 @@ push consumer 会被注册到 DI 容器中，可以通过构造函数注入其�
 
 BufferPushCustomerAttribute 中的 concurrency 参数用于设置 push consumer 的消费并发数，对应 pull consumer 的 consumerNumber。
 
-
 ```csharp
-
 [BufferPushCustomer(
     topicName: "topic-foo2",
     groupName: "group-foo2",
@@ -194,6 +207,8 @@ Producer 示例：
 
 通过 IBufferQueue 获取到指定的 Producer，然后调用 ProduceAsync 方法发送数据。
 
+如果设置了 BoundedCapacity，当缓冲区满时，ProduceAsync 方法会丢弃数据并抛出 MemoryBufferQueueFullException。可以使用 TryProduceAsync 方法来检查数据是否成功发送。
+
 ```csharp
 [ApiController]
 [Route("/api/[controller]")]
@@ -220,6 +235,8 @@ public class TestController(IBufferQueue bufferQueue) : ControllerBase
     {
         var producer = bufferQueue.GetProducer<Bar>("topic-bar");
         await producer.ProduceAsync(bar);
+        // TryProduceAsync 会返回一个布尔值，表示数据是否成功发送
+        // bool success = await producer.TryProduceAsync(bar);
         return Ok();
     }
 }

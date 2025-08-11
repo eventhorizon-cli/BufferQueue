@@ -71,21 +71,39 @@ BufferQueue supports two consumption modes: pull mode and push mode.
 Pull mode consumer example:
 
 ```csharp
-
-builder.Services.AddBufferQueue(options =>
+builder.Services.AddBufferQueue(bufferOptionsBuilder =>
 {
-    options.UseMemory(bufferOptions =>
+    bufferOptionsBuilder
+        .UseMemory(memoryBufferOptionsBuilder =>
         {
             // Each pair of Topic and data type corresponds to an independent buffer, and partitionNumber can be set
-            bufferOptions.AddTopic<Foo>("topic-foo1", partitionNumber: 6);
-            bufferOptions.AddTopic<Foo>("topic-foo2", partitionNumber: 4);
-            bufferOptions.AddTopic<Bar>("topic-bar", partitionNumber: 8);
+            memoryBufferOptionsBuilder
+                .AddTopic<Foo>(options =>
+                {
+                    options.TopicName = "topic-foo1";
+                    options.PartitionNumber = 6;
+                })
+                .AddTopic<Foo>(options =>
+                {
+                    options.TopicName = "topic-foo2";
+                    options.PartitionNumber = 4;
+                })
+                .AddTopic<Bar>(options =>
+                {
+                    options.TopicName = "topic-bar";
+                    options.PartitionNumber = 8;
+                    // 可以设置缓冲区的最大容量
+                    options.BoundedCapacity = 100_000;
+                });
         })
         // Add push mode consumers,
         // scan the specified assembly for classes marked with
         // BufferPushCustomerAttribute and register them as push mode consumers
         .AddPushCustomers(typeof(Program).Assembly);
 });
+
+// Pull mode consumers can be implemented as HostedService.
+builder.Services.AddHostedService<Foo1PullConsumerHostService>();
 ```
 
 Pull mode consumer example:
@@ -197,6 +215,9 @@ Producer example:
 
 Get the specified producer through the IBufferQueue service and send the data by calling the ProduceAsync method.
 
+If bounded capacity is set, when the buffer is full, the ProduceAsync method will discard the data and throw a MemoryBufferQueueFullException.
+You can use the TryProduceAsync method to check if the data was successfully sent.
+
 ```csharp
 [ApiController]
 [Route("/api/[controller]")]
@@ -223,6 +244,8 @@ public class TestController(IBufferQueue bufferQueue) : ControllerBase
     {
         var producer = bufferQueue.GetProducer<Bar>("topic-bar");
         await producer.ProduceAsync(bar);
+        // TryProduceAsync will return a boolean indicating whether the data was successfully sent.
+        // bool success = await producer.TryProduceAsync(bar);
         return Ok();
     }
 }

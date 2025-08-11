@@ -12,21 +12,35 @@ public class MemoryBufferServiceCollectionExtensionsTests
     public void AddMemoryBuffer()
     {
         var services = new ServiceCollection();
-        services.AddBufferQueue(options => options.UseMemory(builder =>
-            builder
-                .AddTopic<int>("topic1", 1)
-                .AddTopic<int>("topic2", 2)
-        ));
+        services.AddBufferQueue(bufferOptionsBuilder =>
+            bufferOptionsBuilder.UseMemory(memoryBufferOptionsBuilder =>
+                memoryBufferOptionsBuilder
+                    .AddTopic<int>(options =>
+                    {
+                        options.TopicName = "topic1";
+                        options.PartitionNumber = 1;
+                    })
+                    .AddTopic<int>(options =>
+                    {
+                        options.TopicName = "topic2";
+                        options.PartitionNumber = 2;
+                    })
+            ));
         var provider = services.BuildServiceProvider();
         var bufferQueue = provider.GetRequiredService<IBufferQueue>();
 
         var topic1Producer = bufferQueue.GetProducer<int>("topic1");
         var topic1Consumer =
-            bufferQueue.CreatePullConsumer<int>(new BufferPullConsumerOptions { TopicName = "topic1", GroupName = "test" });
+            bufferQueue.CreatePullConsumer<int>(new BufferPullConsumerOptions
+            {
+                TopicName = "topic1",
+                GroupName = "test"
+            });
 
         var topic2Producer = bufferQueue.GetProducer<int>("topic2");
         var topic2Consumers =
-            bufferQueue.CreatePullConsumers<int>(new BufferPullConsumerOptions { TopicName = "topic2", GroupName = "test" }, 2)
+            bufferQueue.CreatePullConsumers<int>(
+                    new BufferPullConsumerOptions { TopicName = "topic2", GroupName = "test" }, 2)
                 .ToList();
 
         Assert.Equal("topic1", topic1Producer.TopicName);
@@ -43,20 +57,37 @@ public class MemoryBufferServiceCollectionExtensionsTests
     public async Task No_Consumption_If_TopicName_Not_Match()
     {
         var services = new ServiceCollection();
-        services.AddBufferQueue(options => options.UseMemory(builder =>
-            builder
-                .AddTopic<int>("topic1", 1)
-                .AddTopic<int>("topic2", 2)
-        ));
+        services.AddBufferQueue(bufferOptionsBuilder =>
+            bufferOptionsBuilder.UseMemory(memoryBufferOptionsBuilder =>
+                memoryBufferOptionsBuilder
+                    .AddTopic<int>(options =>
+                    {
+                        options.TopicName = "topic1";
+                        options.PartitionNumber = 1;
+                    })
+                    .AddTopic<int>(options =>
+                    {
+                        options.TopicName = "topic2";
+                        options.PartitionNumber = 2;
+                    })
+            ));
 
         var provider = services.BuildServiceProvider();
         var bufferQueue = provider.GetRequiredService<IBufferQueue>();
 
         var topic1Producer = bufferQueue.GetProducer<int>("topic1");
         var topic1Consumer =
-            bufferQueue.CreatePullConsumer<int>(new BufferPullConsumerOptions { TopicName = "topic1", GroupName = "test" });
+            bufferQueue.CreatePullConsumer<int>(new BufferPullConsumerOptions
+            {
+                TopicName = "topic1",
+                GroupName = "test"
+            });
         var topic2Consumer =
-            bufferQueue.CreatePullConsumer<int>(new BufferPullConsumerOptions { TopicName = "topic2", GroupName = "test" });
+            bufferQueue.CreatePullConsumer<int>(new BufferPullConsumerOptions
+            {
+                TopicName = "topic2",
+                GroupName = "test"
+            });
 
         await topic1Producer.ProduceAsync(1);
 
@@ -81,18 +112,31 @@ public class MemoryBufferServiceCollectionExtensionsTests
     public void Throw_If_TopicName_Not_Registered()
     {
         var services = new ServiceCollection();
-        services.AddBufferQueue(options => options.UseMemory(builder =>
-            builder
-                .AddTopic<int>("topic1", 1)
-                .AddTopic<int>("topic2", 2)
-        ));
+        services.AddBufferQueue(bufferOptionsBuilder =>
+            bufferOptionsBuilder.UseMemory(memoryBufferOptionsBuilder =>
+                memoryBufferOptionsBuilder
+                    .AddTopic<int>(options =>
+                    {
+                        options.TopicName = "topic1";
+                        options.PartitionNumber = 1;
+                    })
+                    .AddTopic<int>(options =>
+                    {
+                        options.TopicName = "topic2";
+                        options.PartitionNumber = 2;
+                    })
+            ));
 
         var provider = services.BuildServiceProvider();
         var bufferQueue = provider.GetRequiredService<IBufferQueue>();
 
         Assert.Throws<ArgumentException>(() => bufferQueue.GetProducer<int>("topic3"));
         Assert.Throws<ArgumentException>(() =>
-            bufferQueue.CreatePullConsumer<int>(new BufferPullConsumerOptions { TopicName = "topic3", GroupName = "test" }));
+            bufferQueue.CreatePullConsumer<int>(new BufferPullConsumerOptions
+            {
+                TopicName = "topic3",
+                GroupName = "test"
+            }));
         Assert.Throws<ArgumentException>(() =>
             bufferQueue.CreatePullConsumers<int>(
                 new BufferPullConsumerOptions { TopicName = "topic3", GroupName = "test" },

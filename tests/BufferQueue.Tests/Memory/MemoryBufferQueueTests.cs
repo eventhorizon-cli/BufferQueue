@@ -8,12 +8,16 @@ namespace BufferQueue.Tests.Memory;
 
 public class MemoryBufferQueueTests
 {
-    private static int MemoryBufferPartitionSegmentLength => new MemoryBufferPartition<int>(0)._segmentLength;
+    private static int MemoryBufferPartitionSegmentSize => new MemoryBufferPartition<int>(0)._segmentSize;
 
     [Fact]
     public async Task Produce_And_Consume()
     {
-        var queue = new MemoryBufferQueue<int>("test", 1);
+        var queue = new MemoryBufferQueue<int>(new MemoryBufferQueueOptions
+        {
+            TopicName = "test",
+            PartitionNumber = 1
+        });
         var producer = queue.GetProducer();
         var consumer = queue.CreateConsumer(new BufferPullConsumerOptions
         {
@@ -54,7 +58,11 @@ public class MemoryBufferQueueTests
     [Fact]
     public async Task Produce_And_Consume_AutoCommit()
     {
-        var queue = new MemoryBufferQueue<int>("test", 1);
+        var queue = new MemoryBufferQueue<int>(new MemoryBufferQueueOptions
+        {
+            TopicName = "test",
+            PartitionNumber = 1
+        });
         var producer = queue.GetProducer();
         var consumer = queue.CreateConsumer(
             new BufferPullConsumerOptions
@@ -90,7 +98,11 @@ public class MemoryBufferQueueTests
     [Fact]
     public async Task Produce_And_Consume_With_Multiple_Partitions()
     {
-        var queue = new MemoryBufferQueue<int>("test", 2);
+        var queue = new MemoryBufferQueue<int>(new MemoryBufferQueueOptions
+        {
+            TopicName = "test",
+            PartitionNumber = 2
+        });
         var producer = queue.GetProducer();
         var consumer = queue.CreateConsumer(
             new BufferPullConsumerOptions
@@ -131,7 +143,11 @@ public class MemoryBufferQueueTests
     [Fact]
     public async Task Produce_And_Consume_With_Multiple_Consumers()
     {
-        var queue = new MemoryBufferQueue<int>("test", 2);
+        var queue = new MemoryBufferQueue<int>(new MemoryBufferQueueOptions
+        {
+            TopicName = "test",
+            PartitionNumber = 2
+        });
         var producer = queue.GetProducer();
         var consumers = queue
             .CreateConsumers(
@@ -167,7 +183,11 @@ public class MemoryBufferQueueTests
     [Fact]
     public void Throw_If_Wrong_Consumer_Number()
     {
-        var queue = new MemoryBufferQueue<int>("test", 2);
+        var queue = new MemoryBufferQueue<int>(new MemoryBufferQueueOptions
+        {
+            TopicName = "test",
+            PartitionNumber = 2
+        });
         Assert.Throws<ArgumentOutOfRangeException>(() =>
             queue.CreateConsumers(
                 new BufferPullConsumerOptions
@@ -194,7 +214,11 @@ public class MemoryBufferQueueTests
     [Fact]
     public async Task Offset_Will_Not_Change_If_Consumer_Not_Commit()
     {
-        var queue = new MemoryBufferQueue<int>("test", 1);
+        var queue = new MemoryBufferQueue<int>(new MemoryBufferQueueOptions
+        {
+            TopicName = "test",
+            PartitionNumber = 1
+        });
         var producer = queue.GetProducer();
         var consumer = queue.CreateConsumer(
             new BufferPullConsumerOptions
@@ -238,7 +262,11 @@ public class MemoryBufferQueueTests
     [Fact]
     public async Task Consumer_Will_Wait_Until_Produce()
     {
-        var queue = new MemoryBufferQueue<int>("test", 1);
+        var queue = new MemoryBufferQueue<int>(new MemoryBufferQueueOptions
+        {
+            TopicName = "test",
+            PartitionNumber = 1
+        });
         var producer = queue.GetProducer();
         var consumer =
             queue.CreateConsumer(new BufferPullConsumerOptions
@@ -267,13 +295,15 @@ public class MemoryBufferQueueTests
     [Fact]
     public void Equal_Distribution_Load_Balancing_Strategy_For_Consumers()
     {
-        var queue = new MemoryBufferQueue<int>("test", 18);
+        var queue = new MemoryBufferQueue<int>(
+            new MemoryBufferQueueOptions { TopicName = "test", PartitionNumber = 18 });
 
         var assignedPartitionsFieldInfo = typeof(MemoryBufferConsumer<int>)
             .GetField("_assignedPartitions", BindingFlags.Instance | BindingFlags.NonPublic)!;
         var group1Consumers =
             queue.CreateConsumers(
-                    new BufferPullConsumerOptions { TopicName = "test", GroupName = "TestGroup1", AutoCommit = false }, 3)
+                    new BufferPullConsumerOptions { TopicName = "test", GroupName = "TestGroup1", AutoCommit = false },
+                    3)
                 .ToList();
 
         var group2Consumers = queue
@@ -323,9 +353,13 @@ public class MemoryBufferQueueTests
     [Fact]
     public void Concurrent_Producer_Single_Partition()
     {
-        var messageSize = MemoryBufferPartitionSegmentLength * 4;
+        var messageSize = MemoryBufferPartitionSegmentSize * 4;
 
-        var queue = new MemoryBufferQueue<int>("test", 1);
+        var queue = new MemoryBufferQueue<int>(new MemoryBufferQueueOptions
+        {
+            TopicName = "test",
+            PartitionNumber = 1
+        });
 
         var countDownEvent = new CountdownEvent(messageSize);
         var consumer =
@@ -370,9 +404,13 @@ public class MemoryBufferQueueTests
     [Fact]
     public void Concurrent_Producer_Multiple_Partition()
     {
-        var messageSize = MemoryBufferPartitionSegmentLength * 4;
+        var messageSize = MemoryBufferPartitionSegmentSize * 4;
 
-        var queue = new MemoryBufferQueue<int>("test", Environment.ProcessorCount);
+        var queue = new MemoryBufferQueue<int>(new MemoryBufferQueueOptions
+        {
+            TopicName = "test",
+            PartitionNumber = Environment.ProcessorCount
+        });
 
         var consumer =
             queue.CreateConsumer(new BufferPullConsumerOptions
@@ -432,11 +470,15 @@ public class MemoryBufferQueueTests
     [InlineData(3, 10000)]
     public void Concurrent_Consumer_Multiple_Groups(int groupNumber, int batchSize)
     {
-        var messageSize = MemoryBufferPartitionSegmentLength * 4;
+        var messageSize = MemoryBufferPartitionSegmentSize * 4;
         var partitionNumber = Environment.ProcessorCount * 2;
         var consumerNumberPerGroup = Environment.ProcessorCount;
 
-        var queue = new MemoryBufferQueue<int>("test", partitionNumber);
+        var queue = new MemoryBufferQueue<int>(new MemoryBufferQueueOptions
+        {
+            TopicName = "test",
+            PartitionNumber = partitionNumber
+        });
 
         var countdownEvent = new CountdownEvent(messageSize * groupNumber);
 
@@ -492,11 +534,15 @@ public class MemoryBufferQueueTests
     [InlineData(3)]
     public void Concurrent_Producer_And_Concurrent_Consumer_Multiple_Groups(int groupNumber)
     {
-        var messageSize = MemoryBufferPartitionSegmentLength * 4;
+        var messageSize = MemoryBufferPartitionSegmentSize * 4;
         var partitionNumber = Environment.ProcessorCount * 2;
         var consumerNumberPerGroup = Environment.ProcessorCount;
 
-        var queue = new MemoryBufferQueue<int>("test", partitionNumber);
+        var queue = new MemoryBufferQueue<int>(new MemoryBufferQueueOptions
+        {
+            TopicName = "test",
+            PartitionNumber = partitionNumber
+        });
 
         var countdownEvent = new CountdownEvent(messageSize * groupNumber);
 
@@ -548,5 +594,54 @@ public class MemoryBufferQueueTests
         }
 
         countdownEvent.Wait();
+    }
+
+    [Fact]
+    public async Task Bounded_Capacity()
+    {
+        var queue = new MemoryBufferQueue<int>(new MemoryBufferQueueOptions
+        {
+            TopicName = "test",
+            PartitionNumber = 3,
+            SegmentSize = 2,
+            BoundedCapacity = 10
+        });
+
+        var producer = queue.GetProducer();
+        var consumer = queue.CreateConsumer(
+            new BufferPullConsumerOptions
+            {
+                TopicName = "test",
+                GroupName = "TestGroup",
+                AutoCommit = true,
+                BatchSize = 2
+            });
+        bool produceResult;
+        for (var i = 0; i < 10; i++)
+        {
+            produceResult = await producer.TryProduceAsync(i);
+            Assert.True(produceResult);
+        }
+
+        produceResult = await producer.TryProduceAsync(10);
+        Assert.False(produceResult);
+
+        var consumedItems = new List<int>();
+        var index = 0;
+        await foreach (var items in consumer.ConsumeAsync())
+        {
+            foreach (var item in items)
+            {
+                consumedItems.Add(item);
+                index++;
+            }
+
+            if (index == 10)
+            {
+                break;
+            }
+        }
+
+        Assert.Equal(Enumerable.Range(0, 10), consumedItems.OrderBy(x => x));
     }
 }

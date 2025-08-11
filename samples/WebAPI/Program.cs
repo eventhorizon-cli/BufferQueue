@@ -14,13 +14,28 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 // Configure the BufferQueue
-builder.Services.AddBufferQueue(options =>
+builder.Services.AddBufferQueue(bufferOptionsBuilder =>
 {
-    options.UseMemory(bufferOptions =>
+    bufferOptionsBuilder
+        .UseMemory(memoryBufferOptionsBuilder =>
         {
-            bufferOptions.AddTopic<Foo>("topic-foo1", partitionNumber: 6);
-            bufferOptions.AddTopic<Foo>("topic-foo2", partitionNumber: 4);
-            bufferOptions.AddTopic<Bar>("topic-bar", partitionNumber: 8);
+            memoryBufferOptionsBuilder
+                .AddTopic<Foo>(options =>
+                {
+                    options.TopicName = "topic-foo1";
+                    options.PartitionNumber = 6;
+                })
+                .AddTopic<Foo>(options =>
+                {
+                    options.TopicName = "topic-foo2";
+                    options.PartitionNumber = 4;
+                })
+                .AddTopic<Bar>(options =>
+                {
+                    options.TopicName = "topic-bar";
+                    options.PartitionNumber = 8;
+                    options.BoundedCapacity = 100_000; // Set a bounded capacity for the Bar topic
+                });
         })
         .AddPushCustomers(typeof(Program).Assembly);
 });

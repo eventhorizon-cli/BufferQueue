@@ -22,13 +22,25 @@ public class PushConsumerTests
         services
             .AddSingleton<ILogger<BufferPushCustomerHostService>>(NullLogger<BufferPushCustomerHostService>.Instance)
             .AddBufferQueue(
-                options =>
+                bufferOptionsBuilder =>
                 {
-                    options.UseMemory(bufferOptions =>
+                    bufferOptionsBuilder.UseMemory(memoryBufferOptionsBuilder =>
                         {
-                            bufferOptions.AddTopic<Foo>("topic-foo1", 2);
-                            bufferOptions.AddTopic<Foo>("topic-foo2", 4);
-                            bufferOptions.AddTopic<Bar>("topic-bar", 2);
+                            memoryBufferOptionsBuilder.AddTopic<Foo>(options =>
+                            {
+                                options.TopicName = "topic-foo1";
+                                options.PartitionNumber = 2;
+                            });
+                            memoryBufferOptionsBuilder.AddTopic<Foo>(options =>
+                            {
+                                options.TopicName = "topic-foo2";
+                                options.PartitionNumber = 3;
+                            });
+                            memoryBufferOptionsBuilder.AddTopic<Bar>(options =>
+                            {
+                                options.TopicName = "topic-bar";
+                                options.PartitionNumber = 2;
+                            });
                         })
                         .AddPushCustomers(typeof(PushConsumerTests).Assembly);
                 }

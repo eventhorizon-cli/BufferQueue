@@ -15,7 +15,7 @@ namespace BufferQueue.Memory;
 internal sealed class MemoryBufferPartition<T>
 {
     // internal for test
-    internal readonly int _segmentLength;
+    internal readonly int _segmentSize;
 
     private volatile MemoryBufferSegment<T> _head;
     private volatile MemoryBufferSegment<T> _tail;
@@ -26,11 +26,11 @@ internal sealed class MemoryBufferPartition<T>
 
     private readonly object _createSegmentLock;
 
-    public MemoryBufferPartition(int id, int segmentLength = 1024)
+    public MemoryBufferPartition(int id, int segmentSize = 1024)
     {
-        _segmentLength = segmentLength;
+        _segmentSize = segmentSize;
         PartitionId = id;
-        _head = _tail = new MemoryBufferSegment<T>(_segmentLength, default);
+        _head = _tail = new MemoryBufferSegment<T>(_segmentSize, default);
         _consumerReaders = new ConcurrentDictionary<string, Reader>();
         _consumers = new HashSet<MemoryBufferConsumer<T>>();
 
@@ -79,7 +79,7 @@ internal sealed class MemoryBufferPartition<T>
                 var newSegmentStartOffset = tail.EndOffset + 1;
                 var newSegment = TryRecycleSegment(newSegmentStartOffset, out var recycledSegment)
                     ? recycledSegment
-                    : new MemoryBufferSegment<T>(_segmentLength, newSegmentStartOffset);
+                    : new MemoryBufferSegment<T>(_segmentSize, newSegmentStartOffset);
                 tail.NextSegment = newSegment;
                 _tail = newSegment;
             }
