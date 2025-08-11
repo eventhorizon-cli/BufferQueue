@@ -29,6 +29,8 @@ public class TestController(IBufferQueue bufferQueue) : ControllerBase
     {
         var producer = bufferQueue.GetProducer<Bar>("topic-bar");
         await producer.ProduceAsync(bar);
+        // TryProduceAsync can be used if you want to check if the item was produced successfully
+        // bool success = await producer.TryProduceAsync(bar);
         return Ok();
     }
 }

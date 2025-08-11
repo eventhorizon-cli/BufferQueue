@@ -19,17 +19,20 @@ internal sealed class MemoryBufferQueue<T> : IBufferQueue<T>
     private readonly object _consumersLock;
     private readonly Dictionary<string /* GroupName */, List<MemoryBufferConsumer<T>>> _consumers;
 
-    public MemoryBufferQueue(string topicName, int partitionNumber)
+    public MemoryBufferQueue(MemoryBufferQueueOptions options)
     {
+        var topicName = options.TopicName!;
+        var partitionNumber = options.PartitionNumber;
+
         TopicName = topicName;
         _partitionNumber = partitionNumber;
         _partitions = new MemoryBufferPartition<T>[partitionNumber];
         for (var i = 0; i < partitionNumber; i++)
         {
-            _partitions[i] = new MemoryBufferPartition<T>(i);
+            _partitions[i] = new MemoryBufferPartition<T>(i, options.SegmentSize);
         }
 
-        _producer = new MemoryBufferProducer<T>(topicName, _partitions);
+        _producer = new MemoryBufferProducer<T>(options, _partitions);
 
         _consumers = new Dictionary<string, List<MemoryBufferConsumer<T>>>();
         _consumersLock = new object();
