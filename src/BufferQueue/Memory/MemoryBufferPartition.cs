@@ -116,12 +116,12 @@ internal sealed class MemoryBufferPartition<T>
             return false;
         }
 
-        var minConsumerPendingOffset = MinConsumerPendingOffset();
+        var minConsumerReadPosition = MinConsumerReadPosition();
 
         MemoryBufferSegment<T>? recyclableSegment = null;
         for (var segment = _head; segment != _tail; segment = segment.NextSegment!)
         {
-            var wholeSegmentConsumed = segment.EndOffset < minConsumerPendingOffset;
+            var wholeSegmentConsumed = segment.EndOffset < minConsumerReadPosition;
             if (wholeSegmentConsumed)
             {
                 recyclableSegment = segment;
@@ -141,53 +141,47 @@ internal sealed class MemoryBufferPartition<T>
         return true;
     }
 
-    private MemoryBufferPartitionOffset MinConsumerPendingOffset()
+    private MemoryBufferPartitionOffset MinConsumerReadPosition()
     {
-        MemoryBufferPartitionOffset? minPendingOffset = null;
+        MemoryBufferPartitionOffset? minReadPosition = null;
         foreach (var reader in _consumerReaders.Values)
         {
-            var pendingOffset = reader.PendingOffset;
+            var readPosition = reader.ReadPosition;
 
-            if (minPendingOffset == null)
+            if (minReadPosition == null)
             {
-                minPendingOffset = pendingOffset;
+                minReadPosition = readPosition;
                 continue;
             }
 
-            if (pendingOffset < minPendingOffset)
+            if (readPosition < minReadPosition)
             {
-                minPendingOffset = pendingOffset;
+                minReadPosition = readPosition;
             }
         }
 
-        return minPendingOffset ?? _head.StartOffset;
+        return minReadPosition ?? _head.StartOffset;
     }
 
     // One reader can only be used by one consumer at the same time.
-    private sealed class Reader
+    private sealed class Reader(MemoryBufferSegment<T> currentSegment, MemoryBufferPartitionOffset currentOffset)
     {
-        private MemoryBufferSegment<T> _currentSegment;
-        private MemoryBufferPartitionOffset _pendingOffset;
+        private MemoryBufferSegment<T> _currentSegment = currentSegment;
+        private MemoryBufferPartitionOffset _readPosition = currentOffset;
         private int _lastReadCount;
 
-        public Reader(MemoryBufferSegment<T> currentSegment, MemoryBufferPartitionOffset currentOffset)
-        {
-            _currentSegment = currentSegment;
-            _pendingOffset = currentOffset;
-        }
-
-        public MemoryBufferPartitionOffset PendingOffset => _pendingOffset;
+        public MemoryBufferPartitionOffset ReadPosition => _readPosition;
 
         public bool TryRead(int batchSize, [NotNullWhen(true)] out IEnumerable<T>? items)
         {
             var remainingCount = batchSize;
-            var pendingOffset = _pendingOffset;
+            var readPosition = _readPosition;
             var result = Enumerable.Empty<T>();
             var currentSegment = _currentSegment;
 
             while (true)
             {
-                if (currentSegment.EndOffset < pendingOffset)
+                if (currentSegment.EndOffset < readPosition)
                 {
                     if (currentSegment.NextSegment == null)
                     {
@@ -197,11 +191,11 @@ internal sealed class MemoryBufferPartition<T>
                     currentSegment = currentSegment.NextSegment;
                 }
 
-                var retrievalSuccess = currentSegment.TryGet(pendingOffset, remainingCount, out var segmentItems);
+                var retrievalSuccess = currentSegment.TryGet(readPosition, remainingCount, out var segmentItems);
                 if (retrievalSuccess)
                 {
                     var length = segmentItems!.Length;
-                    pendingOffset += (ulong)length;
+                    readPosition += (ulong)length;
                     remainingCount -= length;
                     result = result.Concat(segmentItems);
                 }
@@ -240,39 +234,32 @@ internal sealed class MemoryBufferPartition<T>
 
         public void MoveNext()
         {
-            _pendingOffset += (ulong)_lastReadCount;
-            while (_currentSegment.EndOffset < _pendingOffset && _currentSegment.NextSegment != null)
+            _readPosition += (ulong)_lastReadCount;
+            while (_currentSegment.EndOffset < _readPosition && _currentSegment.NextSegment != null)
             {
                 _currentSegment = _currentSegment.NextSegment!;
             }
         }
     }
 
-    private class DebugView
+    private class DebugView(MemoryBufferPartition<T> partition)
     {
-        private readonly MemoryBufferPartition<T> _partition;
+        public int PartitionId => partition.PartitionId;
 
-        public DebugView(MemoryBufferPartition<T> partition)
-        {
-            _partition = partition;
-        }
+        public ulong Capacity => partition.Capacity;
 
-        public int PartitionId => _partition.PartitionId;
+        public ulong Count => partition.Count;
 
-        public ulong Capacity => _partition.Capacity;
+        public HashSet<MemoryBufferConsumer<T>> Consumers => partition._consumers;
 
-        public ulong Count => _partition.Count;
-
-        public HashSet<MemoryBufferConsumer<T>> Consumers => _partition._consumers;
-
-        public ConcurrentDictionary<string, Reader> ConsumerReaders => _partition._consumerReaders;
+        public ConcurrentDictionary<string, Reader> ConsumerReaders => partition._consumerReaders;
 
         public MemoryBufferSegment<T>[] Segments
         {
             get
             {
                 var segments = new List<MemoryBufferSegment<T>>();
-                for (var segment = _partition._head; segment != null; segment = segment.NextSegment)
+                for (var segment = partition._head; segment != null; segment = segment.NextSegment)
                 {
                     segments.Add(segment);
                 }

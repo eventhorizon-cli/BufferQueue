@@ -67,7 +67,7 @@ internal sealed class MemoryBufferConsumer<T> : IBufferPullConsumer<T>
             }
 
             // Try to pull from other partitions
-            IEnumerable<T> itemsFromOtherPartition = default!;
+            IEnumerable<T> itemsFromOtherPartition = null!;
             var hasItemFromOtherPartition = false;
 
             foreach (var t in _assignedPartitions)

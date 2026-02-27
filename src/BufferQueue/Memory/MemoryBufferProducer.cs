@@ -15,7 +15,7 @@ internal sealed class MemoryBufferProducer<T>(
     private uint _partitionIndex;
     private int _checkingCapacity;
 
-    public string TopicName { get; } = options.TopicName;
+    public string TopicName { get; } = options.TopicName!;
 
     public ValueTask ProduceAsync(T item)
     {
