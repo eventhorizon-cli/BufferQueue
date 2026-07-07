@@ -3,7 +3,6 @@
 
 using System;
 using System.Diagnostics;
-using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Threading;
 
@@ -99,11 +98,11 @@ internal sealed class MemoryBufferSegment<T>
         }
     }
 
-    public bool TryGet(MemoryBufferPartitionOffset offset, int count, [NotNullWhen(true)] out T[]? items)
+    public bool TryGet(MemoryBufferPartitionOffset offset, int count, out ArraySegment<T> items)
     {
         if (offset < _startOffset || offset > _endOffset)
         {
-            items = null;
+            items = default;
             return false;
         }
 
@@ -111,21 +110,14 @@ internal sealed class MemoryBufferSegment<T>
 
         if (_publishedWritePosition < 0 || readPosition > _publishedWritePosition)
         {
-            items = null;
+            items = default;
             return false;
         }
 
         var writePosition = Math.Min(_publishedWritePosition, _slots.Length - 1);
         // Number of items actually available to return (bounded by requested count and written items).
         var availableCount = Math.Min(count, writePosition - readPosition + 1);
-        var wholeSegment = readPosition == 0 && availableCount == _slots.Length;
-        if (wholeSegment)
-        {
-            items = _slots;
-            return true;
-        }
-
-        items = _slots[readPosition..(readPosition + availableCount)];
+        items = new ArraySegment<T>(_slots, readPosition, availableCount);
         return true;
     }
 
