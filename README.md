@@ -16,6 +16,43 @@ Currently, the supported buffer type is only memory buffers, but more types of b
 
 Scenarios that require concurrent batch processing of data when the speed between producers and consumers is inconsistent.
 
+## Comparison with Common In-Memory Queues
+
+**BufferQueue's core advantage is high performance in batch consumption scenarios.**
+
+The project includes BenchmarkDotNet benchmarks that compare `MemoryBufferQueue<T>` in BufferQueue's Memory mode with `Channel<T>` and `BlockingCollection<T>` for concurrent producing and consuming. The table below summarizes the `Channel<T>` comparison results.
+
+Summary:
+
+- Producing: `Channel<T>` is faster; `MemoryBufferQueue<T>` allocates less memory in Bounded producing, while Unbounded producing is not its advantage.
+- Consuming: `MemoryBufferQueue<T>` is mainly optimized for batch consumption. In this benchmark set, larger batches usually show a clearer advantage, up to about `84x` under the current parameters.
+- Memory allocation: `MemoryBufferQueue<T>` allocates less in producing scenarios; `Channel<T>` allocates less in consuming scenarios.
+
+Representative results:
+
+| Type | Scenario | Parameters | `Channel<T>` | `MemoryBufferQueue<T>` | Result |
+| --- | --- | --- | ---: | ---: | --- |
+| Producing | Unbounded | `MessageSize = 8192` | `336.8 μs` | `689.2 μs` | `Channel<T>` is faster |
+| Producing | Bounded | `MessageSize = 8192` | `360.2 μs` | `8,402.0 μs` | `Channel<T>` is faster |
+| Consuming | Unbounded | `MessageSize = 8192`, `BatchSize = 1000` | `3,461.03 μs` | `41.30 μs` | About `84x` faster under current parameters |
+| Consuming | Bounded | `MessageSize = 8192`, `BatchSize = 1000` | `2,214.21 μs` | `41.68 μs` | About `53x` faster under current parameters |
+
+Test platform:
+
+| Item | Value |
+| --- | --- |
+| OS | macOS `15.7.7` (`24G720`) |
+| RID | `osx-arm64` |
+| .NET SDK | `10.0.100` |
+| .NET Host | `10.0.0`, `arm64` |
+| Benchmark target | `net8.0` |
+
+Run the full benchmark with:
+
+```shell
+dotnet run -c Release --project tests/BufferQueue.Benchmarks/BufferQueue.Benchmarks.csproj
+```
+
 ## Functional Design
 
 1. Supports creating multiple topics, each of which can have multiple data types. Each pair of topics and data types corresponds to an independent buffer.

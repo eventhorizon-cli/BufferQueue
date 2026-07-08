@@ -45,7 +45,7 @@ public class MemoryBufferQueueConsumeBenchmark
     }
 
     [Benchmark]
-    public void BlockingCollection_Concurrent_Consuming()
+    public void BlockingCollection_ConcurrentConsume()
     {
         var countDownEvent = new CountdownEvent(MessageSize);
         for (var i = 0; i < Environment.ProcessorCount; i++)
@@ -64,7 +64,7 @@ public class MemoryBufferQueueConsumeBenchmark
     }
 
     [Benchmark]
-    public void MemoryBufferQueue_Concurrent_Consuming_Partition_ProcessorCount()
+    public void MemoryBufferQueue_ConcurrentConsume_ProcessorCountPartitions()
     {
         var countDownEvent = new CountdownEvent(MessageSize);
 

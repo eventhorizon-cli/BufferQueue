@@ -7,7 +7,7 @@ using BufferQueue.Memory;
 
 namespace BufferQueue.Benchmarks;
 
-public class MemoryBufferQueueChannelProduceBenchmark
+public class MemoryBufferQueueUnboundedChannelProduceBenchmark
 {
     private int[][] _chunks = default!;
 
@@ -21,7 +21,7 @@ public class MemoryBufferQueueChannelProduceBenchmark
     }
 
     [Benchmark(Baseline = true)]
-    public async Task Channel_Unbounded_Concurrent_Producing()
+    public async Task Channel_UnboundedConcurrentProduce()
     {
         var channel = Channel.CreateUnbounded<int>();
         var writer = channel.Writer;
@@ -37,7 +37,7 @@ public class MemoryBufferQueueChannelProduceBenchmark
     }
 
     [Benchmark]
-    public async Task MemoryBufferQueue_Unbounded_Concurrent_Producing()
+    public async Task MemoryBufferQueue_UnboundedConcurrentProduce()
     {
         var queue = new MemoryBufferQueue<int>(new MemoryBufferQueueOptions
         {
@@ -60,48 +60,4 @@ public class MemoryBufferQueueChannelProduceBenchmark
         await Task.WhenAll(tasks);
     }
 
-    [Benchmark]
-    public async Task Channel_Bounded_Concurrent_Producing()
-    {
-        var channel = Channel.CreateBounded<int>(new BoundedChannelOptions(MessageSize)
-        {
-            SingleReader = false,
-            SingleWriter = false
-        });
-        var writer = channel.Writer;
-        var tasks = _chunks.Select(chunk => Task.Run(() =>
-        {
-            foreach (var item in chunk)
-            {
-                writer.TryWrite(item);
-            }
-        })).ToArray();
-
-        await Task.WhenAll(tasks);
-    }
-
-    [Benchmark]
-    public async Task MemoryBufferQueue_Bounded_Concurrent_Producing()
-    {
-        var queue = new MemoryBufferQueue<int>(new MemoryBufferQueueOptions
-        {
-            TopicName = "test",
-            PartitionNumber = Environment.ProcessorCount,
-            BoundedCapacity = (ulong)MessageSize
-        });
-        var producer = queue.GetProducer();
-        var tasks = _chunks.Select(chunk => Task.Run(async () =>
-        {
-            foreach (var item in chunk)
-            {
-                var valueTask = producer.ProduceAsync(item);
-                if (!valueTask.IsCompletedSuccessfully)
-                {
-                    await valueTask.AsTask();
-                }
-            }
-        })).ToArray();
-
-        await Task.WhenAll(tasks);
-    }
 }

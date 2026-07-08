@@ -14,8 +14,10 @@ var allBenchmarks = new[]
 {
     typeof(MemoryBufferQueueProduceBenchmark),
     typeof(MemoryBufferQueueConsumeBenchmark),
-    typeof(MemoryBufferQueueChannelProduceBenchmark),
-    typeof(MemoryBufferQueueChannelConsumeBenchmark),
+    typeof(MemoryBufferQueueUnboundedChannelProduceBenchmark),
+    typeof(MemoryBufferQueueBoundedChannelProduceBenchmark),
+    typeof(MemoryBufferQueueUnboundedChannelConsumeBenchmark),
+    typeof(MemoryBufferQueueBoundedChannelConsumeBenchmark),
 };
 
 new BenchmarkSwitcher(allBenchmarks).Run(args, config);
