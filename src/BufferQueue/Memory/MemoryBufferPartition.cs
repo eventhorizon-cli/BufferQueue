@@ -2,11 +2,11 @@
 // The .NET Core Community licenses this file to you under the MIT license.
 
 using System;
+using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
-using System.Linq;
 
 namespace BufferQueue.Memory;
 
@@ -176,8 +176,10 @@ internal sealed class MemoryBufferPartition<T>
         {
             var remainingCount = batchSize;
             var readPosition = _readPosition;
-            var result = Enumerable.Empty<T>();
             var currentSegment = _currentSegment;
+            T[]? result = null;
+            T singleItem = default!;
+            var copiedCount = 0;
 
             while (true)
             {
@@ -194,10 +196,21 @@ internal sealed class MemoryBufferPartition<T>
                 var retrievalSuccess = currentSegment.TryGet(readPosition, remainingCount, out var segmentItems);
                 if (retrievalSuccess)
                 {
-                    var length = segmentItems!.Length;
+                    var length = segmentItems.Count;
                     readPosition += (ulong)length;
                     remainingCount -= length;
-                    result = result.Concat(segmentItems);
+
+                    if (batchSize == 1)
+                    {
+                        singleItem = segmentItems.Array![segmentItems.Offset];
+                        copiedCount = 1;
+                    }
+                    else
+                    {
+                        result ??= new T[batchSize];
+                        Array.Copy(segmentItems.Array!, segmentItems.Offset, result, copiedCount, length);
+                        copiedCount += length;
+                    }
                 }
                 else
                 {
@@ -228,7 +241,15 @@ internal sealed class MemoryBufferPartition<T>
             }
 
             _lastReadCount = batchSize - remainingCount;
-            items = result;
+            if (batchSize == 1)
+            {
+                items = new SingleItemBatch<T>(singleItem);
+                return true;
+            }
+
+            items = _lastReadCount == result!.Length
+                ? result
+                : new SnapshotBatch<T>(result, _lastReadCount);
             return true;
         }
 
@@ -240,6 +261,74 @@ internal sealed class MemoryBufferPartition<T>
                 _currentSegment = _currentSegment.NextSegment!;
             }
         }
+    }
+
+    private sealed class SingleItemBatch<TItem>(TItem item) : IReadOnlyList<TItem>, ICollection<TItem>
+    {
+        public int Count => 1;
+
+        public bool IsReadOnly => true;
+
+        public TItem this[int index] => index == 0
+            ? item
+            : throw new ArgumentOutOfRangeException(nameof(index));
+
+        public IEnumerator<TItem> GetEnumerator()
+        {
+            yield return item;
+        }
+
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+
+        public bool Contains(TItem itemToFind) => EqualityComparer<TItem>.Default.Equals(item, itemToFind);
+
+        public void CopyTo(TItem[] array, int arrayIndex) => array[arrayIndex] = item;
+
+        public void Add(TItem itemToAdd) => throw new NotSupportedException();
+
+        public void Clear() => throw new NotSupportedException();
+
+        public bool Remove(TItem itemToRemove) => throw new NotSupportedException();
+    }
+
+    private sealed class SnapshotBatch<TItem>(TItem[] items, int count) : IReadOnlyList<TItem>, ICollection<TItem>
+    {
+        public int Count => count;
+
+        public bool IsReadOnly => true;
+
+        public TItem this[int index]
+        {
+            get
+            {
+                if ((uint)index >= (uint)count)
+                {
+                    throw new ArgumentOutOfRangeException(nameof(index));
+                }
+
+                return items[index];
+            }
+        }
+
+        public IEnumerator<TItem> GetEnumerator()
+        {
+            for (var i = 0; i < count; i++)
+            {
+                yield return items[i];
+            }
+        }
+
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+
+        public bool Contains(TItem item) => Array.IndexOf(items, item, 0, count) >= 0;
+
+        public void CopyTo(TItem[] array, int arrayIndex) => Array.Copy(items, 0, array, arrayIndex, count);
+
+        public void Add(TItem item) => throw new NotSupportedException();
+
+        public void Clear() => throw new NotSupportedException();
+
+        public bool Remove(TItem item) => throw new NotSupportedException();
     }
 
     private class DebugView(MemoryBufferPartition<T> partition)
