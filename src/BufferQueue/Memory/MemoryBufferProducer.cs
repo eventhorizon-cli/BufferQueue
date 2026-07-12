@@ -30,7 +30,7 @@ internal sealed class MemoryBufferProducer<T>(
     public ValueTask<bool> TryProduceAsync(T item)
     {
         var succeeded = TryEnqueue(item);
-        return new ValueTask<bool>(succeeded);
+        return new(succeeded);
     }
 
     private bool TryEnqueue(T item)

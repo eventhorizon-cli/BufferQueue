@@ -7,13 +7,13 @@ using BufferQueue.Memory;
 
 namespace BufferQueue.Benchmarks;
 
-public class MemoryBufferQueueConsumeBenchmark
+public class BlockingCollectionVsMemoryBufferQueueConsumeBenchmark
 {
     private BlockingCollection<int>? _blockingCollection;
     private MemoryBufferQueue<int>? _memoryBufferQueue;
-    private IEnumerable<IBufferPullConsumer<int>> _consumers = default!;
+    private IEnumerable<IBufferPullConsumer<int>> _consumers = null!;
 
-    [Params(4096, 8192)] public int MessageSize { get; set; }
+    [Params(8192)] public int MessageSize { get; set; }
     [Params(1, 10, 100, 1000)] public int BatchSize { get; set; }
 
     [IterationSetup]
@@ -45,7 +45,7 @@ public class MemoryBufferQueueConsumeBenchmark
     }
 
     [Benchmark]
-    public void BlockingCollection_ConcurrentConsume()
+    public void BlockingCollection_Consume_Concurrent()
     {
         var countDownEvent = new CountdownEvent(MessageSize);
         for (var i = 0; i < Environment.ProcessorCount; i++)
@@ -64,7 +64,7 @@ public class MemoryBufferQueueConsumeBenchmark
     }
 
     [Benchmark]
-    public void MemoryBufferQueue_ConcurrentConsume_ProcessorCountPartitions()
+    public void MemoryBufferQueue_Consume_ConcurrentProcessorCountPartitions()
     {
         var countDownEvent = new CountdownEvent(MessageSize);
 

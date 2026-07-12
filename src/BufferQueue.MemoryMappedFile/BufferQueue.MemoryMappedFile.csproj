@@ -5,12 +5,16 @@
         <Nullable>enable</Nullable>
         <LangVersion>latest</LangVersion>
         <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
-        <PackageId>BufferQueue</PackageId>
+        <PackageId>BufferQueue.MemoryMappedFile</PackageId>
     </PropertyGroup>
 
     <ItemGroup>
+        <PackageReference Include="MessagePack" Version="3.1.8" />
         <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="8.0.1" />
-        <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="8.0.0" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\BufferQueue\BufferQueue.csproj" />
     </ItemGroup>
 
 </Project>

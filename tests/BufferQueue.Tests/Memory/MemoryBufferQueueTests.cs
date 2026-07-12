@@ -298,7 +298,7 @@ public class MemoryBufferQueueTests
         var queue = new MemoryBufferQueue<int>(
             new MemoryBufferQueueOptions { TopicName = "test", PartitionNumber = 18 });
 
-        var assignedPartitionsFieldInfo = typeof(MemoryBufferConsumer<int>)
+        var assignedPartitionsFieldInfo = typeof(BufferPullConsumer<int>)
             .GetField("_assignedPartitions", BindingFlags.Instance | BindingFlags.NonPublic)!;
         var group1Consumers =
             queue.CreateConsumers(
@@ -324,28 +324,28 @@ public class MemoryBufferQueueTests
         for (var i = 0; i < 3; i++)
         {
             var partitions =
-                (MemoryBufferPartition<int>[])assignedPartitionsFieldInfo.GetValue(group1Consumers[i])!;
+                (IBufferPartition<int>[])assignedPartitionsFieldInfo.GetValue(group1Consumers[i])!;
             Assert.Equal(6, partitions.Length);
         }
 
         for (var i = 0; i < 4; i++)
         {
             var partitions =
-                (MemoryBufferPartition<int>[])assignedPartitionsFieldInfo.GetValue(group2Consumers[i])!;
+                (IBufferPartition<int>[])assignedPartitionsFieldInfo.GetValue(group2Consumers[i])!;
             Assert.Equal(i < 2 ? 5 : 4, partitions.Length);
         }
 
         for (var i = 0; i < 5; i++)
         {
             var partitions =
-                (MemoryBufferPartition<int>[])assignedPartitionsFieldInfo.GetValue(group3Consumers[i])!;
+                (IBufferPartition<int>[])assignedPartitionsFieldInfo.GetValue(group3Consumers[i])!;
             Assert.Equal(i < 3 ? 4 : 3, partitions.Length);
         }
 
         for (var i = 0; i < 16; i++)
         {
             var partitions =
-                (MemoryBufferPartition<int>[])assignedPartitionsFieldInfo.GetValue(group4Consumers[i])!;
+                (IBufferPartition<int>[])assignedPartitionsFieldInfo.GetValue(group4Consumers[i])!;
             Assert.Equal(i < 2 ? 2 : 1, partitions.Length);
         }
     }

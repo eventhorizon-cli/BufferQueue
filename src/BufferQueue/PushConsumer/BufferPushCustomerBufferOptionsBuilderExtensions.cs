@@ -16,17 +16,10 @@ public static class BufferPushCustomerBufferOptionsBuilderExtensions
         this BufferOptionsBuilder builder,
         Assembly assembly)
     {
-        if (builder is null)
-        {
-            throw new ArgumentNullException(nameof(builder));
-        }
+        ArgumentNullException.ThrowIfNull(builder);
+        ArgumentNullException.ThrowIfNull(assembly);
 
-        if (assembly is null)
-        {
-            throw new ArgumentNullException(nameof(assembly));
-        }
-
-        var consumerDescriptors = new List<BufferPushConsumerDescription>();
+        List<BufferPushConsumerDescription> consumerDescriptors = [];
 
         foreach (var type in assembly.GetTypes())
         {

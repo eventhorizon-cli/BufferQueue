@@ -12,12 +12,16 @@ var config = ManualConfig
 
 var allBenchmarks = new[]
 {
-    typeof(MemoryBufferQueueProduceBenchmark),
-    typeof(MemoryBufferQueueConsumeBenchmark),
-    typeof(MemoryBufferQueueUnboundedChannelProduceBenchmark),
-    typeof(MemoryBufferQueueBoundedChannelProduceBenchmark),
-    typeof(MemoryBufferQueueUnboundedChannelConsumeBenchmark),
-    typeof(MemoryBufferQueueBoundedChannelConsumeBenchmark),
+    typeof(BlockingCollectionVsMemoryBufferQueueProduceBenchmark),
+    typeof(BlockingCollectionVsMemoryBufferQueueConsumeBenchmark),
+    typeof(UnboundedChannelVsMemoryBufferQueueProduceBenchmark),
+    typeof(BoundedChannelVsMemoryBufferQueueProduceBenchmark),
+    typeof(UnboundedChannelVsMemoryBufferQueueConsumeBenchmark),
+    typeof(BoundedChannelVsMemoryBufferQueueConsumeBenchmark),
+    typeof(MemoryVsMemoryMappedFileBufferQueueProduceBenchmark),
+    typeof(MemoryVsMemoryMappedFileBufferQueueConsumeBenchmark),
+    typeof(MemoryMappedFileSerializerSerializeBenchmark),
+    typeof(MemoryMappedFileSerializerDeserializeBenchmark),
 };
 
 new BenchmarkSwitcher(allBenchmarks).Run(args, config);

@@ -12,10 +12,8 @@ public static class BufferQueueServiceCollectionExtensions
         this IServiceCollection services,
         Action<BufferOptionsBuilder> configure)
     {
-        if (services is null)
-        {
-            throw new ArgumentNullException(nameof(services));
-        }
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configure);
 
         services.AddSingleton<IBufferQueue, BufferQueue>();
         configure(new BufferOptionsBuilder(services));

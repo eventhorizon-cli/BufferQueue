@@ -5,15 +5,18 @@
         <TargetFramework>net8.0</TargetFramework>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
+        <LangVersion>latest</LangVersion>
         <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     </PropertyGroup>
 
     <ItemGroup>
         <PackageReference Include="BenchmarkDotNet" Version="0.13.12" />
+        <PackageReference Include="MessagePack" Version="3.1.8" PrivateAssets="all" />
     </ItemGroup>
 
     <ItemGroup>
       <ProjectReference Include="..\..\src\BufferQueue\BufferQueue.csproj" />
+      <ProjectReference Include="..\..\src\BufferQueue.MemoryMappedFile\BufferQueue.MemoryMappedFile.csproj" />
     </ItemGroup>
 
 </Project>

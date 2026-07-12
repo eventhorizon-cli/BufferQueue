@@ -13,6 +13,7 @@ namespace BufferQueue.Memory;
 [DebuggerDisplay("PartitionId = {PartitionId}, Capacity = {Capacity}, Count = {Count}")]
 [DebuggerTypeProxy(typeof(MemoryBufferPartition<>.DebugView))]
 internal sealed class MemoryBufferPartition<T>
+    : IBufferPartition<T>
 {
     // internal for test
     internal readonly int _segmentSize;
@@ -22,7 +23,7 @@ internal sealed class MemoryBufferPartition<T>
 
     // At most one consumer per group can consume the same partition at the same time,
     private readonly ConcurrentDictionary<string /* group name */, Reader> _consumerReaders;
-    private readonly HashSet<MemoryBufferConsumer<T>> _consumers;
+    private readonly HashSet<IBufferPartitionConsumer<T>> _consumers;
 
     private readonly object _createSegmentLock;
 
@@ -30,11 +31,11 @@ internal sealed class MemoryBufferPartition<T>
     {
         _segmentSize = segmentSize;
         PartitionId = id;
-        _head = _tail = new MemoryBufferSegment<T>(_segmentSize, default);
-        _consumerReaders = new ConcurrentDictionary<string, Reader>();
-        _consumers = new HashSet<MemoryBufferConsumer<T>>();
+        _head = _tail = new(_segmentSize, default);
+        _consumerReaders = new();
+        _consumers = [];
 
-        _createSegmentLock = new object();
+        _createSegmentLock = new();
     }
 
     public int PartitionId { get; }
@@ -50,7 +51,7 @@ internal sealed class MemoryBufferPartition<T>
         }
     }
 
-    public void RegisterConsumer(MemoryBufferConsumer<T> consumer) => _consumers.Add(consumer);
+    public void RegisterConsumer(IBufferPartitionConsumer<T> consumer) => _consumers.Add(consumer);
 
     public void Enqueue(T item)
     {
@@ -79,7 +80,7 @@ internal sealed class MemoryBufferPartition<T>
                 var newSegmentStartOffset = tail.EndOffset + 1;
                 var newSegment = TryRecycleSegment(newSegmentStartOffset, out var recycledSegment)
                     ? recycledSegment
-                    : new MemoryBufferSegment<T>(_segmentSize, newSegmentStartOffset);
+                    : new(_segmentSize, newSegmentStartOffset);
                 tail.NextSegment = newSegment;
                 _tail = newSegment;
             }
@@ -339,7 +340,7 @@ internal sealed class MemoryBufferPartition<T>
 
         public ulong Count => partition.Count;
 
-        public HashSet<MemoryBufferConsumer<T>> Consumers => partition._consumers;
+        public HashSet<IBufferPartitionConsumer<T>> Consumers => partition._consumers;
 
         public ConcurrentDictionary<string, Reader> ConsumerReaders => partition._consumerReaders;
 
@@ -347,7 +348,7 @@ internal sealed class MemoryBufferPartition<T>
         {
             get
             {
-                var segments = new List<MemoryBufferSegment<T>>();
+                List<MemoryBufferSegment<T>> segments = [];
                 for (var segment = partition._head; segment != null; segment = segment.NextSegment)
                 {
                     segments.Add(segment);

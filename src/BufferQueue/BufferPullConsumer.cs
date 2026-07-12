@@ -8,34 +8,23 @@ using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace BufferQueue.Memory;
+namespace BufferQueue;
 
-internal sealed class MemoryBufferConsumer<T> : IBufferPullConsumer<T>
+internal sealed class BufferPullConsumer<TItem>(BufferPullConsumerOptions options)
+    : IBufferPullConsumer<TItem>, IBufferPartitionConsumer<TItem>
 {
-    private readonly BufferPullConsumerOptions _options;
-    private volatile MemoryBufferPartition<T>[] _assignedPartitions;
-
+    private volatile IBufferPartition<TItem>[] _assignedPartitions = [];
     private int _partitionIndex;
-    private MemoryBufferPartition<T>? _partitionBeingConsumed;
-
+    private IBufferPartition<TItem>? _partitionBeingConsumed;
     private volatile int _pendingDataVersion;
-    private readonly PendingDataValueTaskSource<MemoryBufferPartition<T>> _pendingDataValueTaskSource;
-    private readonly ReaderWriterLockSlim _pendingDataLock;
+    private readonly PendingDataValueTaskSource<IBufferPartition<TItem>> _pendingDataValueTaskSource = new();
+    private readonly ReaderWriterLockSlim _pendingDataLock = new();
 
-    public MemoryBufferConsumer(BufferPullConsumerOptions options)
-    {
-        _options = options;
-        _assignedPartitions = [];
-        _pendingDataValueTaskSource = new PendingDataValueTaskSource<MemoryBufferPartition<T>>();
-        _pendingDataVersion = 0;
-        _pendingDataLock = new ReaderWriterLockSlim();
-    }
+    public string TopicName => options.TopicName;
 
-    public string TopicName => _options.TopicName;
+    public string GroupName => options.GroupName;
 
-    public string GroupName => _options.GroupName;
-
-    public void AssignPartitions(params MemoryBufferPartition<T>[] partitions)
+    public void AssignPartitions(params IBufferPartition<TItem>[] partitions)
     {
         _assignedPartitions = partitions;
         foreach (var partition in partitions)
@@ -44,7 +33,7 @@ internal sealed class MemoryBufferConsumer<T> : IBufferPullConsumer<T>
         }
     }
 
-    public async IAsyncEnumerable<IEnumerable<T>> ConsumeAsync(
+    public async IAsyncEnumerable<IEnumerable<TItem>> ConsumeAsync(
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         if (_assignedPartitions.Length == 0)
@@ -52,13 +41,11 @@ internal sealed class MemoryBufferConsumer<T> : IBufferPullConsumer<T>
             throw new InvalidOperationException("No partition is assigned.");
         }
 
-        while (true)
+        while (!cancellationToken.IsCancellationRequested)
         {
             var pendingDataVersion = _pendingDataVersion;
-
             var partition = SelectPartition();
-
-            var batchSize = _options.BatchSize;
+            var batchSize = options.BatchSize;
 
             if (TryPull(partition, batchSize, out var items))
             {
@@ -66,8 +53,7 @@ internal sealed class MemoryBufferConsumer<T> : IBufferPullConsumer<T>
                 continue;
             }
 
-            // Try to pull from other partitions
-            IEnumerable<T> itemsFromOtherPartition = null!;
+            IEnumerable<TItem> itemsFromOtherPartition = null!;
             var hasItemFromOtherPartition = false;
 
             foreach (var t in _assignedPartitions)
@@ -97,14 +83,11 @@ internal sealed class MemoryBufferConsumer<T> : IBufferPullConsumer<T>
             {
                 _pendingDataLock.EnterWriteLock();
 
-                // Check if the pending data version is changed,
-                // if so, it means that the pending data is already to be consumed.
                 if (_pendingDataVersion != pendingDataVersion)
                 {
                     continue;
                 }
 
-                // Mark the consumer is waiting for data.
                 _pendingDataValueTaskSource.Reset();
             }
             finally
@@ -113,10 +96,9 @@ internal sealed class MemoryBufferConsumer<T> : IBufferPullConsumer<T>
             }
 
             var pendingDataTask = _pendingDataValueTaskSource.ValueTask;
-
             var partitionWithNewData = pendingDataTask.IsCompletedSuccessfully
                 ? pendingDataTask.Result
-                : await pendingDataTask;
+                : await pendingDataTask.AsTask().WaitAsync(cancellationToken);
 
             if (TryPull(partitionWithNewData, batchSize, out items))
             {
@@ -127,7 +109,7 @@ internal sealed class MemoryBufferConsumer<T> : IBufferPullConsumer<T>
 
     public ValueTask CommitAsync()
     {
-        if (_options.AutoCommit)
+        if (options.AutoCommit)
         {
             throw new InvalidOperationException("Auto commit is enabled.");
         }
@@ -135,14 +117,13 @@ internal sealed class MemoryBufferConsumer<T> : IBufferPullConsumer<T>
         var partition = _partitionBeingConsumed ??
                         throw new InvalidOperationException("No partition is in consumption.");
 
-        partition.Commit(_options.GroupName);
-
+        partition.Commit(options.GroupName);
         _partitionBeingConsumed = null;
 
         return ValueTask.CompletedTask;
     }
 
-    public void NotifyNewDataAvailable(MemoryBufferPartition<T> partition)
+    public void NotifyNewDataAvailable(IBufferPartition<TItem> partition)
     {
         Interlocked.Increment(ref _pendingDataVersion);
 
@@ -175,29 +156,21 @@ internal sealed class MemoryBufferConsumer<T> : IBufferPullConsumer<T>
         }
     }
 
-    private bool TryPull(MemoryBufferPartition<T> partition, int batchSize,
-        [NotNullWhen(true)] out IEnumerable<T>? items)
+    private bool TryPull(IBufferPartition<TItem> partition, int batchSize,
+        [NotNullWhen(true)] out IEnumerable<TItem>? items)
     {
         _partitionBeingConsumed = partition;
-        var dataAvailable = partition.TryPull(_options.GroupName, batchSize, out items);
+        var dataAvailable = partition.TryPull(options.GroupName, batchSize, out items);
 
-        if (dataAvailable)
+        if (dataAvailable && options.AutoCommit)
         {
-            AutoCommitIfEnabled(partition);
+            partition.Commit(options.GroupName);
         }
 
         return dataAvailable;
     }
 
-    private void AutoCommitIfEnabled(MemoryBufferPartition<T> partition)
-    {
-        if (_options.AutoCommit)
-        {
-            partition.Commit(_options.GroupName);
-        }
-    }
-
-    private MemoryBufferPartition<T> SelectPartition()
+    private IBufferPartition<TItem> SelectPartition()
     {
         var partitions = _assignedPartitions;
 

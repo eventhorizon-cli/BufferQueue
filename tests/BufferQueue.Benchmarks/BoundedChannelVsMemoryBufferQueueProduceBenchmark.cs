@@ -7,11 +7,11 @@ using BufferQueue.Memory;
 
 namespace BufferQueue.Benchmarks;
 
-public class MemoryBufferQueueBoundedChannelProduceBenchmark
+public class BoundedChannelVsMemoryBufferQueueProduceBenchmark
 {
-    private int[][] _chunks = default!;
+    private int[][] _chunks = null!;
 
-    [Params(4096, 8192)] public int MessageSize { get; set; }
+    [Params(8192)] public int MessageSize { get; set; }
 
     [GlobalSetup]
     public void Setup()
@@ -21,7 +21,7 @@ public class MemoryBufferQueueBoundedChannelProduceBenchmark
     }
 
     [Benchmark(Baseline = true)]
-    public async Task Channel_BoundedConcurrentProduce()
+    public async Task Channel_Produce_BoundedConcurrent()
     {
         var channel = Channel.CreateBounded<int>(new BoundedChannelOptions(MessageSize)
         {
@@ -41,7 +41,7 @@ public class MemoryBufferQueueBoundedChannelProduceBenchmark
     }
 
     [Benchmark]
-    public async Task MemoryBufferQueue_BoundedConcurrentProduce()
+    public async Task MemoryBufferQueue_Produce_BoundedConcurrent()
     {
         var queue = new MemoryBufferQueue<int>(new MemoryBufferQueueOptions
         {

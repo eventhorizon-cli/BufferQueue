@@ -117,14 +117,14 @@ internal sealed class MemoryBufferSegment<T>
         var writePosition = Math.Min(_publishedWritePosition, _slots.Length - 1);
         // Number of items actually available to return (bounded by requested count and written items).
         var availableCount = Math.Min(count, writePosition - readPosition + 1);
-        items = new ArraySegment<T>(_slots, readPosition, availableCount);
+        items = new(_slots, readPosition, availableCount);
         return true;
     }
 
     public MemoryBufferSegment<T> RecycleSlots(MemoryBufferPartitionOffset startOffset)
     {
         Array.Clear(_slots, 0, _slots.Length);
-        return new MemoryBufferSegment<T>(_slots, startOffset);
+        return new(_slots, startOffset);
     }
 
     private class DebugView(MemoryBufferSegment<T> segment)

@@ -72,15 +72,15 @@ internal readonly record struct MemoryBufferPartitionOffset(ulong Generation, ul
 
         if (left.Generation == right.Generation)
         {
-            return new MemoryBufferPartitionOffset(0, left.Index - right.Index);
+            return new(0, left.Index - right.Index);
         }
 
         if (left.Index >= right.Index)
         {
-            return new MemoryBufferPartitionOffset(left.Generation - right.Generation, left.Index - right.Index);
+            return new(left.Generation - right.Generation, left.Index - right.Index);
         }
 
-        return new MemoryBufferPartitionOffset(
+        return new(
             left.Generation - right.Generation - 1,
             ulong.MaxValue - right.Index + left.Index + 1);
     }
@@ -94,7 +94,7 @@ internal readonly record struct MemoryBufferPartitionOffset(ulong Generation, ul
             generation++;
         }
 
-        return new MemoryBufferPartitionOffset(generation, index);
+        return new(generation, index);
     }
 
     public static MemoryBufferPartitionOffset operator -(MemoryBufferPartitionOffset offset, ulong value)
@@ -106,7 +106,7 @@ internal readonly record struct MemoryBufferPartitionOffset(ulong Generation, ul
             generation--;
         }
 
-        return new MemoryBufferPartitionOffset(generation, index);
+        return new(generation, index);
     }
 
     public static MemoryBufferPartitionOffset operator ++(MemoryBufferPartitionOffset offset) => offset + 1;

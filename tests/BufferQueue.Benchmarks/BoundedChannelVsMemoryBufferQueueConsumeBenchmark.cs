@@ -7,12 +7,12 @@ using BufferQueue.Memory;
 
 namespace BufferQueue.Benchmarks;
 
-public class MemoryBufferQueueBoundedChannelConsumeBenchmark
+public class BoundedChannelVsMemoryBufferQueueConsumeBenchmark
 {
-    private Channel<int> _boundedChannel = default!;
-    private IEnumerable<IBufferPullConsumer<int>> _boundedMemoryBufferQueueConsumers = default!;
+    private Channel<int> _boundedChannel = null!;
+    private IEnumerable<IBufferPullConsumer<int>> _boundedMemoryBufferQueueConsumers = null!;
 
-    [Params(4096, 8192)] public int MessageSize { get; set; }
+    [Params(8192)] public int MessageSize { get; set; }
 
     [Params(1, 10, 100, 1000)] public int BatchSize { get; set; }
 
@@ -51,13 +51,13 @@ public class MemoryBufferQueueBoundedChannelConsumeBenchmark
     }
 
     [Benchmark(Baseline = true)]
-    public void Channel_BoundedConcurrentConsume()
+    public void Channel_Consume_BoundedConcurrent()
     {
         ConsumeChannel(_boundedChannel);
     }
 
     [Benchmark]
-    public void MemoryBufferQueue_BoundedConcurrentConsume()
+    public void MemoryBufferQueue_Consume_BoundedConcurrent()
     {
         ConsumeMemoryBufferQueue(_boundedMemoryBufferQueueConsumers);
     }

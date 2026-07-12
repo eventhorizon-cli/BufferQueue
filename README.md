@@ -10,11 +10,18 @@ BufferQueue is a high-performance buffer queue implementation written in .NET, w
 
 The project is an independent component separated from the [mocha](https://github.com/dotnetcore/mocha) project, which has been modified to provide more general buffer queue functionality.
 
-Currently, the supported buffer type is only memory buffers, but more types of buffers may be considered in the future.
+BufferQueue currently provides two storage modes:
+
+- Memory: in-process segmented memory storage, optimized for high-throughput batch consumption.
+- MemoryMappedFile: local memory-mapped segment files with persisted writer and consumer offsets.
 
 ## Applicable Scenarios
 
 Scenarios that require concurrent batch processing of data when the speed between producers and consumers is inconsistent.
+
+Use Memory mode when the queue only needs to buffer data inside the current process and maximum consumption throughput is the priority.
+
+Use MemoryMappedFile mode when produced data and committed consumer offsets need to survive process restarts. MemoryMappedFile mode is a local persistence mechanism for one active queue instance; it does not coordinate multiple processes writing to the same topic directory.
 
 ## Comparison with Common In-Memory Queues
 
@@ -25,17 +32,19 @@ The project includes BenchmarkDotNet benchmarks that compare `MemoryBufferQueue<
 Summary:
 
 - Producing: `Channel<T>` is faster; `MemoryBufferQueue<T>` allocates less memory in Bounded producing, while Unbounded producing is not its advantage.
-- Consuming: `MemoryBufferQueue<T>` is mainly optimized for batch consumption. In this benchmark set, larger batches usually show a clearer advantage, up to about `84x` under the current parameters.
+- Consuming: `MemoryBufferQueue<T>` is mainly optimized for batch consumption. In this benchmark set, larger batches usually show a clearer advantage, up to about `84x` under the recorded parameters.
 - Memory allocation: `MemoryBufferQueue<T>` allocates less in producing scenarios; `Channel<T>` allocates less in consuming scenarios.
 
-Representative results:
+Representative results from the recorded full run are retained below. The in-memory queue comparisons use
+`MessageSize = 8192`; the MemoryMappedFile queue comparisons use `MessageSize = 1024` and a short-run job to keep
+their file-backed runs brief.
 
 | Type | Scenario | Parameters | `Channel<T>` | `MemoryBufferQueue<T>` | Result |
 | --- | --- | --- | ---: | ---: | --- |
 | Producing | Unbounded | `MessageSize = 8192` | `336.8 μs` | `689.2 μs` | `Channel<T>` is faster |
 | Producing | Bounded | `MessageSize = 8192` | `360.2 μs` | `8,402.0 μs` | `Channel<T>` is faster |
-| Consuming | Unbounded | `MessageSize = 8192`, `BatchSize = 1000` | `3,461.03 μs` | `41.30 μs` | About `84x` faster under current parameters |
-| Consuming | Bounded | `MessageSize = 8192`, `BatchSize = 1000` | `2,214.21 μs` | `41.68 μs` | About `53x` faster under current parameters |
+| Consuming | Unbounded | `MessageSize = 8192`, `BatchSize = 1000` | `3,461.03 μs` | `41.30 μs` | About `84x` faster under the recorded parameters |
+| Consuming | Bounded | `MessageSize = 8192`, `BatchSize = 1000` | `2,214.21 μs` | `41.68 μs` | About `53x` faster under the recorded parameters |
 
 Test platform:
 
@@ -53,6 +62,12 @@ Run the full benchmark with:
 dotnet run -c Release --project tests/BufferQueue.Benchmarks/BufferQueue.Benchmarks.csproj
 ```
 
+Run only the System.Text.Json, MessagePack, and unmanaged MMF serializer comparison with:
+
+```shell
+dotnet run -c Release --project tests/BufferQueue.Benchmarks/BufferQueue.Benchmarks.csproj -- --filter '*MemoryMappedFileSerializer*'
+```
+
 ## Functional Design
 
 1. Supports creating multiple topics, each of which can have multiple data types. Each pair of topics and data types corresponds to an independent buffer.
@@ -66,6 +81,8 @@ dotnet run -c Release --project tests/BufferQueue.Benchmarks/BufferQueue.Benchma
 5. Supports two consumption modes: pull mode and push mode.
 
 6. Supports two submission methods: auto-commit and manual commit in both pull and push modes. In auto-commit mode, the consumer automatically submits the consumption progress after receiving the data. If the consumption fails, it will not be retried. In manual commit mode, the consumer needs to manually submit the consumption progress. If the consumption fails, it can be retried as long as the progress is not submitted.
+
+7. Supports multiple storage modes. Memory mode keeps data and offsets in process memory. MemoryMappedFile mode stores records in memory-mapped segment files and persists writer and committed consumer offsets to disk.
 
 ![BufferQueue](docs/assets/BufferQueueMindMap.png)
 
@@ -95,7 +112,7 @@ Supports dynamically adjusting the buffer size to adapt to scenarios where the p
 
 ## Usage Example
 
-Install the Nuget package:
+Install the core NuGet package:
 
 ```shell
 dotnet add package BufferQueue
@@ -105,7 +122,9 @@ The project is based on Microsoft.Extensions.DependencyInjection, and services n
 
 BufferQueue supports two consumption modes: pull mode and push mode.
 
-Pull mode consumer example:
+### Memory Mode Registration
+
+Memory mode stores data in process memory. It supports optional bounded capacity.
 
 ```csharp
 builder.Services.AddBufferQueue(bufferOptionsBuilder =>
@@ -142,6 +161,115 @@ builder.Services.AddBufferQueue(bufferOptionsBuilder =>
 // Pull mode consumers can be implemented as HostedService.
 builder.Services.AddHostedService<Foo1PullConsumerHostService>();
 ```
+
+### MemoryMappedFile Mode Registration
+
+MemoryMappedFile mode stores serialized records in memory-mapped files and persists offsets. The default serializer is an internal `System.Text.Json` implementation. Built-in MessagePack and unmanaged-struct serializers, as well as custom serializers, are available through `MemoryMappedFileBufferQueueOptions<T>.Serializer`.
+
+MemoryMappedFile support is distributed as a separate package:
+
+```shell
+dotnet add package BufferQueue.MemoryMappedFile
+```
+
+`BufferQueue.MemoryMappedFile` depends on the core `BufferQueue` package. The public namespaces and the `.UseMemoryMappedFile(...)` registration call are unchanged.
+
+```csharp
+builder.Services.AddBufferQueue(bufferOptionsBuilder =>
+{
+    bufferOptionsBuilder
+        .UseMemoryMappedFile(memoryMappedFileBufferOptionsBuilder =>
+        {
+            memoryMappedFileBufferOptionsBuilder
+                .AddTopic<Foo>(options =>
+                {
+                    options.TopicName = "topic-foo";
+                    options.PartitionNumber = 4;
+                    options.SegmentSize = 64L * 1024 * 1024;
+                    options.DataDirectory = "/var/lib/bufferqueue";
+                    options.FlushStrategy = MemoryMappedFileFlushStrategy.Batch;
+                    options.FlushBatchSize = 100;
+                    options.Serializer = new MessagePackMemoryMappedFileSerializer<Foo>();
+                });
+        });
+});
+```
+
+With the default `MessagePackSerializerOptions.Standard` options, custom types should declare an explicit MessagePack contract with stable numeric keys:
+
+```shell
+dotnet add package MessagePack --version 3.1.8
+```
+
+Applications should reference MessagePack directly so its analyzer and source generator run in the application project; the `BufferQueue.MemoryMappedFile` package's transitive runtime dependency on MessagePack does not supply these build assets.
+
+```csharp
+using MessagePack;
+
+[MessagePackObject]
+public sealed class Foo
+{
+    [Key(0)]
+    public int Id { get; set; }
+
+    [Key(1)]
+    public string Name { get; set; } = string.Empty;
+}
+```
+
+`MessagePackMemoryMappedFileSerializer<T>` also accepts `MessagePackSerializerOptions`, so callers can configure a resolver, compression, or `MessagePackSecurity.UntrustedData`. Any configured resolver and formatter must be safe for concurrent use. Configuring `Serializer` is optional. If it is not configured, MemoryMappedFile mode uses the internal `System.Text.Json` implementation by default. Other formats can be integrated by implementing `IMemoryMappedFileSerializer<T>`.
+
+For fixed-layout unmanaged structs, `UnmanagedMemoryMappedFileSerializer<T>` copies the value's in-memory representation without JSON or MessagePack encoding:
+
+```csharp
+using System.Runtime.InteropServices;
+
+[StructLayout(LayoutKind.Sequential, Pack = 1)]
+public struct Quote
+{
+    public long Sequence;
+    public double Price;
+    public int Quantity;
+}
+
+options.Serializer = UnmanagedMemoryMappedFileSerializer<Quote>.Instance;
+```
+
+The `unmanaged` constraint rejects reference fields at compile time. `[StructLayout]` is not required, but explicitly fixing the layout and packing is recommended for persisted data. Native endianness, padding, field order, packing, runtime, and process architecture are part of this raw format; avoid pointer-sized or process-specific fields and do not change the layout while existing records remain. Payload length is validated exactly during reads. This serializer removes format encoding and decoding, but the current queue contract still materializes a payload `byte[]`, so it is not a zero-copy MMF reader.
+
+The configured serializer, numeric keys, resolver, compression, and other wire-format options must remain compatible with records already stored for the topic. Do not reuse removed numeric keys. Changing the persisted format can make existing records impossible to consume after recovery.
+
+One serializer instance is shared by the topic partitions and can be called concurrently. Custom `IMemoryMappedFileSerializer<T>` implementations must be thread-safe and must not return `null`.
+
+`FlushStrategy` defaults to `MemoryMappedFileFlushStrategy.Immediate`, which explicitly flushes every record. `MemoryMappedFileFlushStrategy.Batch` explicitly flushes after `FlushBatchSize` records in a partition; `FlushBatchSize` defaults to `100`. A segment rollover and a consumer commit are always flush boundaries, regardless of the configured batch size. At each boundary, the partition flushes the log successfully before advancing `writer.offset`.
+
+Batch flushing reduces the number of explicit flushes, but a partial tail batch is not guaranteed to have been explicitly flushed when there is no subsequent production, segment rollover, or consumer commit. Applications that require every successful produce call to be an explicit durability boundary should use the default `Immediate` strategy.
+
+MemoryMappedFile data is stored by topic and partition:
+
+```text
+{DataDirectory}/{TopicName}/partition-{PartitionId:D5}/
+```
+
+For example:
+
+```text
+/var/lib/bufferqueue/topic-foo/partition-00000/00000000000000000000.log
+/var/lib/bufferqueue/topic-foo/partition-00000/writer.offset
+/var/lib/bufferqueue/topic-foo/partition-00000/offsets/group-foo/offset
+```
+
+Consumer group names are used directly as offset directory names when they are valid folder names. Invalid path-component characters are percent-encoded. For example, group `orders/worker 1` is stored under:
+
+```text
+offsets/orders%2Fworker 1/offset
+```
+
+During recovery, missing `writer.offset` is treated as an initial scan from `0`, and a writer offset that is behind the actual log is scanned forward. Because `writer.offset` advances only after the corresponding log data has been flushed successfully, it can safely lag complete records that reached the log after the last checkpoint. Corrupted, ahead-of-log, or non-record-boundary offsets fail fast with an exception instead of silently resetting progress. In `Batch` mode, an unflushed partial tail batch may be absent after an abnormal termination.
+
+When recovering an existing MemoryMappedFile topic, do not reduce `PartitionNumber`. Historical records stored in removed partitions would no longer have a partition reader and could not be consumed, so startup fails fast with an `InvalidDataException` if existing partition directories exceed the configured partition count.
+
+### Pull Mode Consumer
 
 Pull mode consumer example:
 
@@ -252,7 +380,7 @@ Producer example:
 
 Get the specified producer through the IBufferQueue service and send the data by calling the ProduceAsync method.
 
-If bounded capacity is set, when the buffer is full, the ProduceAsync method will discard the data and throw a MemoryBufferQueueFullException.
+In Memory mode, if bounded capacity is set, when the buffer is full, the ProduceAsync method will discard the data and throw a MemoryBufferQueueFullException.
 You can use the TryProduceAsync method to check if the data was successfully sent.
 
 ```csharp
@@ -287,3 +415,7 @@ public class TestController(IBufferQueue bufferQueue) : ControllerBase
     }
 }
 ```
+
+## Samples
+
+See [`samples/WebAPI`](samples/WebAPI/) for a runnable ASP.NET Core example of BufferQueue registration, production, and pull/push consumption.
