@@ -14,8 +14,7 @@ var allBenchmarks = new[]
 {
     typeof(BlockingCollectionVsMemoryBufferQueueProduceBenchmark),
     typeof(BlockingCollectionVsMemoryBufferQueueConsumeBenchmark),
-    typeof(UnboundedChannelVsMemoryBufferQueueProduceBenchmark),
-    typeof(BoundedChannelVsMemoryBufferQueueProduceBenchmark),
+    typeof(ChannelVsMemoryBufferQueueProduceBenchmark),
     typeof(UnboundedChannelVsMemoryBufferQueueConsumeBenchmark),
     typeof(BoundedChannelVsMemoryBufferQueueConsumeBenchmark),
     typeof(MemoryVsMemoryMappedFileBufferQueueProduceBenchmark),

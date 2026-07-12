@@ -3,13 +3,29 @@
 
 using System.Threading.Channels;
 using BenchmarkDotNet.Attributes;
+using BenchmarkDotNet.Jobs;
 using BufferQueue.Memory;
 
 namespace BufferQueue.Benchmarks;
 
-public class UnboundedChannelVsMemoryBufferQueueProduceBenchmark
+[SimpleJob(
+    RuntimeMoniker.Net10_0,
+    launchCount: 1,
+    warmupCount: 6,
+    iterationCount: 15,
+    id: "Fixed")]
+public class ChannelVsMemoryBufferQueueProduceBenchmark
 {
+    public enum CapacityMode
+    {
+        Unbounded,
+        Bounded,
+    }
+
     private int[][] _chunks = null!;
+
+    [Params(CapacityMode.Unbounded, CapacityMode.Bounded)]
+    public CapacityMode Mode { get; set; }
 
     [Params(8192)] public int MessageSize { get; set; }
 
@@ -21,9 +37,15 @@ public class UnboundedChannelVsMemoryBufferQueueProduceBenchmark
     }
 
     [Benchmark(Baseline = true)]
-    public async Task Channel_Produce_UnboundedConcurrent()
+    public async Task Channel_Produce_Concurrent()
     {
-        var channel = Channel.CreateUnbounded<int>();
+        var channel = Mode == CapacityMode.Bounded
+            ? Channel.CreateBounded<int>(new BoundedChannelOptions(MessageSize)
+            {
+                SingleReader = false,
+                SingleWriter = false,
+            })
+            : Channel.CreateUnbounded<int>();
         var writer = channel.Writer;
         var tasks = _chunks.Select(chunk => Task.Run(() =>
         {
@@ -37,12 +59,13 @@ public class UnboundedChannelVsMemoryBufferQueueProduceBenchmark
     }
 
     [Benchmark]
-    public async Task MemoryBufferQueue_Produce_UnboundedConcurrent()
+    public async Task MemoryBufferQueue_Produce_Concurrent()
     {
         var queue = new MemoryBufferQueue<int>(new MemoryBufferQueueOptions
         {
             TopicName = "test",
-            PartitionNumber = Environment.ProcessorCount
+            PartitionNumber = Environment.ProcessorCount,
+            BoundedCapacity = Mode == CapacityMode.Bounded ? (ulong)MessageSize : null,
         });
         var producer = queue.GetProducer();
         var tasks = _chunks.Select(chunk => Task.Run(async () =>
@@ -59,5 +82,4 @@ public class UnboundedChannelVsMemoryBufferQueueProduceBenchmark
 
         await Task.WhenAll(tasks);
     }
-
 }

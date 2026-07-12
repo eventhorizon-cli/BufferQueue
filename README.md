@@ -31,30 +31,39 @@ The project includes BenchmarkDotNet benchmarks that compare `MemoryBufferQueue<
 
 Summary:
 
-- Producing: `Channel<T>` is faster; `MemoryBufferQueue<T>` allocates less memory in Bounded producing, while Unbounded producing is not its advantage.
+- Producing: `Channel<T>` is about `2.38x` faster in Unbounded mode and `1.69x` faster in Bounded mode under the recorded parameters. Both queues complete the 8,192-item concurrent write within the same sub-millisecond order of magnitude.
 - Consuming: `MemoryBufferQueue<T>` is mainly optimized for batch consumption. In this benchmark set, larger batches usually show a clearer advantage, up to about `84x` under the recorded parameters.
 - Memory allocation: `MemoryBufferQueue<T>` allocates less in producing scenarios; `Channel<T>` allocates less in consuming scenarios.
 
-Representative results from the recorded full run are retained below. The in-memory queue comparisons use
-`MessageSize = 8192`; the MemoryMappedFile queue comparisons use `MessageSize = 1024` and a short-run job to keep
-their file-backed runs brief.
+Representative results from the recorded benchmark runs are retained below. The in-memory queue comparisons use
+`MessageSize = 8192`. The producing rows run both capacity modes in the same `Fixed` job with `LaunchCount = 1`,
+`WarmupCount = 6`, and `IterationCount = 15` on .NET 10. The consuming rows are retained from the earlier recorded
+run and were not rerun as part of this producing benchmark update. The MemoryMappedFile queue comparisons use
+`MessageSize = 1024` and a short-run job to keep their file-backed runs brief.
+
+Producer and consumer concurrency are derived from `Environment.ProcessorCount`, which was `12` for the recorded
+results. Producing uses `12` tasks sharing one `Channel<T>` writer or one `MemoryBufferQueue<T>` producer; the
+MemoryBufferQueue has `12` partitions. Consuming uses `12` Channel reader tasks or `12` BufferQueue consumers over
+`12` partitions.
 
 | Type | Scenario | Parameters | `Channel<T>` | `MemoryBufferQueue<T>` | Result |
 | --- | --- | --- | ---: | ---: | --- |
-| Producing | Unbounded | `MessageSize = 8192` | `336.8 μs` | `689.2 μs` | `Channel<T>` is faster |
-| Producing | Bounded | `MessageSize = 8192` | `360.2 μs` | `8,402.0 μs` | `Channel<T>` is faster |
-| Consuming | Unbounded | `MessageSize = 8192`, `BatchSize = 1000` | `3,461.03 μs` | `41.30 μs` | About `84x` faster under the recorded parameters |
-| Consuming | Bounded | `MessageSize = 8192`, `BatchSize = 1000` | `2,214.21 μs` | `41.68 μs` | About `53x` faster under the recorded parameters |
+| Producing | Unbounded | `MessageSize = 8192`, `ProducerTasks = 12` | `289.5 μs` | `688.2 μs` | `Channel<T>` is faster |
+| Producing | Bounded | `MessageSize = 8192`, `ProducerTasks = 12` | `304.1 μs` | `512.9 μs` | `Channel<T>` is faster |
+| Consuming | Unbounded | `MessageSize = 8192`, `BatchSize = 1000`, `ConsumerTasks = 12` | `3,461.03 μs` | `41.30 μs` | About `84x` faster under the recorded parameters |
+| Consuming | Bounded | `MessageSize = 8192`, `BatchSize = 1000`, `ConsumerTasks = 12` | `2,214.21 μs` | `41.68 μs` | About `53x` faster under the recorded parameters |
 
-Test platform:
+Producing benchmark platform:
 
 | Item | Value |
 | --- | --- |
 | OS | macOS `15.7.7` (`24G720`) |
 | RID | `osx-arm64` |
 | .NET SDK | `10.0.100` |
-| .NET Host | `10.0.0`, `arm64` |
-| Benchmark target | `net8.0` |
+| .NET runtime | `10.0.0`, `arm64` |
+| BenchmarkDotNet | `0.15.8` |
+| Channel | `System.Threading.Channels 10.0.0` from the .NET `10.0.0` shared framework; assembly version `10.0.0.0`; no separate NuGet package |
+| Benchmark target | `net10.0` |
 
 Run the full benchmark with:
 

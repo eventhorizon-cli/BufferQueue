@@ -30,29 +30,37 @@ BufferQueue 当前提供两种存储模式：
 
 结果摘要：
 
-- 生产：`Channel<T>` 更快；`MemoryBufferQueue<T>` Bounded 生产内存分配更少，Unbounded 生产不是优势场景。
+- 生产：在该次记录参数下，`Channel<T>` 在 Unbounded 模式下约快 `2.38x`，在 Bounded 模式下约快 `1.69x`；不过两种 queue 完成 8192 条并发写入都处于亚毫秒级，仍属于同一数量级。
 - 消费：`MemoryBufferQueue<T>` 的主要优势在批量消费；在本组测试中，批量越大优势通常越明显，该次记录参数下最高约快 `84x`。
 - 内存分配：生产场景 `MemoryBufferQueue<T>` 分配较少；消费场景 `Channel<T>` 分配较少。
 
-下面保留的是此前完整跑数的代表性数据。纯内存 queue 对比使用 `MessageSize = 8192`；MemoryMappedFile queue
-对比使用 `MessageSize = 1024` 和 short-run job，以缩短文件存储场景的运行时间。
+下面保留的是已记录 benchmark 的代表性数据。纯内存 queue 对比使用 `MessageSize = 8192`。生产数据的
+Bounded 和 Unbounded 模式使用同一个 `Fixed` job，配置为 `LaunchCount = 1`、`WarmupCount = 6`、
+`IterationCount = 15`，并运行于 .NET 10。本次只重新运行生产 benchmark，消费行仍保留此前记录的代表性数据。
+MemoryMappedFile queue 对比使用 `MessageSize = 1024` 和 short-run job，以缩短文件存储场景的运行时间。
+
+生产和消费的并发数均取自 `Environment.ProcessorCount`，该次记录结果为 `12`。生产场景使用 `12` 个 task
+共享一个 `Channel<T>` writer 或一个 `MemoryBufferQueue<T>` producer，MemoryBufferQueue 配置 `12` 个 partition；
+消费场景使用 `12` 个 Channel reader task，或在 `12` 个 partition 上使用 `12` 个 BufferQueue consumer。
 
 | 类型 | 场景 | 参数 | `Channel<T>` | `MemoryBufferQueue<T>` | 结论 |
 | --- | --- | --- | ---: | ---: | --- |
-| 生产 | Unbounded | `MessageSize = 8192` | `336.8 μs` | `689.2 μs` | `Channel<T>` 更快 |
-| 生产 | Bounded | `MessageSize = 8192` | `360.2 μs` | `8,402.0 μs` | `Channel<T>` 更快 |
-| 消费 | Unbounded | `MessageSize = 8192`, `BatchSize = 1000` | `3,461.03 μs` | `41.30 μs` | 该次记录参数下约快 `84x` |
-| 消费 | Bounded | `MessageSize = 8192`, `BatchSize = 1000` | `2,214.21 μs` | `41.68 μs` | 该次记录参数下约快 `53x` |
+| 生产 | Unbounded | `MessageSize = 8192`, `ProducerTasks = 12` | `289.5 μs` | `688.2 μs` | `Channel<T>` 更快 |
+| 生产 | Bounded | `MessageSize = 8192`, `ProducerTasks = 12` | `304.1 μs` | `512.9 μs` | `Channel<T>` 更快 |
+| 消费 | Unbounded | `MessageSize = 8192`, `BatchSize = 1000`, `ConsumerTasks = 12` | `3,461.03 μs` | `41.30 μs` | 该次记录参数下约快 `84x` |
+| 消费 | Bounded | `MessageSize = 8192`, `BatchSize = 1000`, `ConsumerTasks = 12` | `2,214.21 μs` | `41.68 μs` | 该次记录参数下约快 `53x` |
 
-测试平台：
+生产 benchmark 测试平台：
 
 | 项目 | 信息 |
 | --- | --- |
 | 操作系统 | macOS `15.7.7` (`24G720`) |
 | 运行时标识 | `osx-arm64` |
 | .NET SDK | `10.0.100` |
-| .NET Host | `10.0.0`, `arm64` |
-| Benchmark 运行目标 | `net8.0` |
+| .NET runtime | `10.0.0`, `arm64` |
+| BenchmarkDotNet | `0.15.8` |
+| Channel | .NET `10.0.0` 共享框架自带的 `System.Threading.Channels 10.0.0`；程序集版本 `10.0.0.0`；未单独引用 NuGet 包 |
+| Benchmark 运行目标 | `net10.0` |
 
 可以通过以下命令运行完整 benchmark：
 

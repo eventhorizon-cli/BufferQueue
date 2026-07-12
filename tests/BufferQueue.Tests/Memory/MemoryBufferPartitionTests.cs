@@ -120,7 +120,7 @@ public class MemoryBufferPartitionTests
         Assert.True(partition.TryPull("TestGroup", 1, out var items));
 
         var list = Assert.IsAssignableFrom<IReadOnlyList<int>>(items);
-        Assert.Equal(1, list.Count);
+        Assert.Single(list);
         Assert.Equal(42, list[0]);
         Assert.Throws<ArgumentOutOfRangeException>(() => list[1]);
 

@@ -13,7 +13,10 @@ internal sealed class MemoryBufferProducer<T>(
     : IBufferProducer<T>
 {
     private uint _partitionIndex;
-    private int _checkingCapacity;
+    private readonly MemoryBufferCapacityGate? _capacityGate = options.BoundedCapacity is { } capacity
+        ? new(capacity)
+        : null;
+    private readonly object _boundedAppendLock = new();
 
     public string TopicName { get; } = options.TopicName!;
 
@@ -35,39 +38,36 @@ internal sealed class MemoryBufferProducer<T>(
 
     private bool TryEnqueue(T item)
     {
-        if (!options.BoundedCapacity.HasValue)
+        var capacityGate = _capacityGate;
+        if (capacityGate == null)
         {
             Enqueue(item);
             return true;
         }
 
-        while (true)
+        if (!capacityGate.TryAcquire())
         {
-            if (Interlocked.CompareExchange(ref _checkingCapacity, 1, 0) != 0)
-            {
-                continue;
-            }
+            return false;
+        }
 
-            try
+        var appended = false;
+        var reclaimedCount = 0UL;
+        try
+        {
+            lock (_boundedAppendLock)
             {
-                var count = 0UL;
-                foreach (var partition in partitions)
-                {
-                    count += partition.Count;
-                    if (count >= options.BoundedCapacity.Value)
-                    {
-                        return false;
-                    }
-                }
-
-                Enqueue(item);
-                return true;
-            }
-            finally
-            {
-                Interlocked.Exchange(ref _checkingCapacity, 0);
+                var partition = SelectPartition();
+                partition.Enqueue(item, out reclaimedCount, out appended);
             }
         }
+        catch
+        {
+            capacityGate.Release(appended ? reclaimedCount : 1);
+            throw;
+        }
+
+        capacityGate.Release(reclaimedCount);
+        return true;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

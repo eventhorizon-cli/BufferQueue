@@ -55,18 +55,31 @@ internal sealed class MemoryBufferPartition<T>
 
     public void Enqueue(T item)
     {
+        Enqueue(item, out _, out _);
+    }
+
+    internal void Enqueue(T item, out ulong reclaimedCount, out bool appended)
+    {
+        appended = false;
+        reclaimedCount = Append(item);
+        appended = true;
+
+        foreach (var consumer in _consumers)
+        {
+            consumer.NotifyNewDataAvailable(this);
+        }
+    }
+
+    private ulong Append(T item)
+    {
+        var reclaimedCount = 0UL;
         while (true)
         {
             var tail = _tail;
 
             if (tail.TryEnqueue(item))
             {
-                foreach (var consumer in _consumers)
-                {
-                    consumer.NotifyNewDataAvailable(this);
-                }
-
-                return;
+                return reclaimedCount;
             }
 
             lock (_createSegmentLock)
@@ -78,9 +91,13 @@ internal sealed class MemoryBufferPartition<T>
                 }
 
                 var newSegmentStartOffset = tail.EndOffset + 1;
-                var newSegment = TryRecycleSegment(newSegmentStartOffset, out var recycledSegment)
+                var newSegment = TryRecycleSegment(
+                    newSegmentStartOffset,
+                    out var recycledSegment,
+                    out var newlyReclaimedCount)
                     ? recycledSegment
                     : new(_segmentSize, newSegmentStartOffset);
+                reclaimedCount += newlyReclaimedCount;
                 tail.NextSegment = newSegment;
                 _tail = newSegment;
             }
@@ -108,9 +125,11 @@ internal sealed class MemoryBufferPartition<T>
 
     private bool TryRecycleSegment(
         MemoryBufferPartitionOffset newSegmentStartOffset,
-        [NotNullWhen(true)] out MemoryBufferSegment<T>? recycledSegment)
+        [NotNullWhen(true)] out MemoryBufferSegment<T>? recycledSegment,
+        out ulong reclaimedCount)
     {
         recycledSegment = null;
+        reclaimedCount = 0;
 
         if (_head == _tail)
         {
@@ -126,11 +145,13 @@ internal sealed class MemoryBufferPartition<T>
             if (wholeSegmentConsumed)
             {
                 recyclableSegment = segment;
+                reclaimedCount += (ulong)segment.Count;
             }
         }
 
         if (recyclableSegment == null)
         {
+            reclaimedCount = 0;
             return false;
         }
 
