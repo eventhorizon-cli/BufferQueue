@@ -424,6 +424,8 @@ The implementation is designed for concurrent production and consumption within 
 Important concurrency points:
 
 - Producers choose partitions with atomic round-robin counters.
+- Memory segments expose only the gap-free written range starting at the first slot, so consumers never observe a
+  reserved slot before its item has been stored.
 - Partition append paths use locks where the storage format requires serialized writes.
 - Consumer group creation is guarded by a queue-level lock.
 - Consumer wait and wake-up state is protected by `ReaderWriterLockSlim`.

@@ -90,16 +90,22 @@ internal sealed class MemoryBufferPartition<T>
                     continue;
                 }
 
+                tail.WaitUntilAllSlotsPublished();
                 var newSegmentStartOffset = tail.EndOffset + 1;
                 var newSegment = TryRecycleSegment(
                     newSegmentStartOffset,
                     out var recycledSegment,
+                    out var recycledHead,
                     out var newlyReclaimedCount)
                     ? recycledSegment
                     : new(_segmentSize, newSegmentStartOffset);
                 reclaimedCount += newlyReclaimedCount;
                 tail.NextSegment = newSegment;
                 _tail = newSegment;
+                if (recycledHead != null)
+                {
+                    _head = recycledHead;
+                }
             }
         }
     }
@@ -126,9 +132,11 @@ internal sealed class MemoryBufferPartition<T>
     private bool TryRecycleSegment(
         MemoryBufferPartitionOffset newSegmentStartOffset,
         [NotNullWhen(true)] out MemoryBufferSegment<T>? recycledSegment,
+        out MemoryBufferSegment<T>? recycledHead,
         out ulong reclaimedCount)
     {
         recycledSegment = null;
+        recycledHead = null;
         reclaimedCount = 0;
 
         if (_head == _tail)
@@ -156,9 +164,7 @@ internal sealed class MemoryBufferPartition<T>
         }
 
         recycledSegment = recyclableSegment.RecycleSlots(newSegmentStartOffset);
-
-        _head = recyclableSegment.NextSegment!;
-        _tail = recycledSegment;
+        recycledHead = recyclableSegment.NextSegment!;
 
         return true;
     }

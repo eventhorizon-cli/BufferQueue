@@ -47,38 +47,49 @@ public class BlockingCollectionVsMemoryBufferQueueConsumeBenchmark
     [Benchmark]
     public void BlockingCollection_Consume_Concurrent()
     {
-        var countDownEvent = new CountdownEvent(MessageSize);
-        for (var i = 0; i < Environment.ProcessorCount; i++)
+        var collection = _blockingCollection!;
+        var remaining = MessageSize;
+        var tasks = Enumerable.Range(0, Environment.ProcessorCount).Select(_ => Task.Run(() =>
         {
-            _ = Task.Run(() =>
+            while (Volatile.Read(ref remaining) > 0 && collection.TryTake(out _))
             {
-                while (true)
-                {
-                    countDownEvent.Signal();
-                    _blockingCollection!.Take();
-                }
-            });
-        }
+                Interlocked.Decrement(ref remaining);
+            }
+        })).ToArray();
 
-        countDownEvent.Wait();
+        Task.WaitAll(tasks);
+        if (remaining != 0)
+        {
+            throw new InvalidOperationException($"Expected to consume {MessageSize} items, but {remaining} remain.");
+        }
     }
 
     [Benchmark]
     public void MemoryBufferQueue_Consume_ConcurrentProcessorCountPartitions()
     {
-        var countDownEvent = new CountdownEvent(MessageSize);
-
-        foreach (var consumer in _consumers)
+        var consumerList = _consumers.ToList();
+        var partitionCount = consumerList.Count;
+        var baseMessageCount = MessageSize / partitionCount;
+        var remainder = MessageSize % partitionCount;
+        var tasks = consumerList.Select((consumer, index) => Task.Run(async () =>
         {
-            _ = Task.Run(async () =>
+            var expectedCount = baseMessageCount + (index < remainder ? 1 : 0);
+            if (expectedCount == 0)
             {
-                await foreach (var items in consumer.ConsumeAsync())
-                {
-                    countDownEvent.Signal(items.Count());
-                }
-            });
-        }
+                return;
+            }
 
-        countDownEvent.Wait();
+            var consumedCount = 0;
+            await foreach (var items in consumer.ConsumeAsync())
+            {
+                consumedCount += items.Count();
+                if (consumedCount >= expectedCount)
+                {
+                    break;
+                }
+            }
+        })).ToArray();
+
+        Task.WaitAll(tasks);
     }
 }

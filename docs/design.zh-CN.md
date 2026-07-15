@@ -426,6 +426,7 @@ services.AddBufferQueue(builder =>
 关键并发点：
 
 - Producer 使用原子 round-robin 计数器选择 partition。
+- Memory segment 只向 consumer 暴露从起点开始、没有空洞且已经写入的连续区间，不会提前暴露仅被预留的 slot。
 - Partition 写入路径在存储格式需要时使用 lock 串行化写入。
 - Consumer group 创建由 queue 级别 lock 保护。
 - Consumer 等待和唤醒状态由 `ReaderWriterLockSlim` 保护。
