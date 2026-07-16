@@ -1,8 +1,8 @@
 // Licensed to the .NET Core Community under one or more agreements.
 // The .NET Core Community licenses this file to you under the MIT license.
 
+using System;
 using System.Runtime.CompilerServices;
-using System.Threading;
 using System.Threading.Tasks;
 
 namespace BufferQueue.Memory;
@@ -13,7 +13,10 @@ internal sealed class MemoryBufferProducer<T>(
     : IBufferProducer<T>
 {
     private uint _partitionIndex;
-    private int _checkingCapacity;
+    private readonly MemoryBufferCapacityGate? _capacityGate = options.BoundedCapacity is { } capacity
+        ? new(capacity)
+        : null;
+    private readonly object _appendLock = GetSharedAppendLock(partitions);
 
     public string TopicName { get; } = options.TopicName!;
 
@@ -30,57 +33,76 @@ internal sealed class MemoryBufferProducer<T>(
     public ValueTask<bool> TryProduceAsync(T item)
     {
         var succeeded = TryEnqueue(item);
-        return new ValueTask<bool>(succeeded);
+        return new(succeeded);
     }
 
     private bool TryEnqueue(T item)
     {
-        if (!options.BoundedCapacity.HasValue)
+        var capacityGate = _capacityGate;
+        if (capacityGate == null)
         {
-            Enqueue(item);
+            MemoryBufferPartition<T> unboundedPartition;
+            lock (_appendLock)
+            {
+                unboundedPartition = SelectPartition();
+                unboundedPartition.AppendFromSerializedProducer(item);
+            }
+
+            unboundedPartition.NotifyConsumers();
             return true;
         }
 
-        while (true)
+        MemoryBufferPartition<T> partition;
+        lock (_appendLock)
         {
-            if (Interlocked.CompareExchange(ref _checkingCapacity, 1, 0) != 0)
+            if (!capacityGate.TryAcquire())
             {
-                continue;
+                return false;
             }
 
+            ulong reclaimedCount;
             try
             {
-                var count = 0UL;
-                foreach (var partition in partitions)
-                {
-                    count += partition.Count;
-                    if (count >= options.BoundedCapacity.Value)
-                    {
-                        return false;
-                    }
-                }
-
-                Enqueue(item);
-                return true;
+                partition = SelectPartition();
+                reclaimedCount = partition.AppendFromSerializedProducer(item);
             }
-            finally
+            catch
             {
-                Interlocked.Exchange(ref _checkingCapacity, 0);
+                capacityGate.Release();
+                throw;
             }
-        }
-    }
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private void Enqueue(T item)
-    {
-        var partition = SelectPartition();
-        partition.Enqueue(item);
+            capacityGate.Release(reclaimedCount);
+        }
+
+        partition.NotifyConsumers();
+        return true;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private MemoryBufferPartition<T> SelectPartition()
     {
-        var index = (Interlocked.Increment(ref _partitionIndex) - 1) % partitions.Length;
+        var index = _partitionIndex;
+        _partitionIndex = index + 1 == partitions.Length ? 0 : index + 1;
         return partitions[index];
+    }
+
+    private static object GetSharedAppendLock(MemoryBufferPartition<T>[] bufferPartitions)
+    {
+        if (bufferPartitions.Length == 0)
+        {
+            throw new ArgumentException("At least one partition is required.", nameof(bufferPartitions));
+        }
+
+        var appendLock = bufferPartitions[0].AppendLock;
+        for (var i = 1; i < bufferPartitions.Length; i++)
+        {
+            if (!ReferenceEquals(appendLock, bufferPartitions[i].AppendLock))
+            {
+                throw new ArgumentException("All partitions must share the same append lock.", nameof(bufferPartitions));
+            }
+        }
+
+        return appendLock;
     }
 }

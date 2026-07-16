@@ -7,12 +7,12 @@ using BufferQueue.Memory;
 
 namespace BufferQueue.Benchmarks;
 
-public class MemoryBufferQueueUnboundedChannelConsumeBenchmark
+public class UnboundedChannelVsMemoryBufferQueueConsumeBenchmark
 {
-    private Channel<int> _unboundedChannel = default!;
-    private IEnumerable<IBufferPullConsumer<int>> _unboundedMemoryBufferQueueConsumers = default!;
+    private Channel<int> _unboundedChannel = null!;
+    private IEnumerable<IBufferPullConsumer<int>> _unboundedMemoryBufferQueueConsumers = null!;
 
-    [Params(4096, 8192)] public int MessageSize { get; set; }
+    [Params(8192)] public int MessageSize { get; set; }
 
     [Params(1, 10, 100, 1000)] public int BatchSize { get; set; }
 
@@ -46,13 +46,13 @@ public class MemoryBufferQueueUnboundedChannelConsumeBenchmark
     }
 
     [Benchmark(Baseline = true)]
-    public void Channel_UnboundedConcurrentConsume()
+    public void Channel_Consume_UnboundedConcurrent()
     {
         ConsumeChannel(_unboundedChannel);
     }
 
     [Benchmark]
-    public void MemoryBufferQueue_UnboundedConcurrentConsume()
+    public void MemoryBufferQueue_Consume_UnboundedConcurrent()
     {
         ConsumeMemoryBufferQueue(_unboundedMemoryBufferQueueConsumers);
     }

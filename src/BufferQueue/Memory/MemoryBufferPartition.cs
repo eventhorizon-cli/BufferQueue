@@ -13,6 +13,7 @@ namespace BufferQueue.Memory;
 [DebuggerDisplay("PartitionId = {PartitionId}, Capacity = {Capacity}, Count = {Count}")]
 [DebuggerTypeProxy(typeof(MemoryBufferPartition<>.DebugView))]
 internal sealed class MemoryBufferPartition<T>
+    : IBufferPartition<T>
 {
     // internal for test
     internal readonly int _segmentSize;
@@ -22,22 +23,31 @@ internal sealed class MemoryBufferPartition<T>
 
     // At most one consumer per group can consume the same partition at the same time,
     private readonly ConcurrentDictionary<string /* group name */, Reader> _consumerReaders;
-    private readonly HashSet<MemoryBufferConsumer<T>> _consumers;
+    private readonly HashSet<IBufferPartitionConsumer<T>> _consumers;
 
-    private readonly object _createSegmentLock;
+    private readonly object _appendLock;
 
     public MemoryBufferPartition(int id, int segmentSize)
+        : this(id, segmentSize, new())
     {
+    }
+
+    internal MemoryBufferPartition(int id, int segmentSize, object appendLock)
+    {
+        ArgumentNullException.ThrowIfNull(appendLock);
+
         _segmentSize = segmentSize;
         PartitionId = id;
-        _head = _tail = new MemoryBufferSegment<T>(_segmentSize, default);
-        _consumerReaders = new ConcurrentDictionary<string, Reader>();
-        _consumers = new HashSet<MemoryBufferConsumer<T>>();
+        _head = _tail = new(_segmentSize, default);
+        _consumerReaders = new();
+        _consumers = [];
 
-        _createSegmentLock = new object();
+        _appendLock = appendLock;
     }
 
     public int PartitionId { get; }
+
+    internal object AppendLock => _appendLock;
 
     public ulong Capacity => (ulong)(_tail.EndOffset - _head.StartOffset + 1);
 
@@ -50,40 +60,57 @@ internal sealed class MemoryBufferPartition<T>
         }
     }
 
-    public void RegisterConsumer(MemoryBufferConsumer<T> consumer) => _consumers.Add(consumer);
+    public void RegisterConsumer(IBufferPartitionConsumer<T> consumer) => _consumers.Add(consumer);
 
     public void Enqueue(T item)
     {
-        while (true)
+        lock (_appendLock)
         {
-            var tail = _tail;
-
-            if (tail.TryEnqueue(item))
-            {
-                foreach (var consumer in _consumers)
-                {
-                    consumer.NotifyNewDataAvailable(this);
-                }
-
-                return;
-            }
-
-            lock (_createSegmentLock)
-            {
-                if (_tail != tail)
-                {
-                    // tail has been changed, retry
-                    continue;
-                }
-
-                var newSegmentStartOffset = tail.EndOffset + 1;
-                var newSegment = TryRecycleSegment(newSegmentStartOffset, out var recycledSegment)
-                    ? recycledSegment
-                    : new MemoryBufferSegment<T>(_segmentSize, newSegmentStartOffset);
-                tail.NextSegment = newSegment;
-                _tail = newSegment;
-            }
+            _ = AppendSingleWriter(item);
         }
+
+        NotifyConsumers();
+    }
+
+    internal ulong AppendFromSerializedProducer(T item) => AppendSingleWriter(item);
+
+    internal void NotifyConsumers()
+    {
+        foreach (var consumer in _consumers)
+        {
+            consumer.NotifyNewDataAvailable(this);
+        }
+    }
+
+    private ulong AppendSingleWriter(T item)
+    {
+        var tail = _tail;
+        if (tail.TryEnqueueSingleWriter(item))
+        {
+            return 0;
+        }
+
+        var newSegmentStartOffset = tail.EndOffset + 1;
+        var newSegment = TryRecycleSegment(
+            newSegmentStartOffset,
+            out var recycledSegment,
+            out var recycledHead,
+            out var reclaimedCount)
+            ? recycledSegment
+            : new(_segmentSize, newSegmentStartOffset);
+        if (!newSegment.TryEnqueueSingleWriter(item))
+        {
+            throw new InvalidOperationException("A new memory segment must have space for its first item.");
+        }
+
+        tail.NextSegment = newSegment;
+        _tail = newSegment;
+        if (recycledHead != null)
+        {
+            _head = recycledHead;
+        }
+
+        return reclaimedCount;
     }
 
     public bool TryPull(string groupName, int batchSize, [NotNullWhen(true)] out IEnumerable<T>? items)
@@ -107,9 +134,13 @@ internal sealed class MemoryBufferPartition<T>
 
     private bool TryRecycleSegment(
         MemoryBufferPartitionOffset newSegmentStartOffset,
-        [NotNullWhen(true)] out MemoryBufferSegment<T>? recycledSegment)
+        [NotNullWhen(true)] out MemoryBufferSegment<T>? recycledSegment,
+        out MemoryBufferSegment<T>? recycledHead,
+        out ulong reclaimedCount)
     {
         recycledSegment = null;
+        recycledHead = null;
+        reclaimedCount = 0;
 
         if (_head == _tail)
         {
@@ -125,18 +156,18 @@ internal sealed class MemoryBufferPartition<T>
             if (wholeSegmentConsumed)
             {
                 recyclableSegment = segment;
+                reclaimedCount += (ulong)segment.Count;
             }
         }
 
         if (recyclableSegment == null)
         {
+            reclaimedCount = 0;
             return false;
         }
 
         recycledSegment = recyclableSegment.RecycleSlots(newSegmentStartOffset);
-
-        _head = recyclableSegment.NextSegment!;
-        _tail = recycledSegment;
+        recycledHead = recyclableSegment.NextSegment!;
 
         return true;
     }
@@ -339,7 +370,7 @@ internal sealed class MemoryBufferPartition<T>
 
         public ulong Count => partition.Count;
 
-        public HashSet<MemoryBufferConsumer<T>> Consumers => partition._consumers;
+        public HashSet<IBufferPartitionConsumer<T>> Consumers => partition._consumers;
 
         public ConcurrentDictionary<string, Reader> ConsumerReaders => partition._consumerReaders;
 
@@ -347,7 +378,7 @@ internal sealed class MemoryBufferPartition<T>
         {
             get
             {
-                var segments = new List<MemoryBufferSegment<T>>();
+                List<MemoryBufferSegment<T>> segments = [];
                 for (var segment = partition._head; segment != null; segment = segment.NextSegment)
                 {
                     segments.Add(segment);

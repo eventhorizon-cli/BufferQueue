@@ -5,13 +5,12 @@ using System;
 using System.Threading.Tasks;
 using System.Threading.Tasks.Sources;
 
-namespace BufferQueue.Memory;
+namespace BufferQueue;
 
 internal sealed class PendingDataValueTaskSource<T> : IValueTaskSource<T>
 {
     private ManualResetValueTaskSourceCore<T> _core = new() { RunContinuationsAsynchronously = true };
 
-    // Default value for ValueTask is a completed task.
     private ValueTask<T> _valueTask;
     private volatile bool _isWaiting;
 
@@ -23,7 +22,7 @@ internal sealed class PendingDataValueTaskSource<T> : IValueTaskSource<T>
     {
         _isWaiting = true;
         _core.Reset();
-        _valueTask = new ValueTask<T>(this, _core.Version);
+        _valueTask = new(this, _core.Version);
     }
 
     public void SetResult(T result)

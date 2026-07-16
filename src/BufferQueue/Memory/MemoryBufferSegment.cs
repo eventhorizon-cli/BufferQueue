@@ -15,16 +15,14 @@ internal sealed class MemoryBufferSegment<T>
     private readonly MemoryBufferPartitionOffset _startOffset;
     private readonly MemoryBufferPartitionOffset _endOffset;
     private readonly T[] _slots;
-    private volatile int _reservedWritePosition;
-    private volatile int _publishedWritePosition;
+    private int _lastPublishedPosition;
 
     public MemoryBufferSegment(int length, MemoryBufferPartitionOffset startOffset)
     {
         _startOffset = startOffset;
         _endOffset = startOffset + (ulong)(length - 1);
         _slots = new T[length];
-        _reservedWritePosition = -1;
-        _publishedWritePosition = -1;
+        _lastPublishedPosition = -1;
     }
 
     private MemoryBufferSegment(T[] slots, MemoryBufferPartitionOffset startOffset)
@@ -32,11 +30,14 @@ internal sealed class MemoryBufferSegment<T>
         _startOffset = startOffset;
         _endOffset = startOffset + (ulong)(slots.Length - 1);
         _slots = slots;
-        _reservedWritePosition = -1;
-        _publishedWritePosition = -1;
+        _lastPublishedPosition = -1;
     }
 
-    public MemoryBufferSegment<T>? NextSegment { get; set; }
+    public MemoryBufferSegment<T>? NextSegment
+    {
+        get => Volatile.Read(ref field);
+        set => Volatile.Write(ref field, value);
+    }
 
     public MemoryBufferPartitionOffset StartOffset => _startOffset;
 
@@ -44,58 +45,20 @@ internal sealed class MemoryBufferSegment<T>
 
     public int Capacity => _slots.Length;
 
-    public int Count => Math.Min(Capacity, _publishedWritePosition + 1);
+    public int Count => Math.Min(Capacity, Volatile.Read(ref _lastPublishedPosition) + 1);
 
-    public bool TryEnqueue(T item)
+    public bool TryEnqueueSingleWriter(T item)
     {
-        while (true)
+        var nextPosition = _lastPublishedPosition + 1;
+        if (nextPosition >= _slots.Length)
         {
-            var currentReserved = _reservedWritePosition;
-            var nextPosition = currentReserved + 1;
-            if (nextPosition >= _slots.Length)
-            {
-                // No more space to write in this segment.
-                return false;
-            }
-
-            if (Interlocked.CompareExchange(
-                    ref _reservedWritePosition,
-                    nextPosition,
-                    currentReserved)
-                != currentReserved)
-            {
-                // Another thread has already written to the next position, retry.
-                continue;
-            }
-
-            // Write the item to the slot.
-            // It's safe to write directly without locks because each position is written by at most one thread.
-            _slots[nextPosition] = item;
-
-            // Now we need to publish the new write position so that readers can see the new item.
-            while (true)
-            {
-                var currentPublished = _publishedWritePosition;
-                if (currentPublished >= nextPosition)
-                {
-                    // Another thread has already published a position that is greater than our next position,
-                    // which means our item is already visible to readers, no need to publish again.
-                    break;
-                }
-
-                if (Interlocked.CompareExchange(
-                        ref _publishedWritePosition,
-                        nextPosition,
-                        currentPublished)
-                    == currentPublished)
-                {
-                    // Successfully published the new write position, now readers can see the new item.
-                    break;
-                }
-            }
-
-            return true;
+            return false;
         }
+
+        // Partition append serialization guarantees a single writer. Publish only after storing the item.
+        _slots[nextPosition] = item;
+        Volatile.Write(ref _lastPublishedPosition, nextPosition);
+        return true;
     }
 
     public bool TryGet(MemoryBufferPartitionOffset offset, int count, out ArraySegment<T> items)
@@ -108,23 +71,24 @@ internal sealed class MemoryBufferSegment<T>
 
         var readPosition = (offset - _startOffset).ToInt32();
 
-        if (_publishedWritePosition < 0 || readPosition > _publishedWritePosition)
+        var lastPublishedPosition = Volatile.Read(ref _lastPublishedPosition);
+        if (lastPublishedPosition < 0 || readPosition > lastPublishedPosition)
         {
             items = default;
             return false;
         }
 
-        var writePosition = Math.Min(_publishedWritePosition, _slots.Length - 1);
+        var lastReadablePosition = Math.Min(lastPublishedPosition, _slots.Length - 1);
         // Number of items actually available to return (bounded by requested count and written items).
-        var availableCount = Math.Min(count, writePosition - readPosition + 1);
-        items = new ArraySegment<T>(_slots, readPosition, availableCount);
+        var availableCount = Math.Min(count, lastReadablePosition - readPosition + 1);
+        items = new(_slots, readPosition, availableCount);
         return true;
     }
 
     public MemoryBufferSegment<T> RecycleSlots(MemoryBufferPartitionOffset startOffset)
     {
         Array.Clear(_slots, 0, _slots.Length);
-        return new MemoryBufferSegment<T>(_slots, startOffset);
+        return new(_slots, startOffset);
     }
 
     private class DebugView(MemoryBufferSegment<T> segment)
@@ -137,6 +101,8 @@ internal sealed class MemoryBufferSegment<T>
 
         public int Count => segment.Count;
 
-        public T[] Items => segment._slots.Take(segment._publishedWritePosition + 1).ToArray();
+        public T[] Items => segment._slots
+            .Take(Volatile.Read(ref segment._lastPublishedPosition) + 1)
+            .ToArray();
     }
 }
