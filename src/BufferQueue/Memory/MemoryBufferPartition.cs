@@ -25,20 +25,29 @@ internal sealed class MemoryBufferPartition<T>
     private readonly ConcurrentDictionary<string /* group name */, Reader> _consumerReaders;
     private readonly HashSet<IBufferPartitionConsumer<T>> _consumers;
 
-    private readonly object _createSegmentLock;
+    private readonly object _appendLock;
 
     public MemoryBufferPartition(int id, int segmentSize)
+        : this(id, segmentSize, new())
     {
+    }
+
+    internal MemoryBufferPartition(int id, int segmentSize, object appendLock)
+    {
+        ArgumentNullException.ThrowIfNull(appendLock);
+
         _segmentSize = segmentSize;
         PartitionId = id;
         _head = _tail = new(_segmentSize, default);
         _consumerReaders = new();
         _consumers = [];
 
-        _createSegmentLock = new();
+        _appendLock = appendLock;
     }
 
     public int PartitionId { get; }
+
+    internal object AppendLock => _appendLock;
 
     public ulong Capacity => (ulong)(_tail.EndOffset - _head.StartOffset + 1);
 
@@ -55,59 +64,53 @@ internal sealed class MemoryBufferPartition<T>
 
     public void Enqueue(T item)
     {
-        Enqueue(item, out _, out _);
+        lock (_appendLock)
+        {
+            _ = AppendSingleWriter(item);
+        }
+
+        NotifyConsumers();
     }
 
-    internal void Enqueue(T item, out ulong reclaimedCount, out bool appended)
-    {
-        appended = false;
-        reclaimedCount = Append(item);
-        appended = true;
+    internal ulong AppendFromSerializedProducer(T item) => AppendSingleWriter(item);
 
+    internal void NotifyConsumers()
+    {
         foreach (var consumer in _consumers)
         {
             consumer.NotifyNewDataAvailable(this);
         }
     }
 
-    private ulong Append(T item)
+    private ulong AppendSingleWriter(T item)
     {
-        var reclaimedCount = 0UL;
-        while (true)
+        var tail = _tail;
+        if (tail.TryEnqueueSingleWriter(item))
         {
-            var tail = _tail;
-
-            if (tail.TryEnqueue(item))
-            {
-                return reclaimedCount;
-            }
-
-            lock (_createSegmentLock)
-            {
-                if (_tail != tail)
-                {
-                    // tail has been changed, retry
-                    continue;
-                }
-
-                tail.WaitUntilAllSlotsPublished();
-                var newSegmentStartOffset = tail.EndOffset + 1;
-                var newSegment = TryRecycleSegment(
-                    newSegmentStartOffset,
-                    out var recycledSegment,
-                    out var recycledHead,
-                    out var newlyReclaimedCount)
-                    ? recycledSegment
-                    : new(_segmentSize, newSegmentStartOffset);
-                reclaimedCount += newlyReclaimedCount;
-                tail.NextSegment = newSegment;
-                _tail = newSegment;
-                if (recycledHead != null)
-                {
-                    _head = recycledHead;
-                }
-            }
+            return 0;
         }
+
+        var newSegmentStartOffset = tail.EndOffset + 1;
+        var newSegment = TryRecycleSegment(
+            newSegmentStartOffset,
+            out var recycledSegment,
+            out var recycledHead,
+            out var reclaimedCount)
+            ? recycledSegment
+            : new(_segmentSize, newSegmentStartOffset);
+        if (!newSegment.TryEnqueueSingleWriter(item))
+        {
+            throw new InvalidOperationException("A new memory segment must have space for its first item.");
+        }
+
+        tail.NextSegment = newSegment;
+        _tail = newSegment;
+        if (recycledHead != null)
+        {
+            _head = recycledHead;
+        }
+
+        return reclaimedCount;
     }
 
     public bool TryPull(string groupName, int batchSize, [NotNullWhen(true)] out IEnumerable<T>? items)

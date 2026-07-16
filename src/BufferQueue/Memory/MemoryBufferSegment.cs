@@ -15,8 +15,6 @@ internal sealed class MemoryBufferSegment<T>
     private readonly MemoryBufferPartitionOffset _startOffset;
     private readonly MemoryBufferPartitionOffset _endOffset;
     private readonly T[] _slots;
-    private readonly bool[] _slotWritten;
-    private int _lastReservedPosition;
     private int _lastPublishedPosition;
 
     public MemoryBufferSegment(int length, MemoryBufferPartitionOffset startOffset)
@@ -24,21 +22,14 @@ internal sealed class MemoryBufferSegment<T>
         _startOffset = startOffset;
         _endOffset = startOffset + (ulong)(length - 1);
         _slots = new T[length];
-        _slotWritten = new bool[length];
-        _lastReservedPosition = -1;
         _lastPublishedPosition = -1;
     }
 
-    private MemoryBufferSegment(
-        T[] slots,
-        bool[] slotWritten,
-        MemoryBufferPartitionOffset startOffset)
+    private MemoryBufferSegment(T[] slots, MemoryBufferPartitionOffset startOffset)
     {
         _startOffset = startOffset;
         _endOffset = startOffset + (ulong)(slots.Length - 1);
         _slots = slots;
-        _slotWritten = slotWritten;
-        _lastReservedPosition = -1;
         _lastPublishedPosition = -1;
     }
 
@@ -56,40 +47,19 @@ internal sealed class MemoryBufferSegment<T>
 
     public int Count => Math.Min(Capacity, Volatile.Read(ref _lastPublishedPosition) + 1);
 
-    public bool TryEnqueue(T item)
+    public bool TryEnqueueSingleWriter(T item)
     {
-        while (true)
+        var nextPosition = _lastPublishedPosition + 1;
+        if (nextPosition >= _slots.Length)
         {
-            var lastReservedPosition = Volatile.Read(ref _lastReservedPosition);
-            var nextPosition = lastReservedPosition + 1;
-            if (nextPosition >= _slots.Length)
-            {
-                // No more space to write in this segment.
-                return false;
-            }
-
-            if (Interlocked.CompareExchange(
-                    ref _lastReservedPosition,
-                    nextPosition,
-                    lastReservedPosition)
-                != lastReservedPosition)
-            {
-                // Another thread has already written to the next position, retry.
-                continue;
-            }
-
-            // Write the item to the slot.
-            // It's safe to write directly without locks because each position is written by at most one thread.
-            _slots[nextPosition] = item;
-
-            Volatile.Write(ref _slotWritten[nextPosition], true);
-            WaitUntilPositionPublished(nextPosition);
-
-            return true;
+            return false;
         }
-    }
 
-    internal void WaitUntilAllSlotsPublished() => WaitUntilPositionPublished(_slots.Length - 1);
+        // Partition append serialization guarantees a single writer. Publish only after storing the item.
+        _slots[nextPosition] = item;
+        Volatile.Write(ref _lastPublishedPosition, nextPosition);
+        return true;
+    }
 
     public bool TryGet(MemoryBufferPartitionOffset offset, int count, out ArraySegment<T> items)
     {
@@ -118,54 +88,7 @@ internal sealed class MemoryBufferSegment<T>
     public MemoryBufferSegment<T> RecycleSlots(MemoryBufferPartitionOffset startOffset)
     {
         Array.Clear(_slots, 0, _slots.Length);
-        Array.Clear(_slotWritten, 0, _slotWritten.Length);
-        return new(_slots, _slotWritten, startOffset);
-    }
-
-    private void WaitUntilPositionPublished(int targetPosition)
-    {
-        var spinWait = new SpinWait();
-        while (Volatile.Read(ref _lastPublishedPosition) < targetPosition)
-        {
-            if (TryAdvancePublishedPosition())
-            {
-                spinWait.Reset();
-                continue;
-            }
-
-            spinWait.SpinOnce();
-        }
-    }
-
-    private bool TryAdvancePublishedPosition()
-    {
-        // Any writer can publish the longest gap-free sequence of written slots.
-        while (true)
-        {
-            var lastPublishedPosition = Volatile.Read(ref _lastPublishedPosition);
-            var nextPosition = lastPublishedPosition + 1;
-            var candidatePublishedPosition = lastPublishedPosition;
-            while (nextPosition < _slotWritten.Length &&
-                   Volatile.Read(ref _slotWritten[nextPosition]))
-            {
-                candidatePublishedPosition = nextPosition;
-                nextPosition++;
-            }
-
-            if (candidatePublishedPosition == lastPublishedPosition)
-            {
-                return false;
-            }
-
-            if (Interlocked.CompareExchange(
-                    ref _lastPublishedPosition,
-                    candidatePublishedPosition,
-                    lastPublishedPosition)
-                == lastPublishedPosition)
-            {
-                return true;
-            }
-        }
+        return new(_slots, startOffset);
     }
 
     private class DebugView(MemoryBufferSegment<T> segment)

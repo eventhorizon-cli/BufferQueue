@@ -6,7 +6,12 @@ namespace BufferQueue.Memory;
 internal sealed class MemoryBufferQueue<T> : BufferQueue<T>
 {
     public MemoryBufferQueue(MemoryBufferQueueOptions options)
-        : this(options, CreatePartitions(options))
+        : this(options, new object())
+    {
+    }
+
+    private MemoryBufferQueue(MemoryBufferQueueOptions options, object appendLock)
+        : this(options, CreatePartitions(options, appendLock))
     {
     }
 
@@ -15,12 +20,12 @@ internal sealed class MemoryBufferQueue<T> : BufferQueue<T>
     {
     }
 
-    private static MemoryBufferPartition<T>[] CreatePartitions(MemoryBufferQueueOptions options)
+    private static MemoryBufferPartition<T>[] CreatePartitions(MemoryBufferQueueOptions options, object appendLock)
     {
         var partitions = new MemoryBufferPartition<T>[options.PartitionNumber];
         for (var i = 0; i < partitions.Length; i++)
         {
-            partitions[i] = new MemoryBufferPartition<T>(i, options.SegmentSize);
+            partitions[i] = new MemoryBufferPartition<T>(i, options.SegmentSize, appendLock);
         }
 
         return partitions;

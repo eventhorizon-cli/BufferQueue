@@ -24,13 +24,13 @@ BufferQueue 当前提供两种存储模式：
 
 ## 和其他常用内存缓存 Queue 的对比
 
-**BufferQueue 的核心优势在于批量消费时的高性能表现。**
+**BufferQueue 的 Memory 模式写入性能已接近 `Channel<T>`，核心优势则在于批量消费时的高性能表现。**
 
 项目内置 BenchmarkDotNet 基准测试，对比 `BufferQueue` 启用 Memory 模式后的 `MemoryBufferQueue<T>`、`Channel<T>` 和 `BlockingCollection<T>` 的并发生产、并发消费表现。下表展示 `Channel<T>` 对比结果摘要。
 
 结果摘要：
 
-- 生产：在该次记录参数下，`Channel<T>` 在 Unbounded 模式下约快 `2.38x`，在 Bounded 模式下约快 `1.69x`；不过两种 queue 完成 8192 条并发写入都处于亚毫秒级，仍属于同一数量级。
+- 生产：在该次记录参数下，`MemoryBufferQueue<T>` 的写入性能已非常接近 `Channel<T>`。Unbounded 和 Bounded 模式的耗时分别仅高约 `17%` 和 `21%`，两种 queue 完成 8192 条并发写入均处于亚毫秒级。
 - 消费：`MemoryBufferQueue<T>` 的主要优势在批量消费；在本组测试中，批量越大优势通常越明显，该次记录参数下最高约快 `84x`。
 - 内存分配：生产场景 `MemoryBufferQueue<T>` 分配较少；消费场景 `Channel<T>` 分配较少。
 
@@ -45,8 +45,8 @@ MemoryMappedFile queue 对比使用 `MessageSize = 1024` 和 short-run job，以
 
 | 类型 | 场景 | 参数 | `Channel<T>` | `MemoryBufferQueue<T>` | 结论 |
 | --- | --- | --- | ---: | ---: | --- |
-| 生产 | Unbounded | `MessageSize = 8192`, `ProducerTasks = 12` | `289.5 μs` | `688.2 μs` | `Channel<T>` 更快 |
-| 生产 | Bounded | `MessageSize = 8192`, `ProducerTasks = 12` | `304.1 μs` | `512.9 μs` | `Channel<T>` 更快 |
+| 生产 | Unbounded | `MessageSize = 8192`, `ProducerTasks = 12` | `287.0 μs` | `335.0 μs` | 性能接近；`Channel<T>` 约快 `1.17x` |
+| 生产 | Bounded | `MessageSize = 8192`, `ProducerTasks = 12` | `300.8 μs` | `364.1 μs` | 性能接近；`Channel<T>` 约快 `1.21x` |
 | 消费 | Unbounded | `MessageSize = 8192`, `BatchSize = 1000`, `ConsumerTasks = 12` | `3,461.03 μs` | `41.30 μs` | 该次记录参数下约快 `84x` |
 | 消费 | Bounded | `MessageSize = 8192`, `BatchSize = 1000`, `ConsumerTasks = 12` | `2,214.21 μs` | `41.68 μs` | 该次记录参数下约快 `53x` |
 
@@ -92,9 +92,10 @@ dotnet run -c Release --project tests/BufferQueue.Benchmarks/BufferQueue.Benchma
 ![BufferQueue](docs/assets/BufferQueueMindMap.png)
 
 ## 高性能设计
-### 无锁设计
+### Partition 并发设计
 
-生产和消费操作均为无锁操作，性能高效。
+Memory 模式的共享 producer 会串行执行短暂的 round-robin 路由和 append 操作。Consumer 读取已经发布的
+数据时不获取共享 append lock。
 
 ### 多 partition 设计
 每个 Topic 可以有多个 partition，每个 partition 都有独立的消费进度，支持多个 Consumer Group 并发消费。

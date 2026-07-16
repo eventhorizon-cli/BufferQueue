@@ -184,9 +184,13 @@ Each record offset is represented by `MemoryBufferPartitionOffset`. Offsets are 
 
 ### Append
 
-`MemoryBufferProducer<T>` selects a partition in round-robin order and calls `MemoryBufferPartition<T>.Enqueue`.
+`MemoryBufferProducer<T>` selects a partition in round-robin order and appends through the selected partition.
 
 The partition attempts to append to the current tail segment. If the tail segment is full, a new segment is created or an old fully consumed segment is recycled.
+
+The memory producer and its partitions share one append lock, which serializes round-robin routing,
+bounded-capacity accounting, and append. The selected partition then stores the item and publishes the new readable
+cursor with a release write. Consumers read the published range without taking the append lock.
 
 After enqueue succeeds, the partition notifies all registered consumers.
 
@@ -423,10 +427,11 @@ The implementation is designed for concurrent production and consumption within 
 
 Important concurrency points:
 
-- Producers choose partitions with atomic round-robin counters.
-- Memory segments expose only the gap-free written range starting at the first slot, so consumers never observe a
-  reserved slot before its item has been stored.
-- Partition append paths use locks where the storage format requires serialized writes.
+- Producers choose partitions with round-robin counters; the memory producer advances its counter inside the serialized append section.
+- A memory queue's producer and partitions share one lock that serializes round-robin routing, bounded-capacity
+  accounting, and append operations.
+- A memory partition publishes its segment cursor only after the corresponding item has been stored, so consumers
+  never observe an unwritten slot and do not need to take the append lock.
 - Consumer group creation is guarded by a queue-level lock.
 - Consumer wait and wake-up state is protected by `ReaderWriterLockSlim`.
 - MemoryMappedFile writer and consumer offset writes use replace/move semantics to avoid partial offset files.

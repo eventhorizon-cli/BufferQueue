@@ -186,9 +186,13 @@ head segment -> segment -> ... -> tail segment
 
 ### 写入
 
-`MemoryBufferProducer<T>` 按 round-robin 选择 partition，并调用 `MemoryBufferPartition<T>.Enqueue`。
+`MemoryBufferProducer<T>` 按 round-robin 选择 partition，并通过选中的 partition append 数据。
 
 Partition 会尝试写入当前 tail segment。如果 tail segment 已满，就创建新 segment，或者复用一个已经被所有 consumer groups 消费完成的旧 segment。
+
+Memory queue 的 producer 和 partitions 共享一个 append lock，用于串行执行 round-robin 路由、bounded
+capacity 计数和 append。选中的 partition 写入 item 后，使用 release write 发布新的可读 cursor。
+Consumer 读取已发布区间时不获取 append lock。
 
 写入成功后，partition 通知所有已注册 consumers。
 
@@ -425,9 +429,9 @@ services.AddBufferQueue(builder =>
 
 关键并发点：
 
-- Producer 使用原子 round-robin 计数器选择 partition。
-- Memory segment 只向 consumer 暴露从起点开始、没有空洞且已经写入的连续区间，不会提前暴露仅被预留的 slot。
-- Partition 写入路径在存储格式需要时使用 lock 串行化写入。
+- Producer 使用 round-robin 计数器选择 partition；Memory producer 在串行 append 区间内推进该计数器。
+- Memory queue 的 producer 和 partitions 共享一个 lock，串行执行 round-robin 路由、bounded capacity 计数和 append。
+- Memory partition 只在对应 item 写入完成后发布 segment cursor，因此 consumer 不会读到尚未写入的 slot，也不需要获取 append lock。
 - Consumer group 创建由 queue 级别 lock 保护。
 - Consumer 等待和唤醒状态由 `ReaderWriterLockSlim` 保护。
 - MemoryMappedFile writer offset 和 consumer offset 写入使用 replace/move 语义，避免部分写入的 offset 文件。

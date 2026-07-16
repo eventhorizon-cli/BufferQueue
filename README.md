@@ -25,13 +25,13 @@ Use MemoryMappedFile mode when produced data and committed consumer offsets need
 
 ## Comparison with Common In-Memory Queues
 
-**BufferQueue's core advantage is high performance in batch consumption scenarios.**
+**BufferQueue keeps memory-mode writes close to `Channel<T>`, while its core advantage is high-performance batch consumption.**
 
 The project includes BenchmarkDotNet benchmarks that compare `MemoryBufferQueue<T>` in BufferQueue's Memory mode with `Channel<T>` and `BlockingCollection<T>` for concurrent producing and consuming. The table below summarizes the `Channel<T>` comparison results.
 
 Summary:
 
-- Producing: `Channel<T>` is about `2.38x` faster in Unbounded mode and `1.69x` faster in Bounded mode under the recorded parameters. Both queues complete the 8,192-item concurrent write within the same sub-millisecond order of magnitude.
+- Producing: `MemoryBufferQueue<T>` is close to `Channel<T>` under the recorded parameters. Its elapsed time is about `17%` higher in Unbounded mode and `21%` higher in Bounded mode, and both queues complete the 8,192-item concurrent write within the same sub-millisecond range.
 - Consuming: `MemoryBufferQueue<T>` is mainly optimized for batch consumption. In this benchmark set, larger batches usually show a clearer advantage, up to about `84x` under the recorded parameters.
 - Memory allocation: `MemoryBufferQueue<T>` allocates less in producing scenarios; `Channel<T>` allocates less in consuming scenarios.
 
@@ -48,8 +48,8 @@ MemoryBufferQueue has `12` partitions. Consuming uses `12` Channel reader tasks 
 
 | Type | Scenario | Parameters | `Channel<T>` | `MemoryBufferQueue<T>` | Result |
 | --- | --- | --- | ---: | ---: | --- |
-| Producing | Unbounded | `MessageSize = 8192`, `ProducerTasks = 12` | `289.5 μs` | `688.2 μs` | `Channel<T>` is faster |
-| Producing | Bounded | `MessageSize = 8192`, `ProducerTasks = 12` | `304.1 μs` | `512.9 μs` | `Channel<T>` is faster |
+| Producing | Unbounded | `MessageSize = 8192`, `ProducerTasks = 12` | `287.0 μs` | `335.0 μs` | Close; `Channel<T>` is about `1.17x` faster |
+| Producing | Bounded | `MessageSize = 8192`, `ProducerTasks = 12` | `300.8 μs` | `364.1 μs` | Close; `Channel<T>` is about `1.21x` faster |
 | Consuming | Unbounded | `MessageSize = 8192`, `BatchSize = 1000`, `ConsumerTasks = 12` | `3,461.03 μs` | `41.30 μs` | About `84x` faster under the recorded parameters |
 | Consuming | Bounded | `MessageSize = 8192`, `BatchSize = 1000`, `ConsumerTasks = 12` | `2,214.21 μs` | `41.68 μs` | About `53x` faster under the recorded parameters |
 
@@ -97,9 +97,10 @@ dotnet run -c Release --project tests/BufferQueue.Benchmarks/BufferQueue.Benchma
 
 ## High-Performance Design
 
-### Lock-Free Design
+### Partitioned Concurrency
 
-Both production and consumption operations are lock-free operations, which are highly efficient.
+The shared memory-mode producer serializes its short round-robin routing and append section. Consumers read published
+items without taking the shared append lock.
 
 ### Multi-Partition Design
 
