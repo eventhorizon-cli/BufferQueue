@@ -21,14 +21,14 @@ public class MemoryMappedFileBufferServiceCollectionExtensionsTests
                         options.TopicName = "topic1";
                         options.DataDirectory = temporaryDirectory.Path;
                         options.PartitionNumber = 1;
-                        options.SegmentSize = 1024;
+                        options.SegmentSizeInBytes = 1024;
                     })
                     .AddTopic<int>(options =>
                     {
                         options.TopicName = "topic2";
                         options.DataDirectory = temporaryDirectory.Path;
                         options.PartitionNumber = 2;
-                        options.SegmentSize = 1024;
+                        options.SegmentSizeInBytes = 1024;
                     })
             ));
 
@@ -90,6 +90,38 @@ public class MemoryMappedFileBufferServiceCollectionExtensionsTests
                     options.FlushStrategy = MemoryMappedFileFlushStrategy.Batch;
                     options.FlushBatchSize = 0;
                 }))));
+    }
+
+    [Fact]
+    public void AddMemoryMappedFileBuffer_Will_Throw_For_Invalid_Segment_Size_In_Bytes()
+    {
+        var services = new ServiceCollection();
+
+        var exception = Assert.Throws<ArgumentOutOfRangeException>(() => services.AddBufferQueue(
+            bufferOptionsBuilder => bufferOptionsBuilder.UseMemoryMappedFile(
+                memoryMappedFileBufferOptionsBuilder => memoryMappedFileBufferOptionsBuilder.AddTopic<int>(options =>
+                {
+                    options.TopicName = "topic";
+                    options.SegmentSizeInBytes = 0;
+                }))));
+
+        Assert.Equal("SegmentSizeInBytes", exception.ParamName);
+    }
+
+    [Fact]
+    public void AddMemoryMappedFileBuffer_Will_Throw_For_Invalid_Retained_Segment_Count()
+    {
+        var services = new ServiceCollection();
+
+        var exception = Assert.Throws<ArgumentOutOfRangeException>(() => services.AddBufferQueue(
+            bufferOptionsBuilder => bufferOptionsBuilder.UseMemoryMappedFile(
+                memoryMappedFileBufferOptionsBuilder => memoryMappedFileBufferOptionsBuilder.AddTopic<int>(options =>
+                {
+                    options.TopicName = "topic";
+                    options.MaxRetainedConsumedSegments = -1;
+                }))));
+
+        Assert.Equal("MaxRetainedConsumedSegments", exception.ParamName);
     }
 
     [Fact]

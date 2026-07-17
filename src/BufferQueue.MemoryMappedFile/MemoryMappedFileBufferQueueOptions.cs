@@ -20,9 +20,16 @@ public class MemoryMappedFileBufferQueueOptions<T>
     public int PartitionNumber { get; set; } = 1;
 
     /// <summary>
-    /// The memory-mapped file segment size in bytes. Default is 64 MB.
+    /// The memory-mapped file segment size in bytes. Default is 256 MiB.
     /// </summary>
-    public long SegmentSize { get; set; } = 64L * 1024 * 1024;
+    public long SegmentSizeInBytes { get; set; } = 256L * 1024 * 1024;
+
+    /// <summary>
+    /// The maximum number of segments retained per partition after every known consumer group
+    /// has committed past them. A null value disables deletion, and zero retains no reclaimable
+    /// consumed segments. This is not a limit on unconsumed segments or total disk usage. Default is null.
+    /// </summary>
+    public int? MaxRetainedConsumedSegments { get; set; }
 
     /// <summary>
     /// The directory used to store topic partition files.
@@ -44,4 +51,26 @@ public class MemoryMappedFileBufferQueueOptions<T>
     /// </summary>
     public IMemoryMappedFileSerializer<T> Serializer { get; set; } =
         SystemTextJsonMemoryMappedFileSerializer<T>.Instance;
+
+    internal long GetSegmentSizeInBytes()
+    {
+        if (SegmentSizeInBytes <= MemoryMappedFileBufferPartition<T>.MaxRecordOverhead)
+        {
+            throw new ArgumentOutOfRangeException(nameof(SegmentSizeInBytes),
+                "Segment size must be large enough to contain at least one record.");
+        }
+
+        return SegmentSizeInBytes;
+    }
+
+    internal int? GetMaxRetainedConsumedSegments()
+    {
+        if (MaxRetainedConsumedSegments < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(MaxRetainedConsumedSegments),
+                "The maximum number of retained consumed segments must be greater than or equal to zero.");
+        }
+
+        return MaxRetainedConsumedSegments;
+    }
 }

@@ -13,7 +13,7 @@ The project is an independent component separated from the [mocha](https://githu
 BufferQueue currently provides two storage modes:
 
 - Memory: in-process segmented memory storage, optimized for high-throughput batch consumption.
-- MemoryMappedFile: local memory-mapped segment files with persisted writer and consumer offsets.
+- MemoryMappedFile: local memory-mapped segment files with persisted producer and consumer offsets.
 
 ## Applicable Scenarios
 
@@ -91,7 +91,7 @@ dotnet run -c Release --project tests/BufferQueue.Benchmarks/BufferQueue.Benchma
 
 6. Supports two submission methods: auto-commit and manual commit in both pull and push modes. In auto-commit mode, the consumer automatically submits the consumption progress after receiving the data. If the consumption fails, it will not be retried. In manual commit mode, the consumer needs to manually submit the consumption progress. If the consumption fails, it can be retried as long as the progress is not submitted.
 
-7. Supports multiple storage modes. Memory mode keeps data and offsets in process memory. MemoryMappedFile mode stores records in memory-mapped segment files and persists writer and committed consumer offsets to disk.
+7. Supports multiple storage modes. Memory mode keeps data and offsets in process memory. MemoryMappedFile mode stores records in memory-mapped segment files and persists producer and committed consumer offsets to disk.
 
 ![BufferQueue](docs/assets/BufferQueueMindMap.png)
 
@@ -176,6 +176,10 @@ builder.Services.AddHostedService<Foo1PullConsumerHostService>();
 
 MemoryMappedFile mode stores serialized records in memory-mapped files and persists offsets. The default serializer is an internal `System.Text.Json` implementation. Built-in MessagePack and unmanaged-struct serializers, as well as custom serializers, are available through `MemoryMappedFileBufferQueueOptions<T>.Serializer`.
 
+`SegmentSizeInBytes` configures each memory-mapped segment in bytes and defaults to `256L * 1024 * 1024` (256 MiB).
+
+`MaxRetainedConsumedSegments` optionally deletes fully consumed segments per partition. Its default is `null`, which disables deletion. `0` retains no reclaimable consumed segments; a positive value retains that many of the newest consumed segments. A segment is reclaimable only after every known consumer group has committed past it, so this setting is not a hard limit on total segment count or disk usage.
+
 MemoryMappedFile support is distributed as a separate package:
 
 ```shell
@@ -195,7 +199,8 @@ builder.Services.AddBufferQueue(bufferOptionsBuilder =>
                 {
                     options.TopicName = "topic-foo";
                     options.PartitionNumber = 4;
-                    options.SegmentSize = 64L * 1024 * 1024;
+                    options.SegmentSizeInBytes = 64L * 1024 * 1024;
+                    options.MaxRetainedConsumedSegments = 2;
                     options.DataDirectory = "/var/lib/bufferqueue";
                     options.FlushStrategy = MemoryMappedFileFlushStrategy.Batch;
                     options.FlushBatchSize = 100;
@@ -251,7 +256,7 @@ The configured serializer, numeric keys, resolver, compression, and other wire-f
 
 One serializer instance is shared by the topic partitions and can be called concurrently. Custom `IMemoryMappedFileSerializer<T>` implementations must be thread-safe and must not return `null`.
 
-`FlushStrategy` defaults to `MemoryMappedFileFlushStrategy.Immediate`, which explicitly flushes every record. `MemoryMappedFileFlushStrategy.Batch` explicitly flushes after `FlushBatchSize` records in a partition; `FlushBatchSize` defaults to `100`. A segment rollover and a consumer commit are always flush boundaries, regardless of the configured batch size. At each boundary, the partition flushes the log successfully before advancing `writer.offset`.
+`FlushStrategy` defaults to `MemoryMappedFileFlushStrategy.Immediate`, which explicitly flushes every record. `MemoryMappedFileFlushStrategy.Batch` explicitly flushes after `FlushBatchSize` records in a partition; `FlushBatchSize` defaults to `100`. A segment rollover and a consumer commit are always flush boundaries, regardless of the configured batch size. At each boundary, the partition flushes the log successfully before advancing `producer.offset`.
 
 Batch flushing reduces the number of explicit flushes, but a partial tail batch is not guaranteed to have been explicitly flushed when there is no subsequent production, segment rollover, or consumer commit. Applications that require every successful produce call to be an explicit durability boundary should use the default `Immediate` strategy.
 
@@ -265,17 +270,20 @@ For example:
 
 ```text
 /var/lib/bufferqueue/topic-foo/partition-00000/00000000000000000000.log
-/var/lib/bufferqueue/topic-foo/partition-00000/writer.offset
-/var/lib/bufferqueue/topic-foo/partition-00000/offsets/group-foo/offset
+/var/lib/bufferqueue/topic-foo/partition-00000/producer.offset
+/var/lib/bufferqueue/topic-foo/partition-00000/earliest.offset
+/var/lib/bufferqueue/topic-foo/partition-00000/offsets/group-foo/consumer.offset
 ```
 
 Consumer group names are used directly as offset directory names when they are valid folder names. Invalid path-component characters are percent-encoded. For example, group `orders/worker 1` is stored under:
 
 ```text
-offsets/orders%2Fworker 1/offset
+offsets/orders%2Fworker 1/consumer.offset
 ```
 
-During recovery, missing `writer.offset` is treated as an initial scan from `0`, and a writer offset that is behind the actual log is scanned forward. Because `writer.offset` advances only after the corresponding log data has been flushed successfully, it can safely lag complete records that reached the log after the last checkpoint. Corrupted, ahead-of-log, or non-record-boundary offsets fail fast with an exception instead of silently resetting progress. In `Batch` mode, an unflushed partial tail batch may be absent after an abnormal termination.
+`earliest.offset` is an 8-byte little-endian checkpoint containing the earliest retained segment boundary. New consumer groups start there. Consumer creation persists an initial offset for every assigned partition, so a group that has not pulled from a partition still participates in retention. Slow, uncommitted, offline, and obsolete groups prevent deletion until their checkpoints advance. Removing an obsolete group requires stopping the queue and deleting its entire `offsets/{escaped-group-name}/` directory.
+
+During recovery, a missing `producer.offset` is scanned forward from `earliest.offset`, or from `0` when no retention checkpoint exists. A producer offset that is behind the actual log is also scanned forward. Because `producer.offset` advances only after the corresponding log data has been flushed successfully, it can safely lag complete records that reached the log after the last checkpoint. Corrupted, ahead-of-log, non-record-boundary offsets, and missing segment files inside the retained range fail fast instead of being recreated or silently resetting progress. In `Batch` mode, an unflushed partial tail batch may be absent after an abnormal termination.
 
 When recovering an existing MemoryMappedFile topic, do not reduce `PartitionNumber`. Historical records stored in removed partitions would no longer have a partition reader and could not be consumed, so startup fails fast with an `InvalidDataException` if existing partition directories exceed the configured partition count.
 

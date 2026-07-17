@@ -31,11 +31,8 @@ public class MemoryMappedFileBufferOptionsBuilder(IServiceCollection services)
                 "Partition number must be greater than zero.");
         }
 
-        if (options.SegmentSize <= MemoryMappedFileBufferPartition<T>.MaxRecordOverhead)
-        {
-            throw new ArgumentOutOfRangeException(nameof(options.SegmentSize),
-                "Segment size must be large enough to contain at least one record.");
-        }
+        _ = options.GetSegmentSizeInBytes();
+        _ = options.GetMaxRetainedConsumedSegments();
 
         if (!Enum.IsDefined(options.FlushStrategy))
         {

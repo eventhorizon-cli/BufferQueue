@@ -89,7 +89,7 @@ public class MemoryVsMemoryMappedFileBufferQueueProduceBenchmark
                 TopicName = TopicName,
                 DataDirectory = _dataDirectory,
                 PartitionNumber = Environment.ProcessorCount,
-                SegmentSize = 64L * 1024 * 1024,
+                SegmentSizeInBytes = 64L * 1024 * 1024,
                 Serializer = serializer
             });
         _memoryMappedFileProducer = _memoryMappedFileQueue.GetProducer();

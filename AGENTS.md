@@ -106,10 +106,13 @@ int32 length == -1
 
 MemoryMappedFile mode persists:
 
-- writer offset in `writer.offset`;
-- consumer offsets under `offsets/{escaped-group-name}/offset`.
+- producer offset in `producer.offset`;
+- earliest retained segment boundary in `earliest.offset`;
+- consumer offsets under `offsets/{escaped-group-name}/consumer.offset`.
 
 Offset reads and writes should go through `OffsetCheckpoint`. Do not duplicate offset file IO in partition code.
+
+When segment retention is enabled, reclaim only complete segments below the minimum committed offset of every known consumer group. Advance `earliest.offset` before disposing mappings and deleting files. Recovery and reads must never recreate a missing segment inside the retained range; fail fast instead.
 
 Group directory names should stay readable when possible. Only characters that cannot be used in one path component are escaped.
 
@@ -151,7 +154,7 @@ Use focused tests for:
 - consumer wait and wake-up behavior;
 - partition assignment;
 - memory-mapped-file recovery;
-- writer and consumer offset persistence;
+- producer and consumer offset persistence;
 - invalid or missing checkpoint files.
 
 MMF tests must declare `using var temporaryDirectory = new TemporaryDirectory();` before queues or partitions. C# then disposes mappings before recursively deleting the test directory. Cleanup failures must remain visible rather than being silently ignored.

@@ -83,21 +83,35 @@ internal abstract class BufferQueue<TItem>(
         var partitionsPerConsumer = partitions.Length / consumerNumber;
         var partitionsRemainder = partitions.Length % consumerNumber;
         var partitionStartIndex = 0;
-        foreach (var consumer in consumers)
+        var assignedConsumers = new List<BufferPullConsumer<TItem>>(consumers.Count);
+        try
         {
-            var extraPartitions = partitionsRemainder > 0 ? 1 : 0;
-            var partitionEndIndex = partitionStartIndex
-                                    + partitionsPerConsumer
-                                    + extraPartitions;
-            var partitions1 = partitions[partitionStartIndex..partitionEndIndex];
-            consumer.AssignPartitions(partitions1);
-
-            partitionStartIndex = partitionEndIndex;
-
-            if (partitionsRemainder > 0)
+            foreach (var consumer in consumers)
             {
-                partitionsRemainder--;
+                var extraPartitions = partitionsRemainder > 0 ? 1 : 0;
+                var partitionEndIndex = partitionStartIndex
+                                        + partitionsPerConsumer
+                                        + extraPartitions;
+                var partitions1 = partitions[partitionStartIndex..partitionEndIndex];
+                consumer.AssignPartitions(partitions1);
+                assignedConsumers.Add(consumer);
+
+                partitionStartIndex = partitionEndIndex;
+
+                if (partitionsRemainder > 0)
+                {
+                    partitionsRemainder--;
+                }
             }
+        }
+        catch
+        {
+            foreach (var consumer in assignedConsumers)
+            {
+                consumer.UnassignPartitions();
+            }
+
+            throw;
         }
     }
 }

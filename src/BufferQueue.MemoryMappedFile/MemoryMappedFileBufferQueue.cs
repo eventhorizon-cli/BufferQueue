@@ -70,6 +70,8 @@ internal sealed class MemoryMappedFileBufferQueue<T> : BufferQueue<T>, IDisposab
 
     private static void ValidateOptions(MemoryMappedFileBufferQueueOptions<T> options)
     {
+        _ = options.GetSegmentSizeInBytes();
+        _ = options.GetMaxRetainedConsumedSegments();
         ArgumentNullException.ThrowIfNull(options.Serializer, nameof(options.Serializer));
 
         if (!Enum.IsDefined(options.FlushStrategy))

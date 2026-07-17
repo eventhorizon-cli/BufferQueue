@@ -27,9 +27,34 @@ internal sealed class BufferPullConsumer<TItem>(BufferPullConsumerOptions option
     public void AssignPartitions(params IBufferPartition<TItem>[] partitions)
     {
         _assignedPartitions = partitions;
+        var registeredPartitionCount = 0;
+        try
+        {
+            foreach (var partition in partitions)
+            {
+                partition.RegisterConsumer(this);
+                registeredPartitionCount++;
+            }
+        }
+        catch
+        {
+            _assignedPartitions = [];
+            for (var i = 0; i < registeredPartitionCount; i++)
+            {
+                partitions[i].UnregisterConsumer(this);
+            }
+
+            throw;
+        }
+    }
+
+    public void UnassignPartitions()
+    {
+        var partitions = _assignedPartitions;
+        _assignedPartitions = [];
         foreach (var partition in partitions)
         {
-            partition.RegisterConsumer(this);
+            partition.UnregisterConsumer(this);
         }
     }
 

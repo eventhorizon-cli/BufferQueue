@@ -11,10 +11,12 @@ namespace BufferQueue.MemoryMappedFile.Tests;
 public class MemoryMappedFileBufferPartitionFlushTests
 {
     [Fact]
-    public void Flush_Options_Have_Backward_Compatible_Defaults()
+    public void Options_Have_Expected_Defaults()
     {
         var options = new MemoryMappedFileBufferQueueOptions<int>();
 
+        Assert.Equal(256L * 1024 * 1024, options.SegmentSizeInBytes);
+        Assert.Null(options.MaxRetainedConsumedSegments);
         Assert.Equal(MemoryMappedFileFlushStrategy.Immediate, options.FlushStrategy);
         Assert.Equal(100, options.FlushBatchSize);
 
@@ -74,7 +76,7 @@ public class MemoryMappedFileBufferPartitionFlushTests
         {
             TopicName = "test",
             DataDirectory = temporaryDirectory.Path,
-            SegmentSize = 1024,
+            SegmentSizeInBytes = 1024,
             Serializer = new NullItemMemoryMappedFileSerializer()
         };
         using var partition = new MemoryMappedFileBufferPartition<string>(
@@ -103,7 +105,7 @@ public class MemoryMappedFileBufferPartitionFlushTests
         partition.Enqueue(2);
 
         Assert.Equal(2, flusher.FlushCount);
-        Assert.Equal(18, ReadInt64(GetWriterOffsetFilePath(options)));
+        Assert.Equal(18, ReadInt64(GetProducerOffsetFilePath(options)));
     }
 
     [Fact]
@@ -120,12 +122,12 @@ public class MemoryMappedFileBufferPartitionFlushTests
         partition.Enqueue(2);
 
         Assert.Equal(0, flusher.FlushCount);
-        Assert.False(File.Exists(GetWriterOffsetFilePath(options)));
+        Assert.False(File.Exists(GetProducerOffsetFilePath(options)));
 
         partition.Enqueue(3);
 
         Assert.Equal(1, flusher.FlushCount);
-        Assert.Equal(27, ReadInt64(GetWriterOffsetFilePath(options)));
+        Assert.Equal(27, ReadInt64(GetProducerOffsetFilePath(options)));
 
         partition.Enqueue(4);
         partition.Enqueue(5);
@@ -135,7 +137,7 @@ public class MemoryMappedFileBufferPartitionFlushTests
         partition.Enqueue(6);
 
         Assert.Equal(2, flusher.FlushCount);
-        Assert.Equal(54, ReadInt64(GetWriterOffsetFilePath(options)));
+        Assert.Equal(54, ReadInt64(GetProducerOffsetFilePath(options)));
     }
 
     [Fact]
@@ -169,7 +171,7 @@ public class MemoryMappedFileBufferPartitionFlushTests
         var options = CreateOptions(temporaryDirectory.Path);
         options.FlushStrategy = MemoryMappedFileFlushStrategy.Batch;
         options.FlushBatchSize = 3;
-        options.SegmentSize = 22;
+        options.SegmentSizeInBytes = 22;
         var flusher = new RecordingMemoryMappedFileFlusher();
         using var partition = new MemoryMappedFileBufferPartition<int>(0, options, flusher);
 
@@ -178,7 +180,7 @@ public class MemoryMappedFileBufferPartitionFlushTests
         partition.Enqueue(3);
 
         Assert.Equal(1, flusher.FlushCount);
-        Assert.Equal(22, ReadInt64(GetWriterOffsetFilePath(options)));
+        Assert.Equal(22, ReadInt64(GetProducerOffsetFilePath(options)));
     }
 
     [Fact]
@@ -188,7 +190,7 @@ public class MemoryMappedFileBufferPartitionFlushTests
         var options = CreateOptions(temporaryDirectory.Path);
         options.FlushStrategy = MemoryMappedFileFlushStrategy.Batch;
         options.FlushBatchSize = 100;
-        options.SegmentSize = 20;
+        options.SegmentSizeInBytes = 20;
         var flusher = new RecordingMemoryMappedFileFlusher();
         using var partition = new MemoryMappedFileBufferPartition<int>(0, options, flusher);
 
@@ -197,7 +199,7 @@ public class MemoryMappedFileBufferPartitionFlushTests
         partition.Enqueue(3);
 
         Assert.Equal(1, flusher.FlushCount);
-        Assert.Equal(20, ReadInt64(GetWriterOffsetFilePath(options)));
+        Assert.Equal(20, ReadInt64(GetProducerOffsetFilePath(options)));
         Assert.True(partition.TryPull("TestGroup", 3, out var items));
         Assert.Equal(new[] { 1, 2, 3 }, items);
     }
@@ -209,7 +211,7 @@ public class MemoryMappedFileBufferPartitionFlushTests
         var options = CreateOptions(temporaryDirectory.Path);
         options.FlushStrategy = MemoryMappedFileFlushStrategy.Batch;
         options.FlushBatchSize = 100;
-        options.SegmentSize = 18;
+        options.SegmentSizeInBytes = 18;
         var flusher = new RecordingMemoryMappedFileFlusher();
         using var partition = new MemoryMappedFileBufferPartition<int>(0, options, flusher);
 
@@ -217,7 +219,7 @@ public class MemoryMappedFileBufferPartitionFlushTests
         partition.Enqueue(2);
 
         Assert.Equal(1, flusher.FlushCount);
-        Assert.Equal(18, ReadInt64(GetWriterOffsetFilePath(options)));
+        Assert.Equal(18, ReadInt64(GetProducerOffsetFilePath(options)));
     }
 
     [Fact]
@@ -238,7 +240,7 @@ public class MemoryMappedFileBufferPartitionFlushTests
 
         Assert.Equal(new[] { 1, 2 }, items);
         Assert.Equal(1, flusher.FlushCount);
-        Assert.Equal(18, ReadInt64(GetWriterOffsetFilePath(options)));
+        Assert.Equal(18, ReadInt64(GetProducerOffsetFilePath(options)));
         Assert.Equal(18, ReadInt64(GetConsumerOffsetFilePath(options, "TestGroup")));
         Assert.False(partition.TryPull("TestGroup", 2, out _));
     }
@@ -259,14 +261,14 @@ public class MemoryMappedFileBufferPartitionFlushTests
         Assert.True(partition.TryPull("TestGroup", 1, out _));
 
         Assert.Throws<IOException>(() => partition.Commit("TestGroup"));
-        Assert.False(File.Exists(GetWriterOffsetFilePath(options)));
-        Assert.False(File.Exists(GetConsumerOffsetFilePath(options, "TestGroup")));
+        Assert.False(File.Exists(GetProducerOffsetFilePath(options)));
+        Assert.Equal(0, ReadInt64(GetConsumerOffsetFilePath(options, "TestGroup")));
         Assert.True(partition.TryPull("TestGroup", 1, out var replayedItems));
         Assert.Equal(new[] { 1 }, replayedItems);
     }
 
     [Fact]
-    public void Commit_Flushes_Records_Scanned_Past_The_Writer_Checkpoint()
+    public void Commit_Flushes_Records_Scanned_Past_The_Producer_Checkpoint()
     {
         using var temporaryDirectory = new TemporaryDirectory();
         var options = CreateOptions(temporaryDirectory.Path);
@@ -278,7 +280,7 @@ public class MemoryMappedFileBufferPartitionFlushTests
             new RecordingMemoryMappedFileFlusher());
         originalPartition.Enqueue(1);
         originalPartition.Enqueue(2);
-        Assert.False(File.Exists(GetWriterOffsetFilePath(options)));
+        Assert.False(File.Exists(GetProducerOffsetFilePath(options)));
 
         var restoredFlusher = new RecordingMemoryMappedFileFlusher();
         using var restoredPartition = new MemoryMappedFileBufferPartition<int>(0, options, restoredFlusher);
@@ -288,7 +290,7 @@ public class MemoryMappedFileBufferPartitionFlushTests
 
         Assert.Equal(new[] { 1, 2 }, items);
         Assert.Equal(1, restoredFlusher.FlushCount);
-        Assert.Equal(18, ReadInt64(GetWriterOffsetFilePath(options)));
+        Assert.Equal(18, ReadInt64(GetProducerOffsetFilePath(options)));
         Assert.Equal(18, ReadInt64(GetConsumerOffsetFilePath(options, "TestGroup")));
     }
 
@@ -298,12 +300,12 @@ public class MemoryMappedFileBufferPartitionFlushTests
             TopicName = "test",
             DataDirectory = dataDirectory,
             PartitionNumber = 1,
-            SegmentSize = 1024,
+            SegmentSizeInBytes = 1024,
             Serializer = new Int32MemoryMappedFileSerializer()
         };
 
-    private static string GetWriterOffsetFilePath(MemoryMappedFileBufferQueueOptions<int> options) =>
-        Path.Combine(options.DataDirectory, options.TopicName!, "partition-00000", "writer.offset");
+    private static string GetProducerOffsetFilePath(MemoryMappedFileBufferQueueOptions<int> options) =>
+        Path.Combine(options.DataDirectory, options.TopicName!, "partition-00000", "producer.offset");
 
     private static string GetConsumerOffsetFilePath(
         MemoryMappedFileBufferQueueOptions<int> options,
@@ -314,7 +316,7 @@ public class MemoryMappedFileBufferPartitionFlushTests
             "partition-00000",
             "offsets",
             groupName,
-            "offset");
+            "consumer.offset");
 
     private static long ReadInt64(string filePath) =>
         BinaryPrimitives.ReadInt64LittleEndian(File.ReadAllBytes(filePath));
