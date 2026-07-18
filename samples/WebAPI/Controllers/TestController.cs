@@ -1,26 +1,28 @@
 using BufferQueue;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.DependencyInjection;
 using WebApp;
 
 namespace WebAPI.Controllers;
 
 [ApiController]
 [Route("/api/[controller]")]
-public class TestController(IBufferQueue bufferQueue) : ControllerBase
+public class TestController(
+    [FromKeyedServices("topic-foo1")] IBufferProducer<Foo> foo1Producer,
+    [FromKeyedServices("topic-foo2")] IBufferProducer<Foo> foo2Producer,
+    IBufferQueue bufferQueue) : ControllerBase
 {
     [HttpPost("foo1")]
     public async Task<IActionResult> PostFoo1([FromBody] Foo foo)
     {
-        var producer = bufferQueue.GetProducer<Foo>("topic-foo1");
-        await producer.ProduceAsync(foo);
+        await foo1Producer.ProduceAsync(foo);
         return Ok();
     }
 
     [HttpPost("foo2")]
     public async Task<IActionResult> PostFoo2([FromBody] Foo foo)
     {
-        var producer = bufferQueue.GetProducer<Foo>("topic-foo2");
-        await producer.ProduceAsync(foo);
+        await foo2Producer.ProduceAsync(foo);
         return Ok();
     }
 

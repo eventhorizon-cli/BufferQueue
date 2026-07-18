@@ -8,6 +8,9 @@ namespace BufferQueue.MemoryMappedFile.Tests;
 
 public class MemoryMappedFileBufferServiceCollectionExtensionsTests
 {
+    private const string MemoryTopicName = "memory-topic";
+    private const string MemoryMappedFileTopicName = "memory-mapped-file-topic";
+
     [Fact]
     public void AddMemoryMappedFileBuffer()
     {
@@ -21,14 +24,14 @@ public class MemoryMappedFileBufferServiceCollectionExtensionsTests
                         options.TopicName = "topic1";
                         options.DataDirectory = temporaryDirectory.Path;
                         options.PartitionNumber = 1;
-                        options.SegmentSize = 1024;
+                        options.SegmentSizeInBytes = 1024;
                     })
                     .AddTopic<int>(options =>
                     {
                         options.TopicName = "topic2";
                         options.DataDirectory = temporaryDirectory.Path;
                         options.PartitionNumber = 2;
-                        options.SegmentSize = 1024;
+                        options.SegmentSizeInBytes = 1024;
                     })
             ));
 
@@ -93,6 +96,38 @@ public class MemoryMappedFileBufferServiceCollectionExtensionsTests
     }
 
     [Fact]
+    public void AddMemoryMappedFileBuffer_Will_Throw_For_Invalid_Segment_Size_In_Bytes()
+    {
+        var services = new ServiceCollection();
+
+        var exception = Assert.Throws<ArgumentOutOfRangeException>(() => services.AddBufferQueue(
+            bufferOptionsBuilder => bufferOptionsBuilder.UseMemoryMappedFile(
+                memoryMappedFileBufferOptionsBuilder => memoryMappedFileBufferOptionsBuilder.AddTopic<int>(options =>
+                {
+                    options.TopicName = "topic";
+                    options.SegmentSizeInBytes = 0;
+                }))));
+
+        Assert.Equal("SegmentSizeInBytes", exception.ParamName);
+    }
+
+    [Fact]
+    public void AddMemoryMappedFileBuffer_Will_Throw_For_Invalid_Retained_Segment_Count()
+    {
+        var services = new ServiceCollection();
+
+        var exception = Assert.Throws<ArgumentOutOfRangeException>(() => services.AddBufferQueue(
+            bufferOptionsBuilder => bufferOptionsBuilder.UseMemoryMappedFile(
+                memoryMappedFileBufferOptionsBuilder => memoryMappedFileBufferOptionsBuilder.AddTopic<int>(options =>
+                {
+                    options.TopicName = "topic";
+                    options.MaxRetainedConsumedSegments = -1;
+                }))));
+
+        Assert.Equal("MaxRetainedConsumedSegments", exception.ParamName);
+    }
+
+    [Fact]
     public void AddMemoryMappedFileBuffer_Will_Throw_If_Serializer_Is_Null()
     {
         using var temporaryDirectory = new TemporaryDirectory();
@@ -106,6 +141,62 @@ public class MemoryMappedFileBufferServiceCollectionExtensionsTests
                     options.DataDirectory = temporaryDirectory.Path;
                     options.Serializer = null!;
                 }))));
+    }
+
+    [Fact]
+    public void UseMemory_And_UseMemoryMappedFile_Can_Be_Used_Together()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var services = new ServiceCollection();
+
+        services.AddBufferQueue(bufferOptionsBuilder =>
+        {
+            bufferOptionsBuilder
+                .UseMemory(memoryBufferOptionsBuilder =>
+                    memoryBufferOptionsBuilder.AddTopic<int>(options =>
+                    {
+                        options.TopicName = MemoryTopicName;
+                        options.PartitionNumber = 1;
+                    }))
+                .UseMemoryMappedFile(memoryMappedFileBufferOptionsBuilder =>
+                    memoryMappedFileBufferOptionsBuilder.AddTopic<int>(options =>
+                    {
+                        options.TopicName = MemoryMappedFileTopicName;
+                        options.DataDirectory = temporaryDirectory.Path;
+                        options.PartitionNumber = 1;
+                        options.SegmentSizeInBytes = 1024;
+                    }));
+        });
+        services.AddSingleton<KeyedProducerDependencies>();
+
+        using var provider = services.BuildServiceProvider();
+        var dependencies = provider.GetRequiredService<KeyedProducerDependencies>();
+        var bufferQueue = provider.GetRequiredService<IBufferQueue>();
+
+        Assert.Same(
+            bufferQueue.GetProducer<int>(MemoryTopicName),
+            dependencies.MemoryProducer);
+        Assert.Same(
+            bufferQueue.GetProducer<int>(MemoryMappedFileTopicName),
+            dependencies.MemoryMappedFileProducer);
+        Assert.NotSame(
+            dependencies.MemoryProducer,
+            dependencies.MemoryMappedFileProducer);
+    }
+
+    private sealed class KeyedProducerDependencies
+    {
+        public KeyedProducerDependencies(
+            [FromKeyedServices(MemoryTopicName)] IBufferProducer<int> memoryProducer,
+            [FromKeyedServices(MemoryMappedFileTopicName)] IBufferProducer<int> memoryMappedFileProducer)
+        {
+            MemoryProducer = memoryProducer;
+            MemoryMappedFileProducer = memoryMappedFileProducer;
+        }
+
+        public IBufferProducer<int> MemoryProducer { get; }
+
+        public IBufferProducer<int> MemoryMappedFileProducer { get; }
     }
 
 }

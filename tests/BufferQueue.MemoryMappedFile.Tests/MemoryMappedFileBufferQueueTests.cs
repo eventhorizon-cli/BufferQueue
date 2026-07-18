@@ -17,7 +17,7 @@ public class MemoryMappedFileBufferQueueTests
             TopicName = "test",
             DataDirectory = temporaryDirectory.Path,
             PartitionNumber = 1,
-            SegmentSize = 1024
+            SegmentSizeInBytes = 1024
         });
         var producer = queue.GetProducer();
         var consumer = queue.CreateConsumer(new BufferPullConsumerOptions
@@ -57,7 +57,7 @@ public class MemoryMappedFileBufferQueueTests
             TopicName = "test",
             DataDirectory = temporaryDirectory.Path,
             PartitionNumber = 1,
-            SegmentSize = 1024
+            SegmentSizeInBytes = 1024
         });
         var producer = queue.GetProducer();
         var consumer = queue.CreateConsumer(new BufferPullConsumerOptions
@@ -94,7 +94,7 @@ public class MemoryMappedFileBufferQueueTests
             TopicName = "test",
             DataDirectory = temporaryDirectory.Path,
             PartitionNumber = 1,
-            SegmentSize = 1024
+            SegmentSizeInBytes = 1024
         };
         using var queue = new MemoryMappedFileBufferQueue<int>(options);
         var producer = queue.GetProducer();
@@ -143,7 +143,7 @@ public class MemoryMappedFileBufferQueueTests
             TopicName = "test",
             DataDirectory = temporaryDirectory.Path,
             PartitionNumber = 1,
-            SegmentSize = 1024,
+            SegmentSizeInBytes = 1024,
             FlushStrategy = MemoryMappedFileFlushStrategy.Batch,
             FlushBatchSize = 100
         };
@@ -193,7 +193,7 @@ public class MemoryMappedFileBufferQueueTests
             TopicName = "test",
             DataDirectory = temporaryDirectory.Path,
             PartitionNumber = 1,
-            SegmentSize = 1024
+            SegmentSizeInBytes = 1024
         });
         var producer = queue.GetProducer();
         var consumer = queue.CreateConsumer(new BufferPullConsumerOptions
@@ -218,7 +218,7 @@ public class MemoryMappedFileBufferQueueTests
             "partition-00000",
             "offsets",
             "orders%2Fworker 1",
-            "offset");
+            "consumer.offset");
 
         Assert.True(File.Exists(offsetFilePath));
     }
@@ -232,7 +232,7 @@ public class MemoryMappedFileBufferQueueTests
             TopicName = "test",
             DataDirectory = temporaryDirectory.Path,
             PartitionNumber = 1,
-            SegmentSize = 1024
+            SegmentSizeInBytes = 1024
         };
         using var queue = new MemoryMappedFileBufferQueue<int>(options);
         var producer = queue.GetProducer();
@@ -270,7 +270,7 @@ public class MemoryMappedFileBufferQueueTests
     }
 
     [Fact]
-    public async Task Writer_Offset_Will_Be_Persisted()
+    public async Task Producer_Offset_Will_Be_Persisted()
     {
         using var temporaryDirectory = new TemporaryDirectory();
         using var queue = new MemoryMappedFileBufferQueue<int>(new MemoryMappedFileBufferQueueOptions<int>
@@ -278,26 +278,26 @@ public class MemoryMappedFileBufferQueueTests
             TopicName = "test",
             DataDirectory = temporaryDirectory.Path,
             PartitionNumber = 1,
-            SegmentSize = 1024
+            SegmentSizeInBytes = 1024
         });
         var producer = queue.GetProducer();
 
         await producer.ProduceAsync(1);
         await producer.ProduceAsync(2);
 
-        var writerOffsetFilePath = Path.Combine(
+        var producerOffsetFilePath = Path.Combine(
             temporaryDirectory.Path,
             "test",
             "partition-00000",
-            "writer.offset");
-        var writerOffsetBytes = await File.ReadAllBytesAsync(writerOffsetFilePath);
-        var writerOffset = BinaryPrimitives.ReadInt64LittleEndian(writerOffsetBytes);
+            "producer.offset");
+        var producerOffsetBytes = await File.ReadAllBytesAsync(producerOffsetFilePath);
+        var producerOffset = BinaryPrimitives.ReadInt64LittleEndian(producerOffsetBytes);
 
-        Assert.True(writerOffset > 0);
+        Assert.True(producerOffset > 0);
     }
 
     [Fact]
-    public async Task Writer_Offset_Will_Scan_Forward_If_Persisted_Offset_Is_Behind()
+    public async Task Producer_Offset_Will_Scan_Forward_If_Persisted_Offset_Is_Behind()
     {
         using var temporaryDirectory = new TemporaryDirectory();
         var options = new MemoryMappedFileBufferQueueOptions<int>
@@ -305,7 +305,7 @@ public class MemoryMappedFileBufferQueueTests
             TopicName = "test",
             DataDirectory = temporaryDirectory.Path,
             PartitionNumber = 1,
-            SegmentSize = 1024
+            SegmentSizeInBytes = 1024
         };
         using var queue = new MemoryMappedFileBufferQueue<int>(options);
         var producer = queue.GetProducer();
@@ -314,14 +314,14 @@ public class MemoryMappedFileBufferQueueTests
         await producer.ProduceAsync(2);
         await producer.ProduceAsync(3);
 
-        var writerOffsetFilePath = Path.Combine(
+        var producerOffsetFilePath = Path.Combine(
             options.DataDirectory,
             "test",
             "partition-00000",
-            "writer.offset");
-        var staleWriterOffsetBytes = new byte[sizeof(long)];
-        BinaryPrimitives.WriteInt64LittleEndian(staleWriterOffsetBytes, 0);
-        await File.WriteAllBytesAsync(writerOffsetFilePath, staleWriterOffsetBytes);
+            "producer.offset");
+        var staleProducerOffsetBytes = new byte[sizeof(long)];
+        BinaryPrimitives.WriteInt64LittleEndian(staleProducerOffsetBytes, 0);
+        await File.WriteAllBytesAsync(producerOffsetFilePath, staleProducerOffsetBytes);
 
         using var restoredQueue = new MemoryMappedFileBufferQueue<int>(options);
         var restoredConsumer = restoredQueue.CreateConsumer(new BufferPullConsumerOptions
@@ -340,7 +340,7 @@ public class MemoryMappedFileBufferQueueTests
     }
 
     [Fact]
-    public async Task Writer_Offset_Will_Throw_If_Persisted_Offset_Is_Ahead()
+    public async Task Producer_Offset_Will_Throw_If_Persisted_Offset_Is_Ahead()
     {
         using var temporaryDirectory = new TemporaryDirectory();
         var options = new MemoryMappedFileBufferQueueOptions<int>
@@ -348,7 +348,7 @@ public class MemoryMappedFileBufferQueueTests
             TopicName = "test",
             DataDirectory = temporaryDirectory.Path,
             PartitionNumber = 1,
-            SegmentSize = 1024
+            SegmentSizeInBytes = 1024
         };
         using var queue = new MemoryMappedFileBufferQueue<int>(options);
         var producer = queue.GetProducer();
@@ -356,14 +356,14 @@ public class MemoryMappedFileBufferQueueTests
         await producer.ProduceAsync(1);
         await producer.ProduceAsync(2);
 
-        var writerOffset = await ReadInt64Async(GetWriterOffsetFilePath(options.DataDirectory, "test"));
-        await WriteInt64Async(GetWriterOffsetFilePath(options.DataDirectory, "test"), writerOffset + 100);
+        var producerOffset = await ReadInt64Async(GetProducerOffsetFilePath(options.DataDirectory, "test"));
+        await WriteInt64Async(GetProducerOffsetFilePath(options.DataDirectory, "test"), producerOffset + 100);
 
         Assert.Throws<InvalidDataException>(() => new MemoryMappedFileBufferQueue<int>(options));
     }
 
     [Fact]
-    public async Task Writer_Offset_Will_Throw_If_Persisted_Offset_Is_Not_Record_Boundary()
+    public async Task Producer_Offset_Will_Throw_If_Persisted_Offset_Is_Not_Record_Boundary()
     {
         using var temporaryDirectory = new TemporaryDirectory();
         var options = new MemoryMappedFileBufferQueueOptions<int>
@@ -371,7 +371,7 @@ public class MemoryMappedFileBufferQueueTests
             TopicName = "test",
             DataDirectory = temporaryDirectory.Path,
             PartitionNumber = 1,
-            SegmentSize = 1024
+            SegmentSizeInBytes = 1024
         };
         using var queue = new MemoryMappedFileBufferQueue<int>(options);
         var producer = queue.GetProducer();
@@ -379,13 +379,13 @@ public class MemoryMappedFileBufferQueueTests
         await producer.ProduceAsync(1);
         await producer.ProduceAsync(2);
 
-        await WriteInt64Async(GetWriterOffsetFilePath(options.DataDirectory, "test"), 3);
+        await WriteInt64Async(GetProducerOffsetFilePath(options.DataDirectory, "test"), 3);
 
         Assert.Throws<InvalidDataException>(() => new MemoryMappedFileBufferQueue<int>(options));
     }
 
     [Fact]
-    public async Task Writer_Offset_Will_Throw_If_Checkpoint_Is_Malformed()
+    public async Task Producer_Offset_Will_Throw_If_Checkpoint_Is_Malformed()
     {
         using var temporaryDirectory = new TemporaryDirectory();
         var options = new MemoryMappedFileBufferQueueOptions<int>
@@ -393,12 +393,12 @@ public class MemoryMappedFileBufferQueueTests
             TopicName = "test",
             DataDirectory = temporaryDirectory.Path,
             PartitionNumber = 1,
-            SegmentSize = 1024
+            SegmentSizeInBytes = 1024
         };
         using var queue = new MemoryMappedFileBufferQueue<int>(options);
 
         await queue.GetProducer().ProduceAsync(1);
-        await File.WriteAllBytesAsync(GetWriterOffsetFilePath(options.DataDirectory, "test"), [1, 2, 3]);
+        await File.WriteAllBytesAsync(GetProducerOffsetFilePath(options.DataDirectory, "test"), [1, 2, 3]);
 
         Assert.Throws<InvalidDataException>(() => new MemoryMappedFileBufferQueue<int>(options));
     }
@@ -412,7 +412,7 @@ public class MemoryMappedFileBufferQueueTests
             TopicName = "test",
             DataDirectory = temporaryDirectory.Path,
             PartitionNumber = 1,
-            SegmentSize = 1024
+            SegmentSizeInBytes = 1024
         };
         using var queue = new MemoryMappedFileBufferQueue<int>(options);
         var producer = queue.GetProducer();
@@ -420,7 +420,7 @@ public class MemoryMappedFileBufferQueueTests
         await producer.ProduceAsync(1);
         await producer.ProduceAsync(2);
 
-        var writerOffset = await ReadInt64Async(GetWriterOffsetFilePath(options.DataDirectory, "test"));
+        var producerOffset = await ReadInt64Async(GetProducerOffsetFilePath(options.DataDirectory, "test"));
         var segmentFilePath = Path.Combine(
             options.DataDirectory,
             "test",
@@ -428,7 +428,7 @@ public class MemoryMappedFileBufferQueueTests
             "00000000000000000000.log");
         await using (var stream = new FileStream(segmentFilePath, FileMode.Open, FileAccess.Write, FileShare.ReadWrite))
         {
-            stream.Position = writerOffset;
+            stream.Position = producerOffset;
             var partialLength = new byte[sizeof(int)];
             BinaryPrimitives.WriteInt32LittleEndian(partialLength, 100);
             await stream.WriteAsync(partialLength);
@@ -452,7 +452,7 @@ public class MemoryMappedFileBufferQueueTests
     }
 
     [Fact]
-    public async Task Consumer_Offset_Will_Throw_If_Persisted_Offset_Is_Ahead_Of_Writer()
+    public async Task Consumer_Offset_Will_Throw_If_Persisted_Offset_Is_Ahead_Of_Producer()
     {
         using var temporaryDirectory = new TemporaryDirectory();
         var options = new MemoryMappedFileBufferQueueOptions<int>
@@ -460,7 +460,7 @@ public class MemoryMappedFileBufferQueueTests
             TopicName = "test",
             DataDirectory = temporaryDirectory.Path,
             PartitionNumber = 1,
-            SegmentSize = 1024
+            SegmentSizeInBytes = 1024
         };
         using var queue = new MemoryMappedFileBufferQueue<int>(options);
         var producer = queue.GetProducer();
@@ -469,20 +469,7 @@ public class MemoryMappedFileBufferQueueTests
         await producer.ProduceAsync(2);
         await WriteInt64Async(GetConsumerOffsetFilePath(options.DataDirectory, "test", "TestGroup"), 999);
 
-        using var restoredQueue = new MemoryMappedFileBufferQueue<int>(options);
-        var restoredConsumer = restoredQueue.CreateConsumer(new BufferPullConsumerOptions
-        {
-            TopicName = "test",
-            GroupName = "TestGroup",
-            AutoCommit = true,
-            BatchSize = 2
-        });
-
-        await Assert.ThrowsAsync<InvalidDataException>(async () =>
-        {
-            await using var enumerator = restoredConsumer.ConsumeAsync().GetAsyncEnumerator();
-            await enumerator.MoveNextAsync();
-        });
+        Assert.Throws<InvalidDataException>(() => new MemoryMappedFileBufferQueue<int>(options));
     }
 
     [Fact]
@@ -494,27 +481,14 @@ public class MemoryMappedFileBufferQueueTests
             TopicName = "test",
             DataDirectory = temporaryDirectory.Path,
             PartitionNumber = 1,
-            SegmentSize = 1024
+            SegmentSizeInBytes = 1024
         };
         using var queue = new MemoryMappedFileBufferQueue<int>(options);
         await queue.GetProducer().ProduceAsync(1);
         var consumerOffsetFilePath = GetConsumerOffsetFilePath(options.DataDirectory, "test", "TestGroup");
         Directory.CreateDirectory(Path.GetDirectoryName(consumerOffsetFilePath)!);
         await File.WriteAllBytesAsync(consumerOffsetFilePath, [1, 2, 3]);
-        using var restoredQueue = new MemoryMappedFileBufferQueue<int>(options);
-        var restoredConsumer = restoredQueue.CreateConsumer(new BufferPullConsumerOptions
-        {
-            TopicName = "test",
-            GroupName = "TestGroup",
-            AutoCommit = true,
-            BatchSize = 1
-        });
-
-        await Assert.ThrowsAsync<InvalidDataException>(async () =>
-        {
-            await using var enumerator = restoredConsumer.ConsumeAsync().GetAsyncEnumerator();
-            await enumerator.MoveNextAsync();
-        });
+        Assert.Throws<InvalidDataException>(() => new MemoryMappedFileBufferQueue<int>(options));
     }
 
     [Fact]
@@ -526,7 +500,7 @@ public class MemoryMappedFileBufferQueueTests
             TopicName = "test",
             DataDirectory = temporaryDirectory.Path,
             PartitionNumber = 2,
-            SegmentSize = 1024
+            SegmentSizeInBytes = 1024
         };
         using var queue = new MemoryMappedFileBufferQueue<int>(options);
         var producer = queue.GetProducer();
@@ -539,7 +513,7 @@ public class MemoryMappedFileBufferQueueTests
             TopicName = "test",
             DataDirectory = temporaryDirectory.Path,
             PartitionNumber = 1,
-            SegmentSize = 1024
+            SegmentSizeInBytes = 1024
         };
 
         Assert.Throws<InvalidDataException>(() => new MemoryMappedFileBufferQueue<int>(reducedOptions));
@@ -554,7 +528,7 @@ public class MemoryMappedFileBufferQueueTests
             TopicName = "test",
             DataDirectory = temporaryDirectory.Path,
             PartitionNumber = 1,
-            SegmentSize = 1024
+            SegmentSizeInBytes = 1024
         });
         var producer = queue.GetProducer();
         var consumer = queue.CreateConsumer(new BufferPullConsumerOptions
@@ -592,7 +566,7 @@ public class MemoryMappedFileBufferQueueTests
             TopicName = "test",
             DataDirectory = temporaryDirectory.Path,
             PartitionNumber = 2,
-            SegmentSize = 1024
+            SegmentSizeInBytes = 1024
         });
         var producer = queue.GetProducer();
         var consumers = queue.CreateConsumers(
@@ -623,11 +597,11 @@ public class MemoryMappedFileBufferQueueTests
         }
     }
 
-    private static string GetWriterOffsetFilePath(string dataDirectory, string topicName) =>
-        Path.Combine(dataDirectory, topicName, "partition-00000", "writer.offset");
+    private static string GetProducerOffsetFilePath(string dataDirectory, string topicName) =>
+        Path.Combine(dataDirectory, topicName, "partition-00000", "producer.offset");
 
     private static string GetConsumerOffsetFilePath(string dataDirectory, string topicName, string groupName) =>
-        Path.Combine(dataDirectory, topicName, "partition-00000", "offsets", groupName, "offset");
+        Path.Combine(dataDirectory, topicName, "partition-00000", "offsets", groupName, "consumer.offset");
 
     private static async Task<long> ReadInt64Async(string filePath)
     {

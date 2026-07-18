@@ -83,7 +83,7 @@ public class MessagePackMemoryMappedFileSerializerTests
         {
             TopicName = "test",
             DataDirectory = temporaryDirectory.Path,
-            SegmentSize = 1024,
+            SegmentSizeInBytes = 1024,
             Serializer = new MessagePackMemoryMappedFileSerializer<MessagePackTestItem>()
         };
         using var queue = new MemoryMappedFileBufferQueue<MessagePackTestItem>(options);

@@ -5,7 +5,7 @@
 BufferQueue is a typed, topic-based buffering library for .NET. It provides a common queue model with pluggable storage implementations. The current codebase contains two storage modes:
 
 - Memory mode: stores items in in-process segmented memory.
-- MemoryMappedFile mode: stores serialized records in memory-mapped segment files and persists writer and committed consumer offsets.
+- MemoryMappedFile mode: stores serialized records in memory-mapped segment files and persists producer and committed consumer offsets.
 
 Both modes share the same producer, pull-consumer, consumer-group, partition-assignment, batching, and wake-up semantics. The storage-specific behavior is isolated behind the internal partition abstraction.
 
@@ -18,9 +18,19 @@ The core `BufferQueue` project does not reference `BufferQueue.MemoryMappedFile`
 
 ## Public Model
 
-The public entry point is `IBufferQueue`. Applications use it to obtain producers and create consumers by topic name.
+Choose how to access a producer based on when the topic is known:
+
+- If the topic is fixed when declaring the dependency, inject `IBufferProducer<T>` with
+  `[FromKeyedServices("topic-name")]`.
+- If the topic is selected at runtime, inject `IBufferQueue` and call `GetProducer<T>(topicName)`.
 
 ```csharp
+public sealed class FooPublisher(
+    [FromKeyedServices("topic-foo")] IBufferProducer<Foo> producer)
+{
+    public ValueTask PublishAsync(Foo item) => producer.ProduceAsync(item);
+}
+
 var producer = bufferQueue.GetProducer<Foo>("topic-foo");
 var consumer = bufferQueue.CreatePullConsumer<Foo>(new BufferPullConsumerOptions
 {
@@ -39,7 +49,9 @@ The public API is intentionally small:
 - `BufferPullConsumerOptions` configures topic, group, auto-commit, and batch size.
 - `BufferOptionsBuilder` wires storage implementations into dependency injection.
 
-Internally, each registered topic is represented as `IBufferQueue<T>`. The non-generic `BufferQueue` resolves the typed topic queue from the DI container by topic name.
+Internally, each registered topic is represented as `IBufferQueue<T>`. Its keyed `IBufferProducer<T>` registration
+forwards to the producer owned by that queue. The non-generic `BufferQueue` resolves the typed topic queue from the DI
+container by topic name.
 
 ## High-Level Architecture
 
@@ -219,7 +231,11 @@ When bounded capacity is configured:
 
 ## MemoryMappedFile Mode
 
-MemoryMappedFile mode persists produced data in memory-mapped segment files. It also persists the writer offset and committed consumer offsets. It is designed for local durable buffering with simple recovery. The configured flush strategy determines when newly appended records reach an explicit durability boundary.
+MemoryMappedFile mode persists produced data in memory-mapped segment files. It also persists the producer offset and committed consumer offsets. It is designed for local durable buffering with simple recovery. The configured flush strategy determines when newly appended records reach an explicit durability boundary.
+
+`MemoryMappedFileBufferQueueOptions<T>.SegmentSizeInBytes` configures the segment size in bytes and defaults to `256L * 1024 * 1024` (256 MiB).
+
+`MaxRetainedConsumedSegments` controls per-partition deletion of fully consumed segments. It defaults to `null`, which disables deletion. `0` retains no reclaimable consumed segments, while a positive value retains that many of the newest consumed segments.
 
 ### Directory Layout
 
@@ -246,32 +262,40 @@ Consumer offsets are stored under:
 Each consumer group has one readable directory under `offsets`. The directory name is `{escaped-group-name}`. The group name is used directly when it is a valid folder name. Only characters that are not safe in a single path component, such as `/`, are percent-encoded. The percent sign itself is also encoded to avoid collisions with escaped names.
 
 ```text
-{DataDirectory}/{TopicName}/partition-{PartitionId:D5}/offsets/{escaped-group-name}/offset
+{DataDirectory}/{TopicName}/partition-{PartitionId:D5}/offsets/{escaped-group-name}/consumer.offset
 ```
 
 For example, topic `orders`, partition `0`, and group `billing-worker-1` use:
 
 ```text
-bufferqueue/orders/partition-00000/offsets/billing-worker-1/offset
+bufferqueue/orders/partition-00000/offsets/billing-worker-1/consumer.offset
 ```
 
 If the group name is `orders/worker 1`, the slash is encoded and the space remains visible:
 
 ```text
-bufferqueue/orders/partition-00000/offsets/orders%2Fworker 1/offset
+bufferqueue/orders/partition-00000/offsets/orders%2Fworker 1/consumer.offset
 ```
 
-The partition writer offset is stored in:
+The partition producer offset is stored in:
 
 ```text
-{DataDirectory}/{TopicName}/partition-{PartitionId:D5}/writer.offset
+{DataDirectory}/{TopicName}/partition-{PartitionId:D5}/producer.offset
 ```
 
 For example:
 
 ```text
-bufferqueue/orders/partition-00000/writer.offset
+bufferqueue/orders/partition-00000/producer.offset
 ```
+
+The earliest retained segment boundary is stored in:
+
+```text
+{DataDirectory}/{TopicName}/partition-{PartitionId:D5}/earliest.offset
+```
+
+`earliest.offset`, `producer.offset`, and consumer offset files all contain one 8-byte little-endian integer.
 
 ### Record Format
 
@@ -322,13 +346,13 @@ A segment rollover and a consumer commit are unconditional flush boundaries in b
 
 `MemoryMappedFileBufferProducer<T>` selects a partition in round-robin order. The partition serializes the item, calculates the record size, finds the active segment, writes the record, advances the in-process write offset, applies the configured flush strategy, and notifies consumers.
 
-At every flush boundary, the partition flushes the memory-mapped accessor first and writes the corresponding offset to `writer.offset` only after that flush succeeds. A segment rollover flushes the completed segment before writing to the next segment. A consumer commit also flushes pending log data and advances `writer.offset` before its consumer offset is persisted.
+At every flush boundary, the partition flushes the memory-mapped accessor first and writes the corresponding offset to `producer.offset` only after that flush succeeds. A segment rollover flushes the completed segment before writing to the next segment. A consumer commit also flushes pending log data and advances `producer.offset` before its consumer offset is persisted.
 
 If a serialized item is larger than the segment size, production fails with `InvalidOperationException`.
 
 ### Recovery
 
-When a memory-mapped-file partition starts, it first attempts to read `writer.offset`. If the file is missing, startup scans from offset `0`. If the stored writer offset is valid and points to a real record boundary, startup scans forward from that position to find the last valid write offset.
+When a memory-mapped-file partition starts, it reads `earliest.offset`, defaulting to `0` when the file is absent, and then attempts to read `producer.offset`. If the producer checkpoint is missing, startup scans from the earliest retained offset. If the stored producer offset is valid and points to a real record boundary at or after the earliest retained offset, startup scans forward from that position to find the last valid write offset.
 
 The scan stops when it finds:
 
@@ -339,34 +363,49 @@ The scan stops when it finds:
 
 This keeps normal startup fast while still tolerating expected crash windows:
 
-- data was flushed, but `writer.offset` was not updated yet;
+- data was flushed, but `producer.offset` was not updated yet;
 - the operating system persisted complete records from a pending batch before its explicit flush;
 - trailing data was only partially written.
 
-In these cases, the startup scan finds the last valid record boundary. Because `writer.offset` is advanced only after the corresponding log flush succeeds, recovery can use it as a safe checkpoint and scan forward for additional complete records. In `Batch` mode, records in a partial tail batch that was not explicitly flushed may be absent after an abnormal termination. Clearly inconsistent checkpoint state is still treated as corruption and fails fast. If `writer.offset` is invalid, ahead of the actual log, or not aligned to a record boundary, startup throws an exception instead of silently falling back.
+In these cases, the startup scan finds the last valid record boundary. Because `producer.offset` is advanced only after the corresponding log flush succeeds, recovery can use it as a safe checkpoint and scan forward for additional complete records. In `Batch` mode, records in a partial tail batch that was not explicitly flushed may be absent after an abnormal termination. Clearly inconsistent checkpoint state is still treated as corruption and fails fast. `earliest.offset` must be segment-aligned and no greater than the producer offset. Retained segment files must be contiguous. Invalid offsets, missing retained segments, incorrectly sized segment files, and non-record-boundary checkpoints throw instead of creating replacement files or silently falling back.
 
 ### Offset Persistence
 
 MemoryMappedFile mode persists committed offsets per partition and consumer group.
 
-On `Commit`, the partition first forces pending log data to be flushed and advances `writer.offset`. It then writes the committed offset as an 8-byte little-endian integer to the group's `offset` checkpoint file. This ordering prevents a persisted consumer offset from advancing beyond successfully flushed log data. The checkpoint write uses a temporary file followed by replace or move, so readers do not observe a partially written offset file.
+On `Commit`, the partition first forces pending log data to be flushed and advances `producer.offset`. It then writes the committed offset as an 8-byte little-endian integer to the group's `consumer.offset` checkpoint file. This ordering prevents a persisted consumer offset from advancing beyond successfully flushed log data. The checkpoint write uses a temporary file followed by replace or move, so readers do not observe a partially written offset file.
 
-On reader creation:
+When a consumer group is assigned partitions, each partition creates its initial offset checkpoint at the earliest retained offset if the group has no checkpoint yet. This makes the group participate in retention before its first pull. On reader creation:
 
 - if the offset file exists and contains a valid offset, reading starts from that offset;
-- if the offset file is missing, reading starts from `0`;
+- if the offset file is new, reading starts from the earliest retained offset;
 - if the offset file has an invalid length or contains a negative offset, reading fails with `InvalidDataException`;
-- if the stored offset is beyond the current write offset, the reader throws an exception instead of silently resetting progress.
+- if the stored offset is before the earliest retained offset, beyond the current write offset, or not on a record boundary, the reader throws instead of silently resetting progress.
 
-Only committed offsets are persisted. If a consumer reads a batch but does not commit, the next queue instance reads that batch again.
+The initial offset and subsequent committed offsets are persisted. If a consumer reads a batch but does not commit, its checkpoint does not advance and the next queue instance reads that batch again.
 
-### Writer Offset Persistence
+### Segment Retention
 
-At a flush boundary, the partition flushes the memory-mapped file accessor and then writes the latest successfully flushed writer offset to `writer.offset` as an 8-byte little-endian integer. `Immediate` creates this boundary for every record. `Batch` creates it when `FlushBatchSize` records have accumulated, and segment rollover or consumer commit creates it regardless of the pending count.
+A segment is reclaimable only when every known consumer group has committed past its end. The partition computes the minimum committed offset across all persisted group checkpoints, including groups that are not active in the current process. Offsets are normalized across segment-end markers and padding without skipping records. No segment is deleted when there are no known groups.
 
-The writer offset write uses the same temporary-file plus replace or move pattern as consumer offsets. This prevents a valid offset file from being replaced by a partially written file.
+For a retention value `N`, the partition keeps the newest `N` reclaimable segments and all segments at or after the first segment that has not been fully consumed by every group. Slow, uncommitted, offline, and obsolete group checkpoints therefore block reclamation. Removing an obsolete group is an explicit administrative action: stop the queue and delete the entire `offsets/{escaped-group-name}/` directory for every partition, not only its `consumer.offset` file.
 
-The writer offset is an optimization and recovery hint, not the only source of truth. In `Batch` mode it may lag the current in-process write offset while a partial batch is pending. On startup, the partition still validates records from the stored writer offset forward. If the persisted writer offset is behind complete records in the data files, the scan catches up. If the writer offset file is missing, the partition scans from the beginning. If the writer offset file is present but inconsistent with the log, recovery fails fast.
+Deletion runs after a successful consumer commit and during startup to retry incomplete cleanup. The durable order is:
+
+1. flush log data and advance `producer.offset`;
+2. persist the consumer offset;
+3. atomically advance `earliest.offset` to the new segment boundary;
+4. dispose mapped views for older segments and delete their files.
+
+If the process stops after step 3, old files may remain but are outside the logical retained range and are removed during a later startup or commit. If an individual segment file cannot be deleted after `earliest.offset` advances, the commit remains persisted and the operation throws an `IOException` that explicitly reports cleanup can be retried.
+
+### Producer Offset Persistence
+
+At a flush boundary, the partition flushes the memory-mapped file accessor and then writes the latest successfully flushed producer offset to `producer.offset` as an 8-byte little-endian integer. `Immediate` creates this boundary for every record. `Batch` creates it when `FlushBatchSize` records have accumulated, and segment rollover or consumer commit creates it regardless of the pending count.
+
+The producer offset write uses the same temporary-file plus replace or move pattern as consumer offsets. This prevents a valid offset file from being replaced by a partially written file.
+
+The producer offset is an optimization and recovery hint, not the only source of truth. In `Batch` mode it may lag the current in-process write offset while a partial batch is pending. On startup, the partition still validates records from the stored producer offset forward. If the persisted producer offset is behind complete records in the data files, the scan catches up. If the producer offset file is missing, the partition scans from the earliest retained offset. If the producer offset file is present but inconsistent with the log, recovery fails fast.
 
 ## Push Consumer Mode
 
@@ -376,7 +415,9 @@ Auto-commit push consumers commit automatically after successful processing. Man
 
 ## Dependency Injection
 
-The library registers a single public `IBufferQueue` service. Each topic is registered as a keyed `IBufferQueue<T>` service.
+The library registers a single public `IBufferQueue` service. Each topic is registered under its topic name as keyed
+`IBufferQueue<T>` and `IBufferProducer<T>` services. Use keyed `IBufferProducer<T>` injection for a fixed topic; use
+`IBufferQueue.GetProducer<T>(topicName)` when the topic is selected at runtime.
 
 Memory mode:
 
@@ -399,7 +440,7 @@ MemoryMappedFile mode:
 
 The application must reference the `BufferQueue.MemoryMappedFile` project or package. Its dependency on the core `BufferQueue` package is transitive, and the public namespace and registration API remain unchanged.
 
-MemoryMappedFile topic queues are created and owned by the dependency injection container. Disposing the service provider closes every partition view and memory-mapped-file handle. Disposal releases resources but is not an explicit flush boundary and does not advance `writer.offset` for a pending batch.
+MemoryMappedFile topic queues are created and owned by the dependency injection container. Disposing the service provider closes every partition view and memory-mapped-file handle. Disposal releases resources but is not an explicit flush boundary and does not advance `producer.offset` for a pending batch.
 
 ```csharp
 services.AddBufferQueue(builder =>
@@ -410,7 +451,8 @@ services.AddBufferQueue(builder =>
         {
             options.TopicName = "topic-foo";
             options.PartitionNumber = 4;
-            options.SegmentSize = 64L * 1024 * 1024;
+            options.SegmentSizeInBytes = 64L * 1024 * 1024;
+            options.MaxRetainedConsumedSegments = 2;
             options.DataDirectory = "/var/lib/bufferqueue";
             options.FlushStrategy = MemoryMappedFileFlushStrategy.Batch;
             options.FlushBatchSize = 100;
@@ -434,7 +476,7 @@ Important concurrency points:
   never observe an unwritten slot and do not need to take the append lock.
 - Consumer group creation is guarded by a queue-level lock.
 - Consumer wait and wake-up state is protected by `ReaderWriterLockSlim`.
-- MemoryMappedFile writer and consumer offset writes use replace/move semantics to avoid partial offset files.
+- MemoryMappedFile producer and consumer offset writes use replace/move semantics to avoid partial offset files.
 
 The current design does not provide cross-process coordination for multiple writers to the same memory-mapped-file topic directory. MemoryMappedFile mode should be treated as a local persistence mechanism for one active queue instance unless external coordination is added.
 
@@ -446,7 +488,7 @@ The queue provides at-least-once behavior with manual commit:
 - Auto-commit advances progress immediately after a successful pull.
 - Manual commit advances progress after user code calls `CommitAsync`.
 
-Memory mode keeps offsets in process memory. MemoryMappedFile mode persists the writer offset and committed consumer offsets to disk. A consumer commit first forces pending log data to its flush boundary. In `Batch` mode, an uncommitted partial tail batch is not guaranteed to survive an abnormal termination.
+Memory mode keeps offsets in process memory. MemoryMappedFile mode persists the producer offset and committed consumer offsets to disk. A consumer commit first forces pending log data to its flush boundary. In `Batch` mode, an uncommitted partial tail batch is not guaranteed to survive an abnormal termination.
 
 ## Extension Points
 
@@ -461,7 +503,7 @@ The common queue and consumer behavior should not be duplicated in storage imple
 
 ## Known Limitations
 
-- MemoryMappedFile mode currently persists consumer offsets but does not reclaim old data segment files.
+- Obsolete MemoryMappedFile consumer group checkpoints block segment reclamation until their complete group directories are removed while the queue is stopped.
 - MemoryMappedFile mode does not implement bounded capacity.
 - MemoryMappedFile mode does not coordinate multiple processes writing to the same topic directory.
 - Memory mode does not persist data or offsets.

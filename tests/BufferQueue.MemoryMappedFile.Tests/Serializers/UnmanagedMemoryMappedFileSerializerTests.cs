@@ -49,7 +49,7 @@ public class UnmanagedMemoryMappedFileSerializerTests
         {
             TopicName = "test",
             DataDirectory = temporaryDirectory.Path,
-            SegmentSize = 1024,
+            SegmentSizeInBytes = 1024,
             Serializer = UnmanagedMemoryMappedFileSerializer<UnmanagedTestItem>.Instance
         };
         using var queue = new MemoryMappedFileBufferQueue<UnmanagedTestItem>(options);

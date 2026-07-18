@@ -62,6 +62,8 @@ internal sealed class MemoryBufferPartition<T>
 
     public void RegisterConsumer(IBufferPartitionConsumer<T> consumer) => _consumers.Add(consumer);
 
+    public void UnregisterConsumer(IBufferPartitionConsumer<T> consumer) => _consumers.Remove(consumer);
+
     public void Enqueue(T item)
     {
         lock (_appendLock)
