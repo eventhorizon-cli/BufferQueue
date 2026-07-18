@@ -18,9 +18,19 @@ The core `BufferQueue` project does not reference `BufferQueue.MemoryMappedFile`
 
 ## Public Model
 
-The public entry point is `IBufferQueue`. Applications use it to obtain producers and create consumers by topic name.
+Choose how to access a producer based on when the topic is known:
+
+- If the topic is fixed when declaring the dependency, inject `IBufferProducer<T>` with
+  `[FromKeyedServices("topic-name")]`.
+- If the topic is selected at runtime, inject `IBufferQueue` and call `GetProducer<T>(topicName)`.
 
 ```csharp
+public sealed class FooPublisher(
+    [FromKeyedServices("topic-foo")] IBufferProducer<Foo> producer)
+{
+    public ValueTask PublishAsync(Foo item) => producer.ProduceAsync(item);
+}
+
 var producer = bufferQueue.GetProducer<Foo>("topic-foo");
 var consumer = bufferQueue.CreatePullConsumer<Foo>(new BufferPullConsumerOptions
 {
@@ -39,7 +49,9 @@ The public API is intentionally small:
 - `BufferPullConsumerOptions` configures topic, group, auto-commit, and batch size.
 - `BufferOptionsBuilder` wires storage implementations into dependency injection.
 
-Internally, each registered topic is represented as `IBufferQueue<T>`. The non-generic `BufferQueue` resolves the typed topic queue from the DI container by topic name.
+Internally, each registered topic is represented as `IBufferQueue<T>`. Its keyed `IBufferProducer<T>` registration
+forwards to the producer owned by that queue. The non-generic `BufferQueue` resolves the typed topic queue from the DI
+container by topic name.
 
 ## High-Level Architecture
 
@@ -403,7 +415,9 @@ Auto-commit push consumers commit automatically after successful processing. Man
 
 ## Dependency Injection
 
-The library registers a single public `IBufferQueue` service. Each topic is registered as a keyed `IBufferQueue<T>` service.
+The library registers a single public `IBufferQueue` service. Each topic is registered under its topic name as keyed
+`IBufferQueue<T>` and `IBufferProducer<T>` services. Use keyed `IBufferProducer<T>` injection for a fixed topic; use
+`IBufferQueue.GetProducer<T>(topicName)` when the topic is selected at runtime.
 
 Memory mode:
 

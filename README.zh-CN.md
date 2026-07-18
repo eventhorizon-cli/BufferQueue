@@ -94,8 +94,8 @@ dotnet run -c Release --project tests/BufferQueue.Benchmarks/BufferQueue.Benchma
 ## 高性能设计
 ### Partition 并发设计
 
-Memory 模式的共享 producer 会串行执行短暂的 round-robin 路由和 append 操作。Consumer 读取已经发布的
-数据时不获取共享 append lock。
+Memory 模式的 consumer 采用 lock-free 设计。不同 Consumer Group 可以并发、独立地读取数据并推进
+各自的消费进度，互不阻塞。
 
 ### 多 partition 设计
 每个 Topic 可以有多个 partition，每个 partition 都有独立的消费进度，支持多个 Consumer Group 并发消费。
@@ -199,6 +199,35 @@ builder.Services.AddBufferQueue(bufferOptionsBuilder =>
                     options.FlushBatchSize = 100;
                     options.Serializer = new MessagePackMemoryMappedFileSerializer<Foo>();
                 });
+        });
+});
+```
+
+### 同时使用 Memory 和 MemoryMappedFile
+
+可以在同一个 `AddBufferQueue` 调用中同时注册 Memory 和 MemoryMappedFile topic。每个 `(T, TopicName)`
+组合只应注册到一种存储模式，避免最终使用的存储实现依赖注册顺序。
+
+```csharp
+builder.Services.AddBufferQueue(bufferOptionsBuilder =>
+{
+    bufferOptionsBuilder
+        .UseMemory(memoryBufferOptionsBuilder =>
+        {
+            memoryBufferOptionsBuilder.AddTopic<Foo>(options =>
+            {
+                options.TopicName = "topic-foo-memory";
+                options.PartitionNumber = 4;
+            });
+        })
+        .UseMemoryMappedFile(memoryMappedFileBufferOptionsBuilder =>
+        {
+            memoryMappedFileBufferOptionsBuilder.AddTopic<Foo>(options =>
+            {
+                options.TopicName = "topic-foo-mmf";
+                options.PartitionNumber = 4;
+                options.DataDirectory = "/var/lib/bufferqueue";
+            });
         });
 });
 ```
@@ -388,28 +417,34 @@ public class BarPushConsumer(ILogger<BarPushConsumer> logger) : IBufferManualCom
 
 Producer 示例：
 
-通过 IBufferQueue 获取到指定的 Producer，然后调用 ProduceAsync 方法发送数据。
+创建 Producer 有两种可选的方式：
+
+- 在声明依赖时 topic 已固定：使用 `[FromKeyedServices("topic-name")]` 注入 `IBufferProducer<T>`。
+- topic 需要在运行时确定：注入 `IBufferQueue`，再调用 `GetProducer<T>(topicName)` 获取 Producer。
 
 在 Memory 模式下，如果设置了 BoundedCapacity，当缓冲区满时，ProduceAsync 方法会丢弃数据并抛出 MemoryBufferQueueFullException。可以使用 TryProduceAsync 方法来检查数据是否成功发送。
 
 ```csharp
+using Microsoft.Extensions.DependencyInjection;
+
 [ApiController]
 [Route("/api/[controller]")]
-public class TestController(IBufferQueue bufferQueue) : ControllerBase
+public class TestController(
+    [FromKeyedServices("topic-foo1")] IBufferProducer<Foo> foo1Producer,
+    [FromKeyedServices("topic-foo2")] IBufferProducer<Foo> foo2Producer,
+    IBufferQueue bufferQueue) : ControllerBase
 {
     [HttpPost("foo1")]
     public async Task<IActionResult> PostFoo1([FromBody] Foo foo)
     {
-        var producer = bufferQueue.GetProducer<Foo>("topic-foo1");
-        await producer.ProduceAsync(foo);
+        await foo1Producer.ProduceAsync(foo);
         return Ok();
     }
 
     [HttpPost("foo2")]
     public async Task<IActionResult> PostFoo2([FromBody] Foo foo)
     {
-        var producer = bufferQueue.GetProducer<Foo>("topic-foo2");
-        await producer.ProduceAsync(foo);
+        await foo2Producer.ProduceAsync(foo);
         return Ok();
     }
 

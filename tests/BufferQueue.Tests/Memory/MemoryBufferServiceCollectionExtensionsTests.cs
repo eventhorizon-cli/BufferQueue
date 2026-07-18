@@ -8,6 +8,8 @@ namespace BufferQueue.Tests.Memory;
 
 public class MemoryBufferServiceCollectionExtensionsTests
 {
+    private const string KeyedProducerTopicName = "keyed-producer-topic";
+
     [Fact]
     public void AddMemoryBuffer()
     {
@@ -141,5 +143,39 @@ public class MemoryBufferServiceCollectionExtensionsTests
             bufferQueue.CreatePullConsumers<int>(
                 new BufferPullConsumerOptions { TopicName = "topic3", GroupName = "test" },
                 2));
+    }
+
+    [Fact]
+    public void AddMemoryBuffer_Registers_Keyed_Producer()
+    {
+        var services = new ServiceCollection();
+        services.AddBufferQueue(bufferOptionsBuilder =>
+            bufferOptionsBuilder.UseMemory(memoryBufferOptionsBuilder =>
+                memoryBufferOptionsBuilder.AddTopic<int>(options =>
+                {
+                    options.TopicName = KeyedProducerTopicName;
+                    options.PartitionNumber = 1;
+                })));
+        services.AddSingleton<KeyedProducerDependency>();
+
+        using var provider = services.BuildServiceProvider();
+        var dependency = provider.GetRequiredService<KeyedProducerDependency>();
+        var bufferQueue = provider.GetRequiredService<IBufferQueue>();
+
+        Assert.Equal(KeyedProducerTopicName, dependency.Producer.TopicName);
+        Assert.Same(
+            bufferQueue.GetProducer<int>(KeyedProducerTopicName),
+            dependency.Producer);
+    }
+
+    private sealed class KeyedProducerDependency
+    {
+        public KeyedProducerDependency(
+            [FromKeyedServices(KeyedProducerTopicName)] IBufferProducer<int> producer)
+        {
+            Producer = producer;
+        }
+
+        public IBufferProducer<int> Producer { get; }
     }
 }

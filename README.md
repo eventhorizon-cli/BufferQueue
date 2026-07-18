@@ -99,8 +99,8 @@ dotnet run -c Release --project tests/BufferQueue.Benchmarks/BufferQueue.Benchma
 
 ### Partitioned Concurrency
 
-The shared memory-mode producer serializes its short round-robin routing and append section. Consumers read published
-items without taking the shared append lock.
+Memory-mode consumers use a lock-free design. Consumer groups can read concurrently and advance their progress
+independently without blocking one another.
 
 ### Multi-Partition Design
 
@@ -206,6 +206,35 @@ builder.Services.AddBufferQueue(bufferOptionsBuilder =>
                     options.FlushBatchSize = 100;
                     options.Serializer = new MessagePackMemoryMappedFileSerializer<Foo>();
                 });
+        });
+});
+```
+
+### Using Memory and MemoryMappedFile Together
+
+Memory and MemoryMappedFile topics can be registered in the same `AddBufferQueue` call. Register each
+`(T, TopicName)` pair in only one storage mode so the selected storage does not depend on registration order.
+
+```csharp
+builder.Services.AddBufferQueue(bufferOptionsBuilder =>
+{
+    bufferOptionsBuilder
+        .UseMemory(memoryBufferOptionsBuilder =>
+        {
+            memoryBufferOptionsBuilder.AddTopic<Foo>(options =>
+            {
+                options.TopicName = "topic-foo-memory";
+                options.PartitionNumber = 4;
+            });
+        })
+        .UseMemoryMappedFile(memoryMappedFileBufferOptionsBuilder =>
+        {
+            memoryMappedFileBufferOptionsBuilder.AddTopic<Foo>(options =>
+            {
+                options.TopicName = "topic-foo-mmf";
+                options.PartitionNumber = 4;
+                options.DataDirectory = "/var/lib/bufferqueue";
+            });
         });
 });
 ```
@@ -396,29 +425,36 @@ public class BarPushConsumer(ILogger<BarPushConsumer> logger) : IBufferManualCom
 
 Producer example:
 
-Get the specified producer through the IBufferQueue service and send the data by calling the ProduceAsync method.
+There are two ways to obtain a Producer:
+
+- If the topic is fixed when declaring the dependency, inject `IBufferProducer<T>` with
+  `[FromKeyedServices("topic-name")]`.
+- If the topic is selected at runtime, inject `IBufferQueue` and call `GetProducer<T>(topicName)`.
 
 In Memory mode, if bounded capacity is set, when the buffer is full, the ProduceAsync method will discard the data and throw a MemoryBufferQueueFullException.
 You can use the TryProduceAsync method to check if the data was successfully sent.
 
 ```csharp
+using Microsoft.Extensions.DependencyInjection;
+
 [ApiController]
 [Route("/api/[controller]")]
-public class TestController(IBufferQueue bufferQueue) : ControllerBase
+public class TestController(
+    [FromKeyedServices("topic-foo1")] IBufferProducer<Foo> foo1Producer,
+    [FromKeyedServices("topic-foo2")] IBufferProducer<Foo> foo2Producer,
+    IBufferQueue bufferQueue) : ControllerBase
 {
     [HttpPost("foo1")]
     public async Task<IActionResult> PostFoo1([FromBody] Foo foo)
     {
-        var producer = bufferQueue.GetProducer<Foo>("topic-foo1");
-        await producer.ProduceAsync(foo);
+        await foo1Producer.ProduceAsync(foo);
         return Ok();
     }
 
     [HttpPost("foo2")]
     public async Task<IActionResult> PostFoo2([FromBody] Foo foo)
     {
-        var producer = bufferQueue.GetProducer<Foo>("topic-foo2");
-        await producer.ProduceAsync(foo);
+        await foo2Producer.ProduceAsync(foo);
         return Ok();
     }
 

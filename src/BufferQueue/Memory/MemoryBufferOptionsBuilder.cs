@@ -33,6 +33,10 @@ public class MemoryBufferOptionsBuilder(IServiceCollection services)
 
         services.AddKeyedSingleton<IBufferQueue<T>>(
             topicName, new MemoryBufferQueue<T>(options));
+        services.AddKeyedSingleton<IBufferProducer<T>>(
+            topicName,
+            (serviceProvider, serviceKey) =>
+                serviceProvider.GetRequiredKeyedService<IBufferQueue<T>>(serviceKey).GetProducer());
         return this;
     }
 }
