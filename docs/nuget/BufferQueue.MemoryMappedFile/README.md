@@ -23,17 +23,19 @@ using BufferQueue.MemoryMappedFile;
 
 builder.Services.AddBufferQueue(queue =>
 {
-    queue.UseMemoryMappedFile(storage =>
-    {
-        storage.AddTopic<OrderEvent>(options =>
+    queue
+        .UseMemoryMappedFile(storage =>
         {
-            options.TopicName = "order-events";
-            options.DataDirectory = "/var/lib/bufferqueue";
-            options.PartitionNumber = 4;
-            options.SegmentSizeInBytes = 64L * 1024 * 1024;
-            options.MaxRetainedConsumedSegments = 2;
-        });
-    });
+            storage.AddTopic<OrderEvent>(options =>
+            {
+                options.TopicName = "order-events";
+                options.DataDirectory = "/var/lib/bufferqueue";
+                options.PartitionNumber = 4;
+                options.SegmentSizeInBytes = 64L * 1024 * 1024;
+                options.MaxRetainedConsumedSegments = 2;
+            });
+        })
+        .AddPushCustomers(typeof(Program).Assembly);
 });
 
 public sealed record OrderEvent(long Id, decimal Total);
@@ -58,6 +60,157 @@ only.
 Production and consumption use the same `IBufferProducer<T>`, `IBufferQueue`,
 pull consumer, push consumer, and commit APIs as Memory storage.
 
+## Produce
+
+Inject a keyed producer when the topic is fixed at the dependency boundary:
+
+```csharp
+using BufferQueue;
+using Microsoft.Extensions.DependencyInjection;
+
+public sealed class OrderEventWriter(
+    [FromKeyedServices("order-events")] IBufferProducer<OrderEvent> producer)
+{
+    public ValueTask WriteAsync(OrderEvent orderEvent) =>
+        producer.ProduceAsync(orderEvent);
+}
+```
+
+For a topic selected at runtime, inject `IBufferQueue` and call
+`GetProducer<T>(topicName)`.
+
+## Pull consumers
+
+Register a hosted worker and create a purpose-named consumer group. This example
+commits only after the batch has been processed successfully:
+
+```csharp
+using BufferQueue;
+using Microsoft.Extensions.Hosting;
+
+builder.Services.AddHostedService<OrderProjectionWorker>();
+
+public sealed class OrderProjectionWorker(IBufferQueue queue) : BackgroundService
+{
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        var consumer = queue.CreatePullConsumer<OrderEvent>(
+            new BufferPullConsumerOptions
+            {
+                TopicName = "order-events",
+                GroupName = "order-projection",
+                BatchSize = 100,
+                AutoCommit = false
+            });
+
+        await foreach (var batch in consumer.ConsumeAsync(stoppingToken))
+        {
+            foreach (var orderEvent in batch)
+            {
+                await UpdateProjectionAsync(orderEvent, stoppingToken);
+            }
+
+            await consumer.CommitAsync();
+        }
+    }
+
+    private static Task UpdateProjectionAsync(
+        OrderEvent orderEvent,
+        CancellationToken cancellationToken)
+    {
+        // Replace with application processing.
+        return Task.CompletedTask;
+    }
+}
+```
+
+Use `CreatePullConsumers<T>(options, consumerNumber)` to divide the group's
+partitions between multiple consumers. The consumer count cannot exceed the
+topic's partition count.
+
+## Push consumers
+
+`AddPushCustomers` in the registration example scans the specified assembly and
+starts the discovered Push Consumers as hosted services.
+
+An auto-commit Push Consumer is suitable when progress may advance before the
+application finishes processing the batch:
+
+```csharp
+using BufferQueue.PushConsumer;
+using Microsoft.Extensions.DependencyInjection;
+
+[BufferPushCustomer(
+    topicName: "order-events",
+    groupName: "order-indexing",
+    batchSize: 100,
+    serviceLifetime: ServiceLifetime.Singleton,
+    concurrency: 4)]
+public sealed class OrderIndexConsumer : IBufferAutoCommitPushConsumer<OrderEvent>
+{
+    public async Task ConsumeAsync(
+        IEnumerable<OrderEvent> batch,
+        CancellationToken cancellationToken)
+    {
+        foreach (var orderEvent in batch)
+        {
+            await IndexAsync(orderEvent, cancellationToken);
+        }
+    }
+
+    private static Task IndexAsync(
+        OrderEvent orderEvent,
+        CancellationToken cancellationToken)
+    {
+        // Replace with application processing.
+        return Task.CompletedTask;
+    }
+}
+```
+
+Use a manual-commit Push Consumer when processing must finish before the
+persisted consumer offset advances:
+
+```csharp
+using BufferQueue.PushConsumer;
+using Microsoft.Extensions.DependencyInjection;
+
+[BufferPushCustomer(
+    topicName: "order-events",
+    groupName: "billing",
+    batchSize: 100,
+    serviceLifetime: ServiceLifetime.Singleton,
+    concurrency: 4)]
+public sealed class BillingConsumer : IBufferManualCommitPushConsumer<OrderEvent>
+{
+    public async Task ConsumeAsync(
+        IEnumerable<OrderEvent> batch,
+        IBufferConsumerCommitter committer,
+        CancellationToken cancellationToken)
+    {
+        foreach (var orderEvent in batch)
+        {
+            await BillAsync(orderEvent, cancellationToken);
+        }
+
+        await committer.CommitAsync();
+    }
+
+    private static Task BillAsync(
+        OrderEvent orderEvent,
+        CancellationToken cancellationToken)
+    {
+        // Replace with application processing.
+        return Task.CompletedTask;
+    }
+}
+```
+
+The `concurrency` value creates that many consumers in the group and cannot
+exceed the topic's partition count. Each GroupName has an independent persisted
+offset. A manual commit first forces pending log data to a flush boundary and
+then persists that group's progress.
+
 ## MessagePack
 
 Reference MessagePack directly from the application so its analyzer and source
@@ -67,24 +220,43 @@ generator run in the application project:
 dotnet add package MessagePack
 ```
 
-Define stable numeric keys and select the built-in serializer:
+Define stable numeric keys and select the built-in serializer. This standalone
+example registers a MessagePack-backed topic with Batch flushing and automatic
+segment cleanup:
 
 ```csharp
+using BufferQueue;
 using BufferQueue.MemoryMappedFile;
 using MessagePack;
 
+builder.Services.AddBufferQueue(queue =>
+{
+    queue.UseMemoryMappedFile(storage =>
+    {
+        storage.AddTopic<InventoryChanged>(options =>
+        {
+            options.TopicName = "inventory-events";
+            options.DataDirectory = "/var/lib/bufferqueue";
+            options.PartitionNumber = 4;
+            options.SegmentSizeInBytes = 64L * 1024 * 1024;
+            options.FlushStrategy = MemoryMappedFileFlushStrategy.Batch;
+            options.FlushBatchSize = 100;
+            options.MaxRetainedConsumedSegments = 2;
+            options.Serializer =
+                new MessagePackMemoryMappedFileSerializer<InventoryChanged>();
+        });
+    });
+});
+
 [MessagePackObject]
-public sealed class OrderEvent
+public sealed class InventoryChanged
 {
     [Key(0)]
-    public long Id { get; set; }
+    public long ProductId { get; set; }
 
     [Key(1)]
-    public decimal Total { get; set; }
+    public int QuantityDelta { get; set; }
 }
-
-// Inside AddTopic<OrderEvent>(options => ...):
-options.Serializer = new MessagePackMemoryMappedFileSerializer<OrderEvent>();
 ```
 
 Numeric keys, resolvers, compression, security options, and custom formatters
@@ -94,11 +266,27 @@ resolvers and formatters must be thread-safe.
 ## Unmanaged structs
 
 For fixed-layout unmanaged values, the built-in unmanaged serializer copies the
-native in-memory representation:
+native in-memory representation. This complete example registers a Quote topic:
 
 ```csharp
 using System.Runtime.InteropServices;
+using BufferQueue;
 using BufferQueue.MemoryMappedFile;
+
+builder.Services.AddBufferQueue(queue =>
+{
+    queue.UseMemoryMappedFile(storage =>
+    {
+        storage.AddTopic<Quote>(options =>
+        {
+            options.TopicName = "quotes";
+            options.DataDirectory = "/var/lib/bufferqueue";
+            options.PartitionNumber = 4;
+            options.Serializer =
+                UnmanagedMemoryMappedFileSerializer<Quote>.Instance;
+        });
+    });
+});
 
 [StructLayout(LayoutKind.Sequential, Pack = 1)]
 public struct Quote
@@ -108,9 +296,6 @@ public struct Quote
     public double Price;
     public int Quantity;
 }
-
-// Inside AddTopic<Quote>(options => ...):
-options.Serializer = UnmanagedMemoryMappedFileSerializer<Quote>.Instance;
 ```
 
 Field order, packing, native endianness, runtime, and process architecture are
