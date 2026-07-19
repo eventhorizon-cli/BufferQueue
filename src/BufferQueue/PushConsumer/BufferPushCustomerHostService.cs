@@ -72,44 +72,57 @@ internal class BufferPushCustomerHostService(
         ServiceDescriptor serviceDescriptor,
         CancellationToken cancellationToken)
     {
-        object? pushConsumerObj = null;
+        object? singletonPushConsumer = null;
         if (serviceDescriptor.Lifetime == ServiceLifetime.Singleton)
         {
-            pushConsumerObj = serviceProvider.GetRequiredService(serviceDescriptor.ServiceType);
+            singletonPushConsumer = serviceProvider.GetRequiredService(serviceDescriptor.ServiceType);
         }
-
-        IServiceScope? scope = null;
 
         await foreach (var buffer in pullConsumer.ConsumeAsync(cancellationToken))
         {
             try
             {
-                if (pushConsumerObj is null)
+                if (singletonPushConsumer is not null)
                 {
-                    scope = serviceProvider.CreateScope();
-                    pushConsumerObj = scope.ServiceProvider.GetRequiredService(serviceDescriptor.ServiceType);
+                    await ConsumeBufferAsync(
+                        singletonPushConsumer,
+                        serviceDescriptor.ServiceType,
+                        buffer,
+                        pullConsumer,
+                        cancellationToken);
                 }
-
-                var consumeTask = pushConsumerObj switch
+                else
                 {
-                    IBufferManualCommitPushConsumer<T> manualCommitConsumer =>
-                        manualCommitConsumer.ConsumeAsync(buffer, pullConsumer, cancellationToken),
-                    IBufferAutoCommitPushConsumer<T> autoCommitConsumer =>
-                        autoCommitConsumer.ConsumeAsync(buffer, cancellationToken),
-                    _ => throw new InvalidOperationException(
-                        $"The service {serviceDescriptor.ServiceType} does not implement {nameof(IBufferManualCommitPushConsumer<T>)} or {nameof(IBufferAutoCommitPushConsumer<T>)}")
-                };
-
-                await consumeTask;
+                    await using var scope = serviceProvider.CreateAsyncScope();
+                    var pushConsumer = scope.ServiceProvider.GetRequiredService(serviceDescriptor.ServiceType);
+                    await ConsumeBufferAsync(
+                        pushConsumer,
+                        serviceDescriptor.ServiceType,
+                        buffer,
+                        pullConsumer,
+                        cancellationToken);
+                }
             }
             catch (Exception ex)
             {
                 logger.LogError(ex, "An error occurred while consuming from the buffer.");
             }
-            finally
-            {
-                scope?.Dispose();
-            }
         }
     }
+
+    private static Task ConsumeBufferAsync<T>(
+        object pushConsumer,
+        Type serviceType,
+        IEnumerable<T> buffer,
+        IBufferPullConsumer<T> pullConsumer,
+        CancellationToken cancellationToken) =>
+        pushConsumer switch
+        {
+            IBufferManualCommitPushConsumer<T> manualCommitConsumer =>
+                manualCommitConsumer.ConsumeAsync(buffer, pullConsumer, cancellationToken),
+            IBufferAutoCommitPushConsumer<T> autoCommitConsumer =>
+                autoCommitConsumer.ConsumeAsync(buffer, cancellationToken),
+            _ => throw new InvalidOperationException(
+                $"The service {serviceType} does not implement {nameof(IBufferManualCommitPushConsumer<T>)} or {nameof(IBufferAutoCommitPushConsumer<T>)}")
+        };
 }
