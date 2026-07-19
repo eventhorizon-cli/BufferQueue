@@ -6,6 +6,8 @@ BufferQueue
 
 English | [简体中文](./README.zh-CN.md)
 
+Design docs: [English](./docs/design.md) | [简体中文](./docs/design.zh-CN.md)
+
 BufferQueue is a high-performance buffer queue implementation written in .NET, which supports multi-threaded concurrent operations.
 
 The project is an independent component separated from the [mocha](https://github.com/dotnetcore/mocha) project, which has been modified to provide more general buffer queue functionality.
@@ -398,7 +400,7 @@ Push mode consumer example:
 
 Use the BufferPushCustomer attribute to register push mode consumers.
 
-Push consumers will be registered in the DI container, and other services can be injected through the constructor. The ServiceLifetime can be set to control the consumer's lifecycle.
+Push consumers are registered in the DI container, and other services can be injected through the constructor. A Singleton consumer is reused across batches and concurrent consumer loops, so it must be thread-safe. Scoped and Transient consumers are resolved in a new asynchronous DI scope for each batch and are disposed after the handler completes or throws.
 
 The concurrency parameter in the BufferPushCustomer attribute is used to set the consumption concurrency of the push consumer, corresponding to the consumerNumber of the pull consumer.
 

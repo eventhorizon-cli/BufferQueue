@@ -411,7 +411,9 @@ Producer offset 是启动优化和恢复提示，不是唯一事实来源。在 
 
 Push consumer 模式构建在 pull consumer 之上。Host service 扫描带 attribute 的 push consumers，创建对应 pull consumers，并把 batch 交给 push consumer 实现处理。
 
-Auto-commit push consumer 在成功处理后自动提交。Manual-commit push consumer 会收到 `IBufferConsumerCommitter`，由业务代码决定何时提交。
+Auto-commit push consumer 会在成功 Pull 后、业务处理 batch 前推进消费进度，因此 Handler 失败不会让该批次重新进入可重放状态。Manual-commit push consumer 会收到 `IBufferConsumerCommitter`，由业务代码决定何时提交；未提交的 batch 可能再次交付。
+
+配置的 `ServiceLifetime` 决定 push consumer 的解析方式。`Singleton` consumer 从根容器解析，并在不同 batch 和并发消费循环之间复用，因此实现必须线程安全。`Scoped` 和 `Transient` consumer 会为每个交付的 batch 创建新的异步 DI Scope，并在 Handler 成功或抛出异常后异步释放该 Scope 及其中的服务；Scoped 依赖不能逃逸出本次 Handler 调用。
 
 ## 依赖注入
 

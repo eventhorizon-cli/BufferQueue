@@ -6,6 +6,8 @@ BufferQueue
 
 English | [简体中文](./README.zh-CN.md)
 
+设计文档：[English](./docs/design.md) | [简体中文](./docs/design.zh-CN.md)
+
 BufferQueue 是一个用 .NET 编写的高性能的缓冲队列实现，支持多线程并发操作。
 
 项目是从 [mocha](https://github.com/dotnetcore/mocha) 项目中独立出来的一个组件，经过修改以提供更通用的缓冲队列功能。
@@ -390,7 +392,7 @@ push 模式的消费者示例：
 
 通过 BufferPushCustomer 特性注册 push 模式的消费者。
 
-push consumer 会被注册到 DI 容器中，可以通过构造函数注入其他服务，可以通过设置 ServiceLifetime 来控制 consumer 的生命周期。
+Push consumer 会注册到 DI 容器中，并支持通过构造函数注入其他服务。Singleton consumer 会在多个 batch 和并发消费循环之间复用，因此实现必须线程安全。Scoped 和 Transient consumer 会为每个 batch 创建新的异步 DI Scope，并在 Handler 完成或抛出异常后释放。
 
 BufferPushCustomerAttribute 中的 concurrency 参数用于设置 push consumer 的消费并发数，对应 pull consumer 的 consumerNumber。
 

@@ -163,7 +163,7 @@ using Microsoft.Extensions.DependencyInjection;
     topicName: "orders",
     groupName: "billing",
     batchSize: 100,
-    serviceLifetime: ServiceLifetime.Singleton,
+    serviceLifetime: ServiceLifetime.Scoped,
     concurrency: 4)]
 public sealed class BillingConsumer : IBufferManualCommitPushConsumer<Order>
 {
@@ -190,6 +190,11 @@ public sealed class BillingConsumer : IBufferManualCommitPushConsumer<Order>
 
 The `concurrency` value creates that many consumers in the group and cannot
 exceed the topic's partition count.
+
+A Singleton Push Consumer is reused across batches and concurrent consumer
+loops, so it must be thread-safe. Scoped and Transient Push Consumers are
+resolved in a new asynchronous DI scope for every batch and are disposed after
+the handler completes or throws.
 
 ## Semantics
 

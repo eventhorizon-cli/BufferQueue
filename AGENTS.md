@@ -178,6 +178,13 @@ If README usage changes, update both:
 - `README.md`
 - `README.zh-CN.md`
 
+For every functional change, including changes to public APIs, configuration, defaults, delivery semantics, or supported workflows, update the affected NuGet package README:
+
+- `docs/nuget/BufferQueue/README.md`
+- `docs/nuget/BufferQueue.MemoryMappedFile/README.md`
+
+Changes to shared queue or consumer behavior generally require both package READMEs. Core-only changes require the `BufferQueue` package README, while MemoryMappedFile-specific changes require the `BufferQueue.MemoryMappedFile` package README.
+
 ## Git and File Safety
 
 The worktree may contain user changes. Do not revert unrelated changes. If a file already has changes, read it carefully and preserve existing work.

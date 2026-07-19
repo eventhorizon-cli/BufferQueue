@@ -411,7 +411,9 @@ The producer offset is an optimization and recovery hint, not the only source of
 
 Push consumer mode is built on top of pull consumers. The host service discovers push consumers by attribute, creates the corresponding pull consumers, and invokes the push consumer implementation with batches.
 
-Auto-commit push consumers commit automatically after successful processing. Manual-commit push consumers receive an `IBufferConsumerCommitter` and decide when to commit.
+Auto-commit push consumers advance progress after a successful pull and before the push consumer processes the batch. A handler failure therefore does not make that batch eligible for replay. Manual-commit push consumers receive an `IBufferConsumerCommitter` and decide when to commit; an uncommitted batch may be delivered again.
+
+The configured `ServiceLifetime` controls push consumer resolution. A `Singleton` consumer is resolved from the root provider and reused across batches and concurrent consumer loops, so it must be thread-safe. `Scoped` and `Transient` consumers are resolved in a new asynchronous DI scope for every delivered batch. That scope and all captured services are asynchronously disposed after the handler completes or throws, and scoped dependencies must not escape the handler call.
 
 ## Dependency Injection
 

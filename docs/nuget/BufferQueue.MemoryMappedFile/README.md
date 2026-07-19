@@ -179,7 +179,7 @@ using Microsoft.Extensions.DependencyInjection;
     topicName: "order-events",
     groupName: "billing",
     batchSize: 100,
-    serviceLifetime: ServiceLifetime.Singleton,
+    serviceLifetime: ServiceLifetime.Scoped,
     concurrency: 4)]
 public sealed class BillingConsumer : IBufferManualCommitPushConsumer<OrderEvent>
 {
@@ -210,6 +210,11 @@ The `concurrency` value creates that many consumers in the group and cannot
 exceed the topic's partition count. Each GroupName has an independent persisted
 offset. A manual commit first forces pending log data to a flush boundary and
 then persists that group's progress.
+
+A Singleton Push Consumer is reused across batches and concurrent consumer
+loops, so it must be thread-safe. Scoped and Transient Push Consumers are
+resolved in a new asynchronous DI scope for every batch and are disposed after
+the handler completes or throws.
 
 ## MessagePack
 
