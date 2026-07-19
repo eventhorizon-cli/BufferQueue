@@ -26,34 +26,60 @@ BufferQueue 当前提供两种存储模式：
 
 **BufferQueue 的 Memory 模式写入性能已接近 `Channel<T>`，核心优势则在于批量消费时的高性能表现。**
 
-项目内置 BenchmarkDotNet 基准测试，对比 `BufferQueue` 启用 Memory 模式后的 `MemoryBufferQueue<T>`、`Channel<T>` 和 `BlockingCollection<T>` 的并发生产、并发消费表现。下表展示 `Channel<T>` 对比结果摘要。
+项目内置 BenchmarkDotNet 基准测试，对比 BufferQueue 在 Memory 模式下与 `Channel<T>`、`BlockingCollection<T>` 的并发生产、并发消费表现。下表展示与 `Channel<T>` 的对比结果摘要。
 
 结果摘要：
 
-- 生产：在该次记录参数下，`MemoryBufferQueue<T>` 的写入性能已非常接近 `Channel<T>`。Unbounded 和 Bounded 模式的耗时分别仅高约 `17%` 和 `21%`，两种 queue 完成 8192 条并发写入均处于亚毫秒级。
-- 消费：`MemoryBufferQueue<T>` 的主要优势在批量消费；在本组测试中，批量越大优势通常越明显，该次记录参数下最高约快 `84x`。
-- 内存分配：生产场景 `MemoryBufferQueue<T>` 分配较少；消费场景 `Channel<T>` 分配较少。
+- 生产：在该次记录参数下，BufferQueue Memory 模式的写入性能已非常接近 `Channel<T>`。Unbounded 和 Bounded 模式的耗时分别仅高约 `17%` 和 `21%`，两种 queue 完成 8192 条并发写入均处于亚毫秒级。
+- 消费：BufferQueue 的主要优势在批量消费；本组测试从 `BatchSize = 1` 到 `1000` 均快于 `Channel<T>`，批量越大优势越明显，该次记录参数下最高约快 `103x`。
+- 内存分配：生产场景 BufferQueue 分配较少；消费场景 `Channel<T>` 分配较少。
 
 下面保留的是已记录 benchmark 的代表性数据。纯内存 queue 对比使用 `MessageSize = 8192`。生产数据的
 Bounded 和 Unbounded 模式使用同一个 `Fixed` job，配置为 `LaunchCount = 1`、`WarmupCount = 6`、
-`IterationCount = 15`，并运行于 .NET 10。本次只重新运行生产 benchmark，消费行仍保留此前记录的代表性数据。
-MemoryMappedFile queue 对比使用 `MessageSize = 1024` 和 short-run job，以缩短文件存储场景的运行时间。
+`IterationCount = 15`。消费 benchmark 使用默认 job，并因 `IterationSetup` 使用 `InvocationCount = 1`、
+`UnrollFactor = 1`。两组 benchmark 均运行于 .NET 10。
+
+生产和消费测试均使用 `int` 消息，依次写入从 `0` 到 `8191` 的 8192 个整数。这里的
+`MessageSize = 8192` 表示消息条数，不是单条消息的字节大小。生产测试把这组整数分片给 `12` 个并发任务；
+消费测试则在计时前把同一组整数预先写入待测队列。
+
+`IterationSetup` 不计入测量，测量范围只包含并发排空队列：Channel 使用 `TryRead` 逐条读取，
+BufferQueue 按 `BatchSize` 批量返回并启用 Auto Commit，不包含逐条业务处理。`BatchSize` 只作用于
+BufferQueue，并且表示每批上限；`MessageSize = 8192`、`Consumers = 12` 时，`BatchSize = 1000`
+通常意味着每个 consumer 用一批读完分配到的约 682 或 683 条数据。源码还包含 `BatchSize = 10`，
+下表展示 `1`、`100` 和 `1000` 三档。
+
+消费用例的单次迭代较短，因此这些结果主要用于展示该组参数下的性能趋势，不代表端到端业务吞吐。
+MemoryMappedFile queue 对比使用 `MessageSize = 1024` 和 short-run job，
+以缩短文件存储场景的运行时间。
 
 生产和消费的并发数均取自 `Environment.ProcessorCount`，该次记录结果为 `12`。生产场景使用 `12` 个 task
-共享一个 `Channel<T>` writer 或一个 `MemoryBufferQueue<T>` producer，MemoryBufferQueue 配置 `12` 个 partition；
+共享一个 `Channel<T>` writer 或一个 BufferQueue producer，BufferQueue 配置 `12` 个 partition；
 消费场景使用 `12` 个 Channel reader task，或在 `12` 个 partition 上使用 `12` 个 BufferQueue consumer。
 
-| 类型 | 场景 | 参数 | `Channel<T>` | `MemoryBufferQueue<T>` | 结论 |
-| --- | --- | --- | ---: | ---: | --- |
-| 生产 | Unbounded | `MessageSize = 8192`, `ProducerTasks = 12` | `287.0 μs` | `335.0 μs` | 性能接近；`Channel<T>` 约快 `1.17x` |
-| 生产 | Bounded | `MessageSize = 8192`, `ProducerTasks = 12` | `300.8 μs` | `364.1 μs` | 性能接近；`Channel<T>` 约快 `1.21x` |
-| 消费 | Unbounded | `MessageSize = 8192`, `BatchSize = 1000`, `ConsumerTasks = 12` | `3,461.03 μs` | `41.30 μs` | 该次记录参数下约快 `84x` |
-| 消费 | Bounded | `MessageSize = 8192`, `BatchSize = 1000`, `ConsumerTasks = 12` | `2,214.21 μs` | `41.68 μs` | 该次记录参数下约快 `53x` |
+生产性能：
 
-生产 benchmark 测试平台：
+| 模式 | `MessageSize` | `Producers` | `Channel<T>` Mean | BufferQueue（Memory）Mean | 结论 |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Unbounded | 8192 | 12 | `287.0 μs` | `335.0 μs` | 性能接近；`Channel<T>` 约快 `1.17x` |
+| Bounded | 8192 | 12 | `300.8 μs` | `364.1 μs` | 性能接近；`Channel<T>` 约快 `1.21x` |
+
+消费性能：
+
+| 模式 | `MessageSize` | `BatchSize` | `Consumers` | `Channel<T>` Mean | BufferQueue（Memory）Mean | 结论 |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| Unbounded | 8192 | 1 | 12 | `3,146.52 μs` | `815.80 μs` | 该组参数下 BufferQueue 约快 `3.86x` |
+| Bounded | 8192 | 1 | 12 | `2,118.13 μs` | `750.73 μs` | 该组参数下 BufferQueue 约快 `2.82x` |
+| Unbounded | 8192 | 100 | 12 | `3,384.68 μs` | `49.25 μs` | 该组参数下 BufferQueue 约快 `68.72x` |
+| Bounded | 8192 | 100 | 12 | `2,158.57 μs` | `53.95 μs` | 该组参数下 BufferQueue 约快 `40.01x` |
+| Unbounded | 8192 | 1000 | 12 | `3,485.82 μs` | `33.97 μs` | 该组参数下 BufferQueue 约快 `102.61x` |
+| Bounded | 8192 | 1000 | 12 | `2,115.11 μs` | `35.68 μs` | 该组参数下 BufferQueue 约快 `59.28x` |
+
+Benchmark 测试平台：
 
 | 项目 | 信息 |
 | --- | --- |
+| CPU | Apple M2 Max，`12` logical / `12` physical cores |
 | 操作系统 | macOS `15.7.7` (`24G720`) |
 | 运行时标识 | `osx-arm64` |
 | .NET SDK | `10.0.100` |
