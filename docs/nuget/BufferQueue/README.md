@@ -23,17 +23,19 @@ using BufferQueue;
 
 builder.Services.AddBufferQueue(queue =>
 {
-    queue.UseMemory(memory =>
-    {
-        memory.AddTopic<Order>(topic =>
+    queue
+        .UseMemory(memory =>
         {
-            topic.TopicName = "orders";
-            topic.PartitionNumber = 4;
+            memory.AddTopic<Order>(topic =>
+            {
+                topic.TopicName = "orders";
+                topic.PartitionNumber = 4;
 
-            // Optional. Memory topics are unbounded by default.
-            topic.BoundedCapacity = 100_000;
-        });
-    });
+                // Optional. Memory topics are unbounded by default.
+                topic.BoundedCapacity = 100_000;
+            });
+        })
+        .AddPushCustomers(typeof(Program).Assembly);
 });
 
 public sealed record Order(long Id, decimal Total);
@@ -83,7 +85,7 @@ public sealed class OrderWorker(IBufferQueue queue) : BackgroundService
             new BufferPullConsumerOptions
             {
                 TopicName = "orders",
-                GroupName = "billing",
+                GroupName = "order-fulfillment",
                 BatchSize = 100,
                 AutoCommit = false
             });
@@ -111,8 +113,83 @@ Use `CreatePullConsumers<T>(options, consumerNumber)` to distribute a consumer
 group's partitions across multiple consumers. The consumer count cannot exceed
 the topic's partition count.
 
-Push consumers use the same partition assignment, batch, and commit model. See
-the repository documentation for registration and implementation examples.
+## Push consumers
+
+`AddPushCustomers` in the registration example scans the specified assembly for
+classes marked with `BufferPushCustomerAttribute` and starts their consumption
+loops as hosted services.
+
+An auto-commit Push Consumer receives batches without managing the commit
+operation itself:
+
+```csharp
+using BufferQueue.PushConsumer;
+using Microsoft.Extensions.DependencyInjection;
+
+[BufferPushCustomer(
+    topicName: "orders",
+    groupName: "order-indexing",
+    batchSize: 100,
+    serviceLifetime: ServiceLifetime.Singleton,
+    concurrency: 4)]
+public sealed class OrderIndexConsumer : IBufferAutoCommitPushConsumer<Order>
+{
+    public async Task ConsumeAsync(
+        IEnumerable<Order> batch,
+        CancellationToken cancellationToken)
+    {
+        foreach (var order in batch)
+        {
+            await IndexAsync(order, cancellationToken);
+        }
+    }
+
+    private static Task IndexAsync(Order order, CancellationToken cancellationToken)
+    {
+        // Replace with application processing.
+        return Task.CompletedTask;
+    }
+}
+```
+
+Auto commit advances queue progress before application processing. Use a manual
+commit Push Consumer when a failed batch must remain eligible for replay:
+
+```csharp
+using BufferQueue.PushConsumer;
+using Microsoft.Extensions.DependencyInjection;
+
+[BufferPushCustomer(
+    topicName: "orders",
+    groupName: "billing",
+    batchSize: 100,
+    serviceLifetime: ServiceLifetime.Singleton,
+    concurrency: 4)]
+public sealed class BillingConsumer : IBufferManualCommitPushConsumer<Order>
+{
+    public async Task ConsumeAsync(
+        IEnumerable<Order> batch,
+        IBufferConsumerCommitter committer,
+        CancellationToken cancellationToken)
+    {
+        foreach (var order in batch)
+        {
+            await BillAsync(order, cancellationToken);
+        }
+
+        await committer.CommitAsync();
+    }
+
+    private static Task BillAsync(Order order, CancellationToken cancellationToken)
+    {
+        // Replace with application processing.
+        return Task.CompletedTask;
+    }
+}
+```
+
+The `concurrency` value creates that many consumers in the group and cannot
+exceed the topic's partition count.
 
 ## Semantics
 
