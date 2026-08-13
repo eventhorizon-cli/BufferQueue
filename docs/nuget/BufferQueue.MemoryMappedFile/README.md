@@ -31,6 +31,7 @@ builder.Services.AddBufferQueue(queue =>
                 options.TopicName = "order-events";
                 options.DataDirectory = "/var/lib/bufferqueue";
                 options.PartitionNumber = 4;
+                options.UsePartitionKey(orderEvent => orderEvent.Id);
                 options.SegmentSizeInBytes = 64L * 1024 * 1024;
                 options.MaxRetainedConsumedSegments = 2;
             });
@@ -59,6 +60,19 @@ only.
 
 Production and consumption use the same `IBufferProducer<T>`, `IBufferQueue`,
 pull consumer, push consumer, and commit APIs as Memory storage.
+
+Producer calls use round-robin partitioning by default. `UsePartitionKey`
+requires a selector delegate. Numeric selectors support the built-in
+`INumber<TNumber>` types when their result is a finite integer; they route with
+the normalized mathematical modulo of `(key - 1)` and `PartitionNumber`, so
+zero and negative keys are accepted. String selectors use only the first
+four UTF-16 characters to choose a partition. Equal keys are routed to the
+same partition, while different keys can share a partition. The selector should
+be deterministic and safe for concurrent calls.
+
+Keep the selector and `PartitionNumber` unchanged while existing records must
+preserve per-key order. Numeric and string routing are deterministic across
+process restarts; string routing does not use `string.GetHashCode()`.
 
 ## Produce
 
@@ -350,6 +364,7 @@ directory from every partition.
 - MemoryMappedFile does not provide multi-process writer coordination.
 - MemoryMappedFile does not currently support bounded capacity.
 - Do not reduce `PartitionNumber` for an existing topic.
+- Do not change a persisted topic's key selector or partition-key routing behavior.
 - A serialized record must fit within one segment.
 - Multiple partitions preserve partition order, not global FIFO order.
 - Persisted serializer schemas must remain compatible with existing records.

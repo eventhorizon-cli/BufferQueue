@@ -91,6 +91,10 @@ Concrete queue implementations only create their storage-specific partitions and
 - `MemoryBufferQueue<T>` creates `MemoryBufferPartition<T>[]` and `MemoryBufferProducer<T>`.
 - `MemoryMappedFileBufferQueue<T>` creates `MemoryMappedFileBufferPartition<T>[]` and `MemoryMappedFileBufferProducer<T>`.
 
+Both producers use the shared `IPartitioner<TItem>`. Each topic registers its selected implementation as a
+keyed service. The shared implementations provide round-robin and partition-key routing, and both storage modes
+expose them through topic configuration.
+
 ## Internal Partition Abstraction
 
 Storage implementations are connected through `IBufferPartition<TItem>`.
@@ -116,7 +120,10 @@ The queue and consumer logic only depend on this abstraction. This keeps common 
 
 ## Partitioning and Consumer Groups
 
-Each topic has one or more partitions. Producers distribute items across partitions using round-robin selection.
+Each topic has one or more partitions. Producers use round-robin selection by default. Memory topics can call
+`MemoryBufferQueueOptions<T>.UsePartitionKey` with a key-selector delegate to route equal keys to the same
+partition. MemoryMappedFile topics support the same option. Selectors should be deterministic and safe for
+concurrent calls.
 
 Consumers are created per consumer group. A group may contain multiple consumers. Partitions are assigned evenly across the consumers in that group:
 
@@ -196,11 +203,16 @@ Each record offset is represented by `MemoryBufferPartitionOffset`. Offsets are 
 
 ### Append
 
-`MemoryBufferProducer<T>` selects a partition in round-robin order and appends through the selected partition.
+`MemoryBufferProducer<T>` selects a partition in round-robin order unless partition-key routing is enabled. With
+partition-key routing, a numeric selector result must be a finite integer and maps through the normalized
+mathematical modulo of `(key - 1)` and `PartitionNumber`; zero and negative keys are accepted. A string selector
+folds only its first four UTF-16 characters into a partition
+index. Equal keys therefore retain their order within one partition, while different keys can collide on the same
+partition.
 
 The partition attempts to append to the current tail segment. If the tail segment is full, a new segment is created or an old fully consumed segment is recycled.
 
-The memory producer and its partitions share one append lock, which serializes round-robin routing,
+The memory producer and its partitions share one append lock, which serializes partition routing,
 bounded-capacity accounting, and append. The selected partition then stores the item and publishes the new readable
 cursor with a release write. Consumers read the published range without taking the append lock.
 
@@ -344,7 +356,11 @@ A segment rollover and a consumer commit are unconditional flush boundaries in b
 
 ### Append
 
-`MemoryMappedFileBufferProducer<T>` selects a partition in round-robin order. The partition serializes the item, calculates the record size, finds the active segment, writes the record, advances the in-process write offset, applies the configured flush strategy, and notifies consumers.
+`MemoryMappedFileBufferProducer<T>` uses the shared partitioner. It selects partitions in round-robin order by
+default or by the configured key selector. The selector and `PartitionNumber` must remain stable across restarts to
+preserve per-key partition ordering. Numeric and string routing are deterministic; string routing does not use
+`string.GetHashCode()`. The partition serializes the item, calculates the record size, finds the active segment,
+writes the record, advances the in-process write offset, applies the configured flush strategy, and notifies consumers.
 
 At every flush boundary, the partition flushes the memory-mapped accessor first and writes the corresponding offset to `producer.offset` only after that flush succeeds. A segment rollover flushes the completed segment before writing to the next segment. A consumer commit also flushes pending log data and advances `producer.offset` before its consumer offset is persisted.
 
@@ -433,6 +449,7 @@ services.AddBufferQueue(builder =>
             options.TopicName = "topic-foo";
             options.PartitionNumber = 4;
             options.SegmentSize = 1024;
+            options.UsePartitionKey(foo => foo.Id);
         });
     });
 });
@@ -458,6 +475,7 @@ services.AddBufferQueue(builder =>
             options.DataDirectory = "/var/lib/bufferqueue";
             options.FlushStrategy = MemoryMappedFileFlushStrategy.Batch;
             options.FlushBatchSize = 100;
+            options.UsePartitionKey(foo => foo.Id);
         });
     });
 });
@@ -471,8 +489,10 @@ The implementation is designed for concurrent production and consumption within 
 
 Important concurrency points:
 
-- Producers choose partitions with round-robin counters; the memory producer advances its counter inside the serialized append section.
-- A memory queue's producer and partitions share one lock that serializes round-robin routing, bounded-capacity
+- Producers choose partitions with round-robin counters by default; either storage mode can instead use its
+  configured partition-key selector. The memory producer performs either selection inside the serialized append
+  section, while the shared partitioner makes MemoryMappedFile selection thread-safe.
+- A memory queue's producer and partitions share one lock that serializes partition routing, bounded-capacity
   accounting, and append operations.
 - A memory partition publishes its segment cursor only after the corresponding item has been stored, so consumers
   never observe an unwritten slot and do not need to take the append lock.

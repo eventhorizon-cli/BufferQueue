@@ -10,8 +10,6 @@ English | [简体中文](./README.zh-CN.md)
 
 BufferQueue 是一个用 .NET 编写的高性能的缓冲队列实现，支持多线程并发操作。
 
-项目是从 [mocha](https://github.com/dotnetcore/mocha) 项目中独立出来的一个组件，经过修改以提供更通用的缓冲队列功能。
-
 BufferQueue 当前提供两种存储模式：
 
 - Memory：进程内分段内存存储，主要优化批量消费吞吐。
@@ -128,7 +126,8 @@ Memory 模式的 consumer 采用 lock-free 设计。不同 Consumer Group 可以
 ### 多 partition 设计
 每个 Topic 可以有多个 partition，每个 partition 都有独立的消费进度，支持多个 Consumer Group 并发消费。
 
-Producer 以轮询的方式往每个 Partition 中写入数据。
+Producer 默认以轮询方式往每个 Partition 中写入数据。Topic 也可以启用 PartitionKey 路由，
+让相同 key 的数据写入同一个 Partition。
 
 **Consumer 最多不允许超过 Partition 的数量，Partition 会均分到组内每个 Customer 上**。
 
@@ -169,6 +168,8 @@ builder.Services.AddBufferQueue(bufferOptionsBuilder =>
                 {
                     options.TopicName = "topic-foo1";
                     options.PartitionNumber = 6;
+                    // 相同 Foo.Id 的数据始终路由到同一个 partition。
+                    options.UsePartitionKey(foo => foo.Id);
                 })
                 .AddTopic<Foo>(options =>
                 {
@@ -192,6 +193,24 @@ builder.Services.AddBufferQueue(bufferOptionsBuilder =>
 // 在 HostedService 中使用 pull模式 消费数据
 builder.Services.AddHostedService<Foo1PullConsumerHostService>();
 ```
+
+`UsePartitionKey` 必须传入 selector 委托。数值 selector 支持内置的
+`INumber<TNumber>` 类型，但结果必须是有限的整数，路由使用 `(key - 1)` 对 `PartitionNumber`
+的归一化数学取模，因此零和负数也可作为 key。字符串 selector 只使用前四个 UTF-16 字符选择 partition。
+相同 key 因此能保持 partition 内顺序，不同 key 仍可能进入同一个 partition。未调用 `UsePartitionKey` 时，Producer 继续使用默认的轮询路由。Selector 应保持确定性，
+并能安全地被并发调用。
+
+### PartitionKey 路由性能
+
+下面的 Memory 模式 producer 基准使用 `8` 个 partition、`8,192` 条消息重复 `832` 次、`6` 次预热和
+`15` 次测量迭代。结果为单条写入耗时，运行环境为 Apple M2 Max 和 .NET 10.0.0；所有路径均无托管内存分配。
+
+| 路由方式 | Mean | 相对轮询 |
+| --- | ---: | ---: |
+| 轮询 | `15.81 ns` | `1.00x` |
+| `int` key | `17.02 ns` | `1.08x` |
+| `string` key（前四个 UTF-16 字符） | `17.50 ns` | `1.11x` |
+| 自定义消息，取数值 `CustomerId` key | `17.11 ns` | `1.08x` |
 
 ### MemoryMappedFile 模式注册
 
@@ -226,10 +245,14 @@ builder.Services.AddBufferQueue(bufferOptionsBuilder =>
                     options.FlushStrategy = MemoryMappedFileFlushStrategy.Batch;
                     options.FlushBatchSize = 100;
                     options.Serializer = new MessagePackMemoryMappedFileSerializer<Foo>();
+                    options.UsePartitionKey(foo => foo.Id);
                 });
         });
 });
 ```
+
+MemoryMappedFile topic 已有记录仍需保持同 key 顺序时，selector 和 `PartitionNumber` 都不能改变。
+数值与字符串路由在进程重启后保持确定；字符串路由不使用 `string.GetHashCode()`。
 
 ### 同时使用 Memory 和 MemoryMappedFile
 

@@ -30,6 +30,7 @@ builder.Services.AddBufferQueue(queue =>
             {
                 topic.TopicName = "orders";
                 topic.PartitionNumber = 4;
+                topic.UsePartitionKey(order => order.Id);
 
                 // Optional. Memory topics are unbounded by default.
                 topic.BoundedCapacity = 100_000;
@@ -42,8 +43,16 @@ public sealed record Order(long Id, decimal Total);
 ```
 
 Each `(message type, topic name)` pair identifies one typed queue. A topic can
-have multiple partitions, and producer calls are distributed across them in
-round-robin order.
+have multiple partitions. Producer calls use round-robin routing by default.
+
+`UsePartitionKey` requires a selector delegate. Numeric selectors support the
+built-in `INumber<TNumber>` types when their result is a finite integer; they
+route with the normalized mathematical modulo of `(key - 1)` and
+`PartitionNumber`, so zero and negative keys are accepted. String selectors use
+only the first four UTF-16 characters to choose a partition. Equal keys are
+routed to the same partition and retain their per-partition order; different
+keys can share a partition. Omit the call to retain round-robin routing. The selector should be deterministic
+and safe for concurrent calls.
 
 ## Produce
 

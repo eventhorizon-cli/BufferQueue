@@ -1,6 +1,3 @@
-// Licensed to the .NET Core Community under one or more agreements.
-// The .NET Core Community licenses this file to you under the MIT license.
-
 using System.Buffers.Binary;
 using BufferQueue.MemoryMappedFile;
 
@@ -593,6 +590,104 @@ public class MemoryMappedFileBufferQueueTests
         await foreach (var items in consumers[1].ConsumeAsync())
         {
             Assert.Equal(new[] { 1, 3, 5, 7, 9 }, items);
+            break;
+        }
+    }
+
+    [Fact]
+    public async Task Partition_Key_Routing_Will_Be_Preserved_After_Restart()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var options = new MemoryMappedFileBufferQueueOptions<int>
+        {
+            TopicName = "test",
+            DataDirectory = temporaryDirectory.Path,
+            PartitionNumber = 2,
+            SegmentSizeInBytes = 1024
+        };
+        options.UsePartitionKey(item => item + 1);
+
+        using (var queue = new MemoryMappedFileBufferQueue<int>(options))
+        {
+            var producer = queue.GetProducer();
+            await producer.ProduceAsync(0);
+            await producer.ProduceAsync(2);
+            await producer.ProduceAsync(1);
+            await producer.ProduceAsync(3);
+        }
+
+        using var restoredQueue = new MemoryMappedFileBufferQueue<int>(options);
+        var restoredProducer = restoredQueue.GetProducer();
+        await restoredProducer.ProduceAsync(4);
+        await restoredProducer.ProduceAsync(6);
+        await restoredProducer.ProduceAsync(5);
+        await restoredProducer.ProduceAsync(7);
+        var consumers = restoredQueue.CreateConsumers(
+            new BufferPullConsumerOptions
+            {
+                TopicName = "test",
+                GroupName = "TestGroup",
+                AutoCommit = true,
+                BatchSize = 4
+            },
+            2).ToArray();
+
+        await foreach (var items in consumers[0].ConsumeAsync())
+        {
+            Assert.Equal(new[] { 0, 2, 4, 6 }, items);
+            break;
+        }
+
+        await foreach (var items in consumers[1].ConsumeAsync())
+        {
+            Assert.Equal(new[] { 1, 3, 5, 7 }, items);
+            break;
+        }
+    }
+
+    [Fact]
+    public async Task String_Partition_Key_Routing_Will_Be_Preserved_After_Restart()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var options = new MemoryMappedFileBufferQueueOptions<string>
+        {
+            TopicName = "test",
+            DataDirectory = temporaryDirectory.Path,
+            PartitionNumber = 2,
+            SegmentSizeInBytes = 1024
+        };
+        options.UsePartitionKey(static item => item);
+
+        using (var queue = new MemoryMappedFileBufferQueue<string>(options))
+        {
+            var producer = queue.GetProducer();
+            await producer.ProduceAsync("ABCD-first");
+            await producer.ProduceAsync("ABCE-first");
+        }
+
+        using var restoredQueue = new MemoryMappedFileBufferQueue<string>(options);
+        var restoredProducer = restoredQueue.GetProducer();
+        await restoredProducer.ProduceAsync("ABCD-second");
+        await restoredProducer.ProduceAsync("ABCE-second");
+        var consumers = restoredQueue.CreateConsumers(
+            new BufferPullConsumerOptions
+            {
+                TopicName = "test",
+                GroupName = "TestGroup",
+                AutoCommit = true,
+                BatchSize = 2
+            },
+            2).ToArray();
+
+        await foreach (var items in consumers[0].ConsumeAsync())
+        {
+            Assert.Equal(new[] { "ABCD-first", "ABCD-second" }, items);
+            break;
+        }
+
+        await foreach (var items in consumers[1].ConsumeAsync())
+        {
+            Assert.Equal(new[] { "ABCE-first", "ABCE-second" }, items);
             break;
         }
     }

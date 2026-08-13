@@ -1,6 +1,3 @@
-// Licensed to the .NET Core Community under one or more agreements.
-// The .NET Core Community licenses this file to you under the MIT license.
-
 using BufferQueue.MemoryMappedFile;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -60,6 +57,45 @@ public class MemoryMappedFileBufferServiceCollectionExtensionsTests
         {
             Assert.Equal("topic2", consumer.TopicName);
         }
+    }
+
+    [Fact]
+    public async Task AddMemoryMappedFileBuffer_Can_Use_Partition_Key()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var services = new ServiceCollection();
+        services.AddBufferQueue(bufferOptionsBuilder =>
+            bufferOptionsBuilder.UseMemoryMappedFile(memoryMappedFileBufferOptionsBuilder =>
+                memoryMappedFileBufferOptionsBuilder.AddTopic<int>(options =>
+                {
+                    options.TopicName = "keyed-topic";
+                    options.DataDirectory = temporaryDirectory.Path;
+                    options.PartitionNumber = 2;
+                    options.SegmentSizeInBytes = 1024;
+                    options.UsePartitionKey(item => item + 1);
+                })));
+
+        using var provider = services.BuildServiceProvider();
+        var bufferQueue = provider.GetRequiredService<IBufferQueue>();
+        var producer = bufferQueue.GetProducer<int>("keyed-topic");
+        var consumers = bufferQueue.CreatePullConsumers<int>(
+                new BufferPullConsumerOptions
+                {
+                    TopicName = "keyed-topic",
+                    GroupName = "test",
+                    AutoCommit = true,
+                    BatchSize = 4
+                },
+                2)
+            .ToArray();
+
+        await producer.ProduceAsync(0);
+        await producer.ProduceAsync(2);
+        await producer.ProduceAsync(1);
+        await producer.ProduceAsync(3);
+
+        Assert.Equal(new[] { 0, 2 }, await ConsumeOneBatchAsync(consumers[0]));
+        Assert.Equal(new[] { 1, 3 }, await ConsumeOneBatchAsync(consumers[1]));
     }
 
     [Fact]
@@ -199,4 +235,13 @@ public class MemoryMappedFileBufferServiceCollectionExtensionsTests
         public IBufferProducer<int> MemoryMappedFileProducer { get; }
     }
 
+    private static async Task<int[]> ConsumeOneBatchAsync(IBufferPullConsumer<int> consumer)
+    {
+        await foreach (var items in consumer.ConsumeAsync())
+        {
+            return items.ToArray();
+        }
+
+        throw new InvalidOperationException("The consumer completed without returning a batch.");
+    }
 }

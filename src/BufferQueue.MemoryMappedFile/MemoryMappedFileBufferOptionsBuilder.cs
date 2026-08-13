@@ -1,6 +1,3 @@
-// Licensed to the .NET Core Community under one or more agreements.
-// The .NET Core Community licenses this file to you under the MIT license.
-
 using System;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -48,8 +45,21 @@ public class MemoryMappedFileBufferOptionsBuilder(IServiceCollection services)
 
         ArgumentNullException.ThrowIfNull(options.Serializer, nameof(options.Serializer));
 
+        if (options.PartitionIndexSelector is { } partitionIndexSelector)
+        {
+            services.AddKeyedSingleton<IPartitioner<T>>(
+                topicName, new KeyPartitioner<T>(partitionIndexSelector));
+        }
+        else
+        {
+            services.AddKeyedSingleton<IPartitioner<T>, ConcurrentRoundRobinPartitioner<T>>(topicName);
+        }
+
         services.AddKeyedSingleton<IBufferQueue<T>>(
-            topicName, (_, _) => new MemoryMappedFileBufferQueue<T>(options));
+            topicName,
+            (serviceProvider, serviceKey) => new MemoryMappedFileBufferQueue<T>(
+                options,
+                serviceProvider.GetRequiredKeyedService<IPartitioner<T>>(serviceKey)));
         services.AddKeyedSingleton<IBufferProducer<T>>(
             topicName,
             (serviceProvider, serviceKey) =>

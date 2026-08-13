@@ -1,6 +1,3 @@
-// Licensed to the .NET Core Community under one or more agreements.
-// The .NET Core Community licenses this file to you under the MIT license.
-
 using System;
 using System.IO;
 
@@ -13,14 +10,26 @@ internal sealed class MemoryMappedFileBufferQueue<T> : BufferQueue<T>, IDisposab
     private bool _disposed;
 
     public MemoryMappedFileBufferQueue(MemoryMappedFileBufferQueueOptions<T> options)
-        : this(options, CreatePartitions(options))
+        : this(
+            options,
+            options.PartitionIndexSelector is { } selector
+                ? new KeyPartitioner<T>(selector)
+                : new ConcurrentRoundRobinPartitioner<T>())
+    {
+    }
+
+    internal MemoryMappedFileBufferQueue(
+        MemoryMappedFileBufferQueueOptions<T> options,
+        IPartitioner<T> partitioner)
+        : this(options, partitioner, CreatePartitions(options))
     {
     }
 
     private MemoryMappedFileBufferQueue(
         MemoryMappedFileBufferQueueOptions<T> options,
+        IPartitioner<T> partitioner,
         MemoryMappedFileBufferPartition<T>[] partitions)
-        : base(options.TopicName!, partitions, new MemoryMappedFileBufferProducer<T>(options, partitions))
+        : base(options.TopicName!, partitions, new MemoryMappedFileBufferProducer<T>(options, partitions, partitioner))
     {
         _partitions = partitions;
     }
