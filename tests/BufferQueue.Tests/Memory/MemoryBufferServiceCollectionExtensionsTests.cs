@@ -1,6 +1,3 @@
-// Licensed to the .NET Core Community under one or more agreements.
-// The .NET Core Community licenses this file to you under the MIT license.
-
 using BufferQueue.Memory;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -168,6 +165,56 @@ public class MemoryBufferServiceCollectionExtensionsTests
             dependency.Producer);
     }
 
+    [Fact]
+    public async Task AddMemoryBuffer_Can_Enable_Partition_Key()
+    {
+        var services = new ServiceCollection();
+        services.AddBufferQueue(bufferOptionsBuilder =>
+            bufferOptionsBuilder.UseMemory(memoryBufferOptionsBuilder =>
+                memoryBufferOptionsBuilder.AddTopic<KeyedItem>(options =>
+                {
+                    options.TopicName = "keyed-topic";
+                    options.PartitionNumber = 2;
+                    options.UsePartitionKey(item => item.Key);
+                })));
+
+        using var provider = services.BuildServiceProvider();
+        var bufferQueue = provider.GetRequiredService<IBufferQueue>();
+        var producer = bufferQueue.GetProducer<KeyedItem>("keyed-topic");
+        var consumers = bufferQueue.CreatePullConsumers<KeyedItem>(
+                new BufferPullConsumerOptions
+                {
+                    TopicName = "keyed-topic",
+                    GroupName = "test",
+                    AutoCommit = true,
+                    BatchSize = 4
+                },
+                2)
+            .ToArray();
+
+        await producer.ProduceAsync(new KeyedItem(1, "one-1"));
+        await producer.ProduceAsync(new KeyedItem(1, "one-2"));
+        await producer.ProduceAsync(new KeyedItem(2, "two-1"));
+        await producer.ProduceAsync(new KeyedItem(2, "two-2"));
+
+        Assert.Equal(
+            new[] { new KeyedItem(1, "one-1"), new KeyedItem(1, "one-2") },
+            await ConsumeOneBatchAsync(consumers[0]));
+        Assert.Equal(
+            new[] { new KeyedItem(2, "two-1"), new KeyedItem(2, "two-2") },
+            await ConsumeOneBatchAsync(consumers[1]));
+    }
+
+    private static async Task<KeyedItem[]> ConsumeOneBatchAsync(IBufferPullConsumer<KeyedItem> consumer)
+    {
+        await foreach (var items in consumer.ConsumeAsync())
+        {
+            return items.ToArray();
+        }
+
+        throw new InvalidOperationException("The consumer completed without returning a batch.");
+    }
+
     private sealed class KeyedProducerDependency
     {
         public KeyedProducerDependency(
@@ -178,4 +225,6 @@ public class MemoryBufferServiceCollectionExtensionsTests
 
         public IBufferProducer<int> Producer { get; }
     }
+
+    private sealed record KeyedItem(int Key, string Value);
 }

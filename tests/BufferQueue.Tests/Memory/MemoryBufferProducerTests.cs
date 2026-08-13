@@ -1,12 +1,157 @@
-// Licensed to the .NET Core Community under one or more agreements.
-// The .NET Core Community licenses this file to you under the MIT license.
-
+using System.Numerics;
 using BufferQueue.Memory;
 
 namespace BufferQueue.Tests.Memory;
 
 public class MemoryBufferProducerTests
 {
+    [Fact]
+    public async Task Partition_Key_Selector_Routes_Equal_Keys_To_The_Same_Partition()
+    {
+        var options = new MemoryBufferQueueOptions<KeyedItem>
+        {
+            TopicName = "test",
+            PartitionNumber = 4
+        };
+        options.UsePartitionKey(item => item.Key);
+        var appendLock = new object();
+        var partitions = Enumerable.Range(0, options.PartitionNumber)
+            .Select(index => new MemoryBufferPartition<KeyedItem>(index, 16, appendLock))
+            .ToArray();
+        var producer = new MemoryBufferProducer<KeyedItem>(options, partitions);
+
+        await producer.ProduceAsync(new KeyedItem(1, "one-1"));
+        await producer.ProduceAsync(new KeyedItem(2, "two-1"));
+        await producer.ProduceAsync(new KeyedItem(1, "one-2"));
+        await producer.ProduceAsync(new KeyedItem(4, "four-1"));
+        await producer.ProduceAsync(new KeyedItem(2, "two-2"));
+
+        AssertPartitionItems(partitions[0], new KeyedItem(1, "one-1"), new KeyedItem(1, "one-2"));
+        AssertPartitionItems(partitions[1], new KeyedItem(2, "two-1"), new KeyedItem(2, "two-2"));
+        Assert.Equal(0UL, partitions[2].Count);
+        AssertPartitionItems(partitions[3], new KeyedItem(4, "four-1"));
+    }
+
+    [Fact]
+    public async Task Partition_Key_Selector_Exception_Does_Not_Consume_Bounded_Capacity()
+    {
+        var options = new MemoryBufferQueueOptions<int>
+        {
+            TopicName = "test",
+            BoundedCapacity = 1
+        };
+        options.UsePartitionKey(item => item >= 0
+            ? item
+            : throw new InvalidOperationException("Invalid partition key."));
+        var partition = new MemoryBufferPartition<int>(0, 4);
+        var producer = new MemoryBufferProducer<int>(options, [partition]);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(async () => await producer.ProduceAsync(-1));
+
+        Assert.True(await producer.TryProduceAsync(1));
+        Assert.False(await producer.TryProduceAsync(2));
+        Assert.Equal(1UL, partition.Count);
+    }
+
+    [Fact]
+    public async Task Numeric_Partition_Key_Accepts_Negative_Values_Without_Consuming_Extra_Bounded_Capacity()
+    {
+        var options = new MemoryBufferQueueOptions<int>
+        {
+            TopicName = "test",
+            BoundedCapacity = 1
+        };
+        options.UsePartitionKey(static item => item);
+        var partition = new MemoryBufferPartition<int>(0, 4);
+        var producer = new MemoryBufferProducer<int>(options, [partition]);
+
+        Assert.True(await producer.TryProduceAsync(-1));
+        Assert.False(await producer.TryProduceAsync(2));
+        Assert.Equal(1UL, partition.Count);
+    }
+
+    [Fact]
+    public void Use_Partition_Key_Requires_A_Selector()
+    {
+        var options = new MemoryBufferQueueOptions<KeyedItem>();
+
+        var exception = Assert.Throws<ArgumentNullException>(() =>
+            options.UsePartitionKey<int>(null!));
+
+        Assert.Equal("partitionKeySelector", exception.ParamName);
+    }
+
+    [Fact]
+    public void Numeric_Partition_Keys_Use_Normalized_One_Based_Modulo_For_All_Built_In_Numeric_Types()
+    {
+        AssertNumericPartition(15, 14);
+        AssertNumericPartition(16, 15);
+        AssertNumericPartition(17, 0);
+        AssertNumericPartition(0, 15);
+        AssertNumericPartition(-1, 14);
+        AssertNumericPartition(-16, 15);
+        AssertNumericPartition(int.MinValue, 15);
+        AssertNumericPartition(int.MaxValue, 14);
+        AssertNumericPartition((sbyte)-1, 14);
+        AssertNumericPartition((sbyte)15, 14);
+        AssertNumericPartition((byte)16, 15);
+        AssertNumericPartition((short)17, 0);
+        AssertNumericPartition((ushort)15, 14);
+        AssertNumericPartition(17U, 0);
+        AssertNumericPartition(15L, 14);
+        AssertNumericPartition(16UL, 15);
+        AssertNumericPartition(-1L, 14);
+        AssertNumericPartition(long.MinValue, 15);
+        AssertNumericPartition(long.MaxValue, 14);
+        AssertNumericPartition(uint.MaxValue, 14);
+        AssertNumericPartition(ulong.MaxValue, 14);
+        AssertNumericPartition((nint)17, 0);
+        AssertNumericPartition((nuint)15, 14);
+        AssertNumericPartition((Int128)16, 15);
+        AssertNumericPartition((UInt128)17, 0);
+        AssertNumericPartition(new BigInteger(15), 14);
+        AssertNumericPartition(new BigInteger(-1), 14);
+        AssertNumericPartition((char)16, 15);
+        AssertNumericPartition((Half)16, 15);
+        AssertNumericPartition(17F, 0);
+        AssertNumericPartition(15D, 14);
+        AssertNumericPartition(-1D, 14);
+        AssertNumericPartition(16M, 15);
+        AssertNumericPartition(-1M, 14);
+    }
+
+    [Theory]
+    [InlineData(1.5D)]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    public void Numeric_Partition_Keys_Reject_Invalid_Values(double partitionKey)
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            PartitionKeyRouting.SelectNumericPartition(partitionKey, 16));
+
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            PartitionKeyRouting.SelectNumericPartition(1.5M, 16));
+    }
+
+    [Fact]
+    public void String_Partition_Keys_Use_Only_The_First_Four_Characters()
+    {
+        var options = new MemoryBufferQueueOptions<string>
+        {
+            TopicName = "test",
+            PartitionNumber = 16
+        };
+        options.UsePartitionKey(static item => item);
+
+        var partitioner = new KeyPartitioner<string>(options.PartitionIndexSelector!);
+
+        Assert.Equal(
+            partitioner.SelectPartition("cust-0001", options.PartitionNumber),
+            partitioner.SelectPartition("cust-9999", options.PartitionNumber));
+        Assert.Equal(0, partitioner.SelectPartition(string.Empty, options.PartitionNumber));
+    }
+
     [Fact]
     public async Task Producer_And_Direct_Partition_Enqueue_Share_Append_Serialization()
     {
@@ -174,4 +319,28 @@ public class MemoryBufferProducerTests
 
         Assert.Equal(3UL, partition.Count);
     }
+
+    private static void AssertPartitionItems(
+        MemoryBufferPartition<KeyedItem> partition,
+        params KeyedItem[] expectedItems)
+    {
+        Assert.True(partition.TryPull($"TestGroup-{partition.PartitionId}", 16, out var items));
+        Assert.Equal(expectedItems, items);
+    }
+
+    private static void AssertNumericPartition<TNumber>(TNumber partitionKey, int expectedPartitionIndex)
+        where TNumber : INumber<TNumber>
+    {
+        var options = new MemoryBufferQueueOptions<TNumber>
+        {
+            TopicName = "test",
+            PartitionNumber = 16
+        };
+        options.UsePartitionKey(static item => item);
+
+        var partitioner = new KeyPartitioner<TNumber>(options.PartitionIndexSelector!);
+        Assert.Equal(expectedPartitionIndex, partitioner.SelectPartition(partitionKey, options.PartitionNumber));
+    }
+
+    private sealed record KeyedItem(int Key, string Value);
 }

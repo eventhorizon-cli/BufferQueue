@@ -1,6 +1,3 @@
-// Licensed to the .NET Core Community under one or more agreements.
-// The .NET Core Community licenses this file to you under the MIT license.
-
 using BenchmarkDotNet.Configs;
 using BenchmarkDotNet.Diagnosers;
 using BenchmarkDotNet.Running;
@@ -17,6 +14,7 @@ var allBenchmarks = new[]
     typeof(ChannelVsMemoryBufferQueueProduceBenchmark),
     typeof(UnboundedChannelVsMemoryBufferQueueConsumeBenchmark),
     typeof(BoundedChannelVsMemoryBufferQueueConsumeBenchmark),
+    typeof(MemoryBufferPartitionerBenchmark),
     typeof(MemoryVsMemoryMappedFileBufferQueueProduceBenchmark),
     typeof(MemoryVsMemoryMappedFileBufferQueueConsumeBenchmark),
     typeof(MemoryMappedFileSerializerSerializeBenchmark),

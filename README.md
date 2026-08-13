@@ -10,8 +10,6 @@ Design docs: [English](./docs/design.md) | [简体中文](./docs/design.zh-CN.md
 
 BufferQueue is a high-performance buffer queue implementation written in .NET, which supports multi-threaded concurrent operations.
 
-The project is an independent component separated from the [mocha](https://github.com/dotnetcore/mocha) project, which has been modified to provide more general buffer queue functionality.
-
 BufferQueue currently provides two storage modes:
 
 - Memory: in-process segmented memory storage, optimized for high-throughput batch consumption.
@@ -135,7 +133,8 @@ independently without blocking one another.
 
 Each topic can have multiple partitions, each of which has an independent consumption progress, supporting multiple consumer groups to consume concurrently.
 
-The producer writes data to each partition in a round-robin manner.
+The producer writes data to each partition in a round-robin manner by default. A topic can instead enable
+partition-key routing so items with equal keys are written to the same partition.
 
 **The number of consumers must not exceed the number of partitions, and the partitions will be evenly distributed to each customer in the group**.
 
@@ -177,6 +176,8 @@ builder.Services.AddBufferQueue(bufferOptionsBuilder =>
                 {
                     options.TopicName = "topic-foo1";
                     options.PartitionNumber = 6;
+                    // The same Foo.Id is always routed to the same partition.
+                    options.UsePartitionKey(foo => foo.Id);
                 })
                 .AddTopic<Foo>(options =>
                 {
@@ -200,6 +201,28 @@ builder.Services.AddBufferQueue(bufferOptionsBuilder =>
 // Pull mode consumers can be implemented as HostedService.
 builder.Services.AddHostedService<Foo1PullConsumerHostService>();
 ```
+
+`UsePartitionKey` requires a selector delegate. Numeric selectors support the built-in
+`INumber<TNumber>` types when their result is a finite integer; they route with
+the normalized mathematical modulo of `(key - 1)` and `PartitionNumber`. This also accepts
+zero and negative keys. String selectors use only the first four UTF-16 characters
+to choose a partition. Equal keys therefore keep their per-partition ordering, while
+different keys can share a partition. When `UsePartitionKey` is not called, production
+continues to use round-robin routing.
+The selector should be deterministic and safe for concurrent calls.
+
+### Partition-Key Routing Benchmark
+
+The following Memory-mode producer benchmark uses `8` partitions, `8,192` messages repeated `832` times,
+`6` warmup iterations, and `15` measured iterations. Results are per produced item on an Apple M2 Max with
+.NET 10.0.0; no path allocated managed memory.
+
+| Routing | Mean | Relative to round robin |
+| --- | ---: | ---: |
+| Round robin | `15.81 ns` | `1.00x` |
+| `int` key | `17.02 ns` | `1.08x` |
+| `string` key (first four UTF-16 characters) | `17.50 ns` | `1.11x` |
+| Custom message, numeric `CustomerId` key | `17.11 ns` | `1.08x` |
 
 ### MemoryMappedFile Mode Registration
 
@@ -234,10 +257,15 @@ builder.Services.AddBufferQueue(bufferOptionsBuilder =>
                     options.FlushStrategy = MemoryMappedFileFlushStrategy.Batch;
                     options.FlushBatchSize = 100;
                     options.Serializer = new MessagePackMemoryMappedFileSerializer<Foo>();
+                    options.UsePartitionKey(foo => foo.Id);
                 });
         });
 });
 ```
+
+For MemoryMappedFile topics, keep both the selector and `PartitionNumber` unchanged while
+existing records must preserve per-key ordering. Numeric and string routing are deterministic
+across process restarts; string routing does not use `string.GetHashCode()`.
 
 ### Using Memory and MemoryMappedFile Together
 

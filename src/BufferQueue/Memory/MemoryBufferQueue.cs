@@ -1,22 +1,34 @@
-// Licensed to the .NET Core Community under one or more agreements.
-// The .NET Core Community licenses this file to you under the MIT license.
-
 namespace BufferQueue.Memory;
 
 internal sealed class MemoryBufferQueue<T> : BufferQueue<T>
 {
     public MemoryBufferQueue(MemoryBufferQueueOptions options)
-        : this(options, new object())
+        : this(
+            options,
+            options is MemoryBufferQueueOptions<T> { PartitionIndexSelector: { } selector }
+                ? new KeyPartitioner<T>(selector)
+                : new RoundRobinPartitioner<T>())
     {
     }
 
-    private MemoryBufferQueue(MemoryBufferQueueOptions options, object appendLock)
-        : this(options, CreatePartitions(options, appendLock))
+    internal MemoryBufferQueue(MemoryBufferQueueOptions options, IPartitioner<T> partitioner)
+        : this(options, partitioner, new object())
     {
     }
 
-    private MemoryBufferQueue(MemoryBufferQueueOptions options, MemoryBufferPartition<T>[] partitions)
-        : base(options.TopicName!, partitions, new MemoryBufferProducer<T>(options, partitions))
+    private MemoryBufferQueue(
+        MemoryBufferQueueOptions options,
+        IPartitioner<T> partitioner,
+        object appendLock)
+        : this(options, partitioner, CreatePartitions(options, appendLock))
+    {
+    }
+
+    private MemoryBufferQueue(
+        MemoryBufferQueueOptions options,
+        IPartitioner<T> partitioner,
+        MemoryBufferPartition<T>[] partitions)
+        : base(options.TopicName!, partitions, new MemoryBufferProducer<T>(options, partitions, partitioner))
     {
     }
 

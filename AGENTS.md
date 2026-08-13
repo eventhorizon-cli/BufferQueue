@@ -16,6 +16,12 @@ BufferQueue is a .NET library for typed, topic-based buffering with batch consum
 
 The target framework for the main library and tests is `net8.0`.
 
+## Licensing
+
+This repository uses the standard MIT License in `LICENSE`.
+
+Do not add file-level license headers to source files.
+
 ## Repository Layout
 
 ```text

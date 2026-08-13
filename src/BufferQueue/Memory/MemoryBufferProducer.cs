@@ -1,18 +1,26 @@
-// Licensed to the .NET Core Community under one or more agreements.
-// The .NET Core Community licenses this file to you under the MIT license.
-
 using System;
-using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 
 namespace BufferQueue.Memory;
 
 internal sealed class MemoryBufferProducer<T>(
     MemoryBufferQueueOptions options,
-    MemoryBufferPartition<T>[] partitions)
+    MemoryBufferPartition<T>[] partitions,
+    IPartitioner<T> partitioner)
     : IBufferProducer<T>
 {
-    private uint _partitionIndex;
+    public MemoryBufferProducer(
+        MemoryBufferQueueOptions options,
+        MemoryBufferPartition<T>[] partitions)
+        : this(
+            options,
+            partitions,
+            options is MemoryBufferQueueOptions<T> { PartitionIndexSelector: { } selector }
+                ? new KeyPartitioner<T>(selector)
+                : new RoundRobinPartitioner<T>())
+    {
+    }
+
     private readonly MemoryBufferCapacityGate? _capacityGate = options.BoundedCapacity is { } capacity
         ? new(capacity)
         : null;
@@ -44,7 +52,7 @@ internal sealed class MemoryBufferProducer<T>(
             MemoryBufferPartition<T> unboundedPartition;
             lock (_appendLock)
             {
-                unboundedPartition = SelectPartition();
+                unboundedPartition = SelectPartition(item);
                 unboundedPartition.AppendFromSerializedProducer(item);
             }
 
@@ -63,7 +71,7 @@ internal sealed class MemoryBufferProducer<T>(
             ulong reclaimedCount;
             try
             {
-                partition = SelectPartition();
+                partition = SelectPartition(item);
                 reclaimedCount = partition.AppendFromSerializedProducer(item);
             }
             catch
@@ -79,13 +87,8 @@ internal sealed class MemoryBufferProducer<T>(
         return true;
     }
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private MemoryBufferPartition<T> SelectPartition()
-    {
-        var index = _partitionIndex;
-        _partitionIndex = index + 1 == partitions.Length ? 0 : index + 1;
-        return partitions[index];
-    }
+    private MemoryBufferPartition<T> SelectPartition(T item) =>
+        partitions[partitioner.SelectPartition(item, partitions.Length)];
 
     private static object GetSharedAppendLock(MemoryBufferPartition<T>[] bufferPartitions)
     {

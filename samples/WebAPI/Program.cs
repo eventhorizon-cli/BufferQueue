@@ -24,6 +24,8 @@ builder.Services.AddBufferQueue(bufferOptionsBuilder =>
                 {
                     options.TopicName = "topic-foo1";
                     options.PartitionNumber = 6;
+                    // Route the same Foo.Id to the same partition.
+                    options.UsePartitionKey(foo => foo.Id);
                 })
                 .AddTopic<Foo>(options =>
                 {

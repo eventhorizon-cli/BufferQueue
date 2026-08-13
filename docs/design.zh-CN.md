@@ -91,6 +91,9 @@ BufferQueue<TItem>
 - `MemoryBufferQueue<T>` 创建 `MemoryBufferPartition<T>[]` 和 `MemoryBufferProducer<T>`。
 - `MemoryMappedFileBufferQueue<T>` 创建 `MemoryMappedFileBufferPartition<T>[]` 和 `MemoryMappedFileBufferProducer<T>`。
 
+两个 producer 都使用共享的 `IPartitioner<TItem>`，每个 topic 以 keyed service 注册选定的实现。
+共享实现包含 round-robin 和 PartitionKey 路由，两种存储模式都通过 topic 配置开放这两种策略。
+
 ## 内部 Partition 抽象
 
 存储实现通过 `IBufferPartition<TItem>` 接入上层逻辑。
@@ -116,7 +119,9 @@ internal interface IBufferPartition<TItem>
 
 ## Partition 和 Consumer Group
 
-每个 topic 可以包含一个或多个 partitions。Producer 使用 round-robin 方式把数据分发到 partitions。
+每个 topic 可以包含一个或多个 partitions。Producer 默认使用 round-robin 方式分发数据。Memory topic
+可以调用 options 的 `UsePartitionKey` 并传入 key selector 委托，把相同 key 的数据路由到同一个
+partition。Memory 和 MemoryMappedFile topic 都支持该选项。Selector 应保持确定性，并能安全地被并发调用。
 
 Consumer 按 consumer group 创建。一个 group 可以包含多个 consumers。Partitions 会在同一个 group 内的 consumers 之间均分：
 
@@ -196,11 +201,13 @@ head segment -> segment -> ... -> tail segment
 
 ### 写入
 
-`MemoryBufferProducer<T>` 按 round-robin 选择 partition，并通过选中的 partition append 数据。
+`MemoryBufferProducer<T>` 默认按 round-robin 选择 partition。启用 PartitionKey 后，数值 selector 的
+结果必须是有限的整数，并使用 `(key - 1)` 对 `PartitionNumber` 的归一化数学取模映射；零和负数也可以作为 key。
+字符串 selector 只使用前四个 UTF-16 字符计算 partition。相同 key 因此能保持 partition 内顺序，不同 key 仍可能映射到同一个 partition。
 
 Partition 会尝试写入当前 tail segment。如果 tail segment 已满，就创建新 segment，或者复用一个已经被所有 consumer groups 消费完成的旧 segment。
 
-Memory queue 的 producer 和 partitions 共享一个 append lock，用于串行执行 round-robin 路由、bounded
+Memory queue 的 producer 和 partitions 共享一个 append lock，用于串行执行 partition 路由、bounded
 capacity 计数和 append。选中的 partition 写入 item 后，使用 release write 发布新的可读 cursor。
 Consumer 读取已发布区间时不获取 append lock。
 
@@ -344,7 +351,10 @@ Serializer 及其 wire schema 是 topic 持久化格式的一部分，在 queue 
 
 ### 写入
 
-`MemoryMappedFileBufferProducer<T>` 按 round-robin 选择 partition。Partition 序列化 item，计算记录大小，找到当前 segment，写入记录，推进进程内 write offset，应用配置的 flush 策略，并通知 consumers。
+`MemoryMappedFileBufferProducer<T>` 使用共享 partitioner，默认按 round-robin 选择 partition，也可以使用
+配置的 key selector。为保持重启前后的同 key partition 顺序，selector 和 `PartitionNumber` 必须保持稳定。
+数值与字符串路由都是确定性的；字符串路由不使用 `string.GetHashCode()`。Partition 随后序列化 item，
+计算记录大小，找到当前 segment，写入记录，推进进程内 write offset，应用配置的 flush 策略，并通知 consumers。
 
 每次到达 flush 边界时，partition 都会先 flush memory-mapped accessor，只有 flush 成功后才把对应 offset 写入 `producer.offset`。Segment rollover 会在写入下一个 segment 前 flush 已完成的 segment。Consumer commit 也会 flush 待处理的日志数据并推进 `producer.offset`，然后才持久化 consumer offset。
 
@@ -433,6 +443,7 @@ services.AddBufferQueue(builder =>
             options.TopicName = "topic-foo";
             options.PartitionNumber = 4;
             options.SegmentSize = 1024;
+            options.UsePartitionKey(foo => foo.Id);
         });
     });
 });
@@ -458,6 +469,7 @@ services.AddBufferQueue(builder =>
             options.DataDirectory = "/var/lib/bufferqueue";
             options.FlushStrategy = MemoryMappedFileFlushStrategy.Batch;
             options.FlushBatchSize = 100;
+            options.UsePartitionKey(foo => foo.Id);
         });
     });
 });
@@ -471,8 +483,10 @@ services.AddBufferQueue(builder =>
 
 关键并发点：
 
-- Producer 使用 round-robin 计数器选择 partition；Memory producer 在串行 append 区间内推进该计数器。
-- Memory queue 的 producer 和 partitions 共享一个 lock，串行执行 round-robin 路由、bounded capacity 计数和 append。
+- Producer 默认使用 round-robin 计数器选择 partition；两种存储模式都可以改用配置的 PartitionKey
+  selector。Memory producer 在串行 append 区间内完成对应选择，共享 partitioner 保证
+  MemoryMappedFile 的选择可安全并发执行。
+- Memory queue 的 producer 和 partitions 共享一个 lock，串行执行 partition 路由、bounded capacity 计数和 append。
 - Memory partition 只在对应 item 写入完成后发布 segment cursor，因此 consumer 不会读到尚未写入的 slot，也不需要获取 append lock。
 - Consumer group 创建由 queue 级别 lock 保护。
 - Consumer 等待和唤醒状态由 `ReaderWriterLockSlim` 保护。
