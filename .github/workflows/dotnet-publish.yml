@@ -11,22 +11,24 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v3
+        uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '8.0.x'
+          dotnet-version: |
+            8.0.x
+            10.0.x
 
       - name: Get version without 'v'
         id: get_version
         run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_ENV
 
       - name: Restore dependencies
-        run: dotnet restore BufferQueue.sln
+        run: dotnet restore BufferQueue.slnx
 
       - name: Build
-        run: dotnet build BufferQueue.sln --configuration Release --no-restore
+        run: dotnet build BufferQueue.slnx --configuration Release --no-restore
 
       - name: Pack BufferQueue
         run: |

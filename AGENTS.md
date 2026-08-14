@@ -14,7 +14,8 @@ BufferQueue is a .NET library for typed, topic-based buffering with batch consum
 - Multiple consumer groups per topic.
 - Multiple consumers per group with partition-based load balancing.
 
-The target framework for the main library and tests is `net8.0`.
+The main library, sample, and tests target both `net8.0` and `net10.0`.
+The benchmark project intentionally targets `net10.0` only.
 
 ## Licensing
 
@@ -49,13 +50,13 @@ Important docs:
 Run the full test suite:
 
 ```shell
-dotnet test BufferQueue.sln
+dotnet test BufferQueue.slnx
 ```
 
 Verify formatting:
 
 ```shell
-dotnet format BufferQueue.sln --verify-no-changes
+dotnet format BufferQueue.slnx --verify-no-changes
 ```
 
 Run benchmarks:
@@ -168,8 +169,8 @@ MMF tests must declare `using var temporaryDirectory = new TemporaryDirectory();
 Before finishing a code change, run:
 
 ```shell
-dotnet format BufferQueue.sln --verify-no-changes
-dotnet test BufferQueue.sln
+dotnet format BufferQueue.slnx --verify-no-changes
+dotnet test BufferQueue.slnx
 ```
 
 ## Documentation Guidelines

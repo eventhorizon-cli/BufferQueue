@@ -4,7 +4,7 @@ BufferQueue is a typed, topic-based in-process queue for concurrent producers
 and partitioned batch consumers. The core package includes segmented Memory
 storage, consumer groups, pull and push consumers, and auto or manual commit.
 
-BufferQueue supports .NET 8 and later.
+BufferQueue targets .NET 8 and .NET 10.
 
 ## Install
 

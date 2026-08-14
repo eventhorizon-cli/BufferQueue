@@ -4,7 +4,7 @@ BufferQueue.MemoryMappedFile is the optional local durable storage provider for
 BufferQueue. It stores serialized records in per-partition memory-mapped segment
 files and persists producer checkpoints and committed consumer offsets.
 
-It supports .NET 8 and later. It is designed for one active queue instance and
+It targets .NET 8 and .NET 10. It is designed for one active queue instance and
 does not coordinate multiple processes writing to the same topic directory.
 
 ## Install

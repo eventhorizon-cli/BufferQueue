@@ -1,0 +1,27 @@
+<Solution>
+  <Configurations>
+    <Platform Name="Any CPU" />
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Folder Name="/samples/">
+    <Project Path="samples/WebAPI/WebAPI.csproj" />
+  </Folder>
+  <Folder Name="/Solution Items/">
+    <File Path=".editorconfig" />
+    <File Path=".gitignore" />
+    <File Path="AGENTS.md" />
+    <File Path="LICENSE" />
+    <File Path="README.md" />
+    <File Path="README.zh-CN.md" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/BufferQueue.MemoryMappedFile/BufferQueue.MemoryMappedFile.csproj" />
+    <Project Path="src/BufferQueue/BufferQueue.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/BufferQueue.Benchmarks/BufferQueue.Benchmarks.csproj" />
+    <Project Path="tests/BufferQueue.MemoryMappedFile.Tests/BufferQueue.MemoryMappedFile.Tests.csproj" />
+    <Project Path="tests/BufferQueue.Tests/BufferQueue.Tests.csproj" />
+  </Folder>
+</Solution>

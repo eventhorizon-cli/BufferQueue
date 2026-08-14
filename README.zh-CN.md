@@ -9,6 +9,7 @@ English | [简体中文](./README.zh-CN.md)
 设计文档：[English](./docs/design.md) | [简体中文](./docs/design.zh-CN.md)
 
 BufferQueue 是一个用 .NET 编写的高性能的缓冲队列实现，支持多线程并发操作。
+包同时支持 .NET 8 和 .NET 10。
 
 BufferQueue 当前提供两种存储模式：
 

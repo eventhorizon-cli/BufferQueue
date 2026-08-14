@@ -9,6 +9,8 @@ BufferQueue 是一个面向 .NET 的、按 Topic 划分的强类型缓冲队列�
 - Memory 模式：数据保存在当前进程内的分段内存结构中。
 - MemoryMappedFile 模式：数据序列化后写入内存映射分段文件，并持久化 producer offset 和已提交的 consumer offset。
 
+包同时多目标支持 .NET 8 和 .NET 10。benchmark 有意只运行在 .NET 10。
+
 两种模式共享相同的 producer、pull consumer、consumer group、partition 分配、批量消费和等待唤醒语义。存储差异被隔离在内部 partition 抽象之后。
 
 两种实现在 project 和 package 边界上相互独立：

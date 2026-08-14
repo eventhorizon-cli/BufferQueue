@@ -7,6 +7,8 @@ BufferQueue is a typed, topic-based buffering library for .NET. It provides a co
 - Memory mode: stores items in in-process segmented memory.
 - MemoryMappedFile mode: stores serialized records in memory-mapped segment files and persists producer and committed consumer offsets.
 
+The packages multi-target .NET 8 and .NET 10. Benchmarks intentionally target .NET 10 only.
+
 Both modes share the same producer, pull-consumer, consumer-group, partition-assignment, batching, and wake-up semantics. The storage-specific behavior is isolated behind the internal partition abstraction.
 
 The implementations are separated at the project and package boundary:

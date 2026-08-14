@@ -11,19 +11,21 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - name: Setup .NET
-      uses: actions/setup-dotnet@v3
+      uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: 8.0.x
+        dotnet-version: |
+          8.0.x
+          10.0.x
     - name: Restore dependencies
-      run: dotnet restore
+      run: dotnet restore BufferQueue.slnx
     - name: Build
-      run: dotnet build
+      run: dotnet build BufferQueue.slnx --no-restore
     - name: Format
-      run: dotnet format --verify-no-changes --verbosity diagnostic
+      run: dotnet format BufferQueue.slnx --verify-no-changes --verbosity diagnostic
     - name: Test
-      run: dotnet test -c Release --collect:"XPlat Code Coverage"
+      run: dotnet test BufferQueue.slnx -c Release --collect:"XPlat Code Coverage"
     - name: Upload coverage reports to Codecov
       uses: codecov/codecov-action@v3
       env:
