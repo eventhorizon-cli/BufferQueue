@@ -84,6 +84,48 @@ public class MemoryBufferCapacityGateTests
     }
 
     [Fact]
+    public void TryAcquire_Zero_Count_Succeeds_Without_Capacity()
+    {
+        var gate = new MemoryBufferCapacityGate(0);
+
+        Assert.True(gate.TryAcquire(0));
+    }
+
+    [Fact]
+    public void AcquireAsync_Count_Exceeding_Capacity_Throws()
+    {
+        var gate = new MemoryBufferCapacityGate(2);
+
+        var exception = Assert.Throws<ArgumentOutOfRangeException>(
+            () => gate.AcquireAsync(3, default));
+
+        Assert.Equal("count", exception.ParamName);
+    }
+
+    [Fact]
+    public async Task AcquireAsync_Zero_Count_Completes_Immediately()
+    {
+        var gate = new MemoryBufferCapacityGate(0);
+
+        var acquisition = gate.AcquireAsync(0, default);
+
+        Assert.True(acquisition.IsCompletedSuccessfully);
+        await acquisition;
+    }
+
+    [Fact]
+    public async Task AcquireAsync_Completes_Immediately_When_Capacity_Is_Available()
+    {
+        var gate = new MemoryBufferCapacityGate(2);
+
+        var acquisition = gate.AcquireAsync(2, default);
+
+        Assert.True(acquisition.IsCompletedSuccessfully);
+        await acquisition;
+        Assert.False(gate.TryAcquire());
+    }
+
+    [Fact]
     public void Release_Makes_Capacity_Available_Again()
     {
         var gate = new MemoryBufferCapacityGate(2);

@@ -5,6 +5,18 @@ namespace BufferQueue.MemoryMappedFile.Tests;
 public class MemoryMappedFileBufferProducerTests
 {
     [Fact]
+    public async Task TryProduceAsync_Single_Writes_Item()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        using var queue = CreateQueue(temporaryDirectory.Path);
+        var producer = queue.GetProducer();
+
+        Assert.True(await producer.TryProduceAsync(1));
+
+        Assert.Equal(new[] { 1 }, await ConsumeOneBatchAsync(queue));
+    }
+
+    [Fact]
     public async Task TryProduceAsync_Batch_Writes_All_Items()
     {
         using var temporaryDirectory = new TemporaryDirectory();
