@@ -11,7 +11,7 @@ public class MemoryBufferOptionsBuilder(IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(configure);
 
-        return AddTopic<T>((MemoryBufferQueueOptions<T> options) => configure(options));
+        return AddTopic((MemoryBufferQueueOptions<T> options) => configure(options));
     }
 
     public MemoryBufferOptionsBuilder AddTopic<T>(
@@ -23,19 +23,8 @@ public class MemoryBufferOptionsBuilder(IServiceCollection services)
         var options = new MemoryBufferQueueOptions<T>();
         configure(options);
 
-        var topicName = options.TopicName;
-        var partitionNumber = options.PartitionNumber;
-
-        if (string.IsNullOrWhiteSpace(topicName))
-        {
-            throw new ArgumentException("Topic name cannot be null or whitespace.", nameof(options.TopicName));
-        }
-
-        if (partitionNumber <= 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(options.PartitionNumber),
-                "Partition number must be greater than zero.");
-        }
+        options.Validate();
+        var topicName = options.TopicName!;
 
         if (options.PartitionIndexSelector is { } partitionIndexSelector)
         {

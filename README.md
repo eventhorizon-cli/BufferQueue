@@ -34,8 +34,8 @@ The project includes BenchmarkDotNet benchmarks that compare BufferQueue in Memo
 
 Summary:
 
-- Producing one item at a time: BufferQueue in Memory mode is close to `Channel<T>` under the recorded parameters. Its elapsed time is about `16%` higher in Unbounded mode and `22%` higher in Bounded mode.
-- Producing `ReadOnlyMemory<T>` batches: Memory mode is about `3.17x` faster than its single-item path in Unbounded mode and `3.43x` faster in Bounded mode. This narrow workload is also about `2.73x` and `2.82x` faster than `Channel<T>`, respectively.
+- Producing one item at a time: BufferQueue in Memory mode is close to `Channel<T>` under the recorded parameters. Its elapsed time is about `16%` higher in Unbounded mode and `19%` higher in Bounded mode.
+- Producing `ReadOnlyMemory<T>` batches: Memory mode is about `3.22x` faster than its single-item path in Unbounded mode and `3.52x` faster in Bounded mode. This narrow workload is also about `2.78x` and `2.95x` faster than `Channel<T>`, respectively.
 - Consuming: BufferQueue is optimized for batch consumption. It is faster than `Channel<T>` from `BatchSize = 1` through `1000` in this benchmark set, with a clearer advantage at larger batches and a maximum of about `103x` under the recorded parameters.
 - Memory allocation: BufferQueue allocates less in producing scenarios; `Channel<T>` allocates less in consuming scenarios.
 
@@ -50,6 +50,10 @@ Both producing and consuming benchmarks use `int` messages: the 8,192 integers f
 this sequence across `12` concurrent tasks. The single-item path loops over each task's chunk; the batch path passes
 that chunk once through `producer.ProduceAsync(chunk.AsMemory())`. The consuming benchmarks prefill the queues with
 the same sequence before measurement begins.
+
+The Bounded BufferQueue producer rows use the default `Wait` mode with capacity equal to `MessageSize`. They measure
+the capacity-available admission path and do not include time spent waiting for a full queue. These producer results
+cover Memory mode only; MemoryMappedFile production was not run for this comparison.
 
 `IterationSetup` is outside the measured operation, which only drains the queues concurrently. Channel calls
 `TryRead` for each item, while BufferQueue returns up to `BatchSize` items at a time with
@@ -71,8 +75,8 @@ Producing:
 
 | Mode | `MessageSize` | `Producers` | `Channel<T>` Mean | BufferQueue single-item Mean | BufferQueue `ReadOnlyMemory<T>` batch Mean | Result |
 | --- | ---: | ---: | ---: | ---: | ---: | --- |
-| Unbounded | 8192 | 12 | `288.6 μs` | `335.7 μs` | `105.9 μs` | Batch is `3.17x` faster than single-item and `2.73x` faster than `Channel<T>` |
-| Bounded | 8192 | 12 | `298.7 μs` | `363.4 μs` | `105.9 μs` | Batch is `3.43x` faster than single-item and `2.82x` faster than `Channel<T>` |
+| Unbounded | 8192 | 12 | `284.6 μs` | `328.8 μs` | `102.2 μs` | Batch is `3.22x` faster than single-item and `2.78x` faster than `Channel<T>` |
+| Bounded | 8192 | 12 | `302.4 μs` | `359.8 μs` | `102.4 μs` | Batch is `3.52x` faster than single-item and `2.95x` faster than `Channel<T>` |
 
 Consuming:
 
@@ -171,6 +175,8 @@ BufferQueue supports two consumption modes: pull mode and push mode.
 Memory mode stores data in process memory. It supports optional bounded capacity.
 
 ```csharp
+using BufferQueue.Memory;
+
 builder.Services.AddBufferQueue(bufferOptionsBuilder =>
 {
     bufferOptionsBuilder
@@ -196,6 +202,7 @@ builder.Services.AddBufferQueue(bufferOptionsBuilder =>
                     options.PartitionNumber = 8;
                     // You can set the maximum capacity of the buffer
                     options.BoundedCapacity = 100_000;
+                    options.FullMode = BufferQueueFullMode.Wait;
                 });
         })
         // Add push mode consumers,
@@ -491,8 +498,13 @@ There are two ways to obtain a Producer:
   `[FromKeyedServices("topic-name")]`.
 - If the topic is selected at runtime, inject `IBufferQueue` and call `GetProducer<T>(topicName)`.
 
-In Memory mode, if bounded capacity is set, when the buffer is full, the ProduceAsync method will discard the data and throw a BufferQueueFullException.
-You can use the TryProduceAsync method to check if the data was successfully sent.
+In Memory mode, `FullMode` defaults to `Wait` for bounded topics: `ProduceAsync` asynchronously
+waits until capacity becomes available. Pass a `CancellationToken` so that backpressure can be
+canceled. Set `FullMode` to `Fail` when immediate rejection is required; `ProduceAsync` then throws
+`BufferQueueFullException`. `TryProduceAsync` never waits for bounded capacity and returns `false`
+immediately when the item or complete batch cannot be admitted. Batch admission is all-or-nothing;
+in `Wait` mode, the producer waits for the entire batch, and a batch larger than the configured
+capacity is invalid.
 
 ```csharp
 using Microsoft.Extensions.DependencyInjection;
@@ -507,14 +519,14 @@ public class TestController(
     [HttpPost("foo1")]
     public async Task<IActionResult> PostFoo1([FromBody] Foo foo)
     {
-        await foo1Producer.ProduceAsync(foo);
+        await foo1Producer.ProduceAsync(foo, HttpContext.RequestAborted);
         return Ok();
     }
 
     [HttpPost("foo2")]
     public async Task<IActionResult> PostFoo2([FromBody] Foo foo)
     {
-        await foo2Producer.ProduceAsync(foo);
+        await foo2Producer.ProduceAsync(foo, HttpContext.RequestAborted);
         return Ok();
     }
 
@@ -522,9 +534,9 @@ public class TestController(
     public async Task<IActionResult> PostBar([FromBody] Bar bar)
     {
         var producer = bufferQueue.GetProducer<Bar>("topic-bar");
-        await producer.ProduceAsync(bar);
+        await producer.ProduceAsync(bar, HttpContext.RequestAborted);
         // TryProduceAsync will return a boolean indicating whether the data was successfully sent.
-        // bool success = await producer.TryProduceAsync(bar);
+        // bool success = await producer.TryProduceAsync(bar, HttpContext.RequestAborted);
         return Ok();
     }
 }
@@ -532,9 +544,16 @@ public class TestController(
 
 ### Batch production
 
-`IBufferProducer<T>` exposes `TryProduceAsync` for a single item and a pre-buffered
-`ReadOnlyMemory<T>` batch. `BufferProducerExtensions` supplies the same-name `ProduceAsync` forms and the
-`IEnumerable<T>` convenience overloads. A non-array sequence is materialized before it invokes the core batch method.
+`IBufferProducer<T>` exposes four core methods, each accepting an optional `CancellationToken`:
+
+- `TryProduceAsync(T item, CancellationToken cancellationToken = default)`
+- `TryProduceAsync(ReadOnlyMemory<T> items, CancellationToken cancellationToken = default)`
+- `ProduceAsync(T item, CancellationToken cancellationToken = default)`
+- `ProduceAsync(ReadOnlyMemory<T> items, CancellationToken cancellationToken = default)`
+
+`BufferProducerExtensions` provides only the `IEnumerable<T>` convenience overloads, which also accept a
+cancellation token. A non-array sequence is materialized before it invokes the core batch method. The core
+`ProduceAsync` methods are interface methods, not extensions.
 
 ```csharp
 Order[] orders = GetOrders();
@@ -550,8 +569,11 @@ if (!await producer.TryProduceAsync(orders.AsMemory()))
 
 Routing remains per item. A round-robin batch advances once for every item, and a partition-key batch applies its
 selector to every item, so one batch can write to multiple partitions. On a bounded Memory topic, when the available
-capacity cannot admit the complete batch, `TryProduceAsync` returns `false` and `ProduceAsync` throws before any item
-from that batch is appended.
+capacity cannot admit the complete batch, `TryProduceAsync` returns `false` without waiting and `ProduceAsync` either
+throws in `Fail` mode or waits for the entire batch in `Wait` mode before appending any item. The capacity limit is
+shared by all partitions. Each partition returns capacity as the minimum committed position across all known consumer
+groups advances, including within a segment. A consumer group created later starts at the current logical earliest
+position and cannot read records whose capacity has already been released.
 
 ## Samples
 

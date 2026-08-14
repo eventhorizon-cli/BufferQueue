@@ -107,4 +107,73 @@ public class MemoryBufferCapacityGateTests
 
         Assert.Equal("Cannot release more bounded queue capacity than was acquired.", exception.Message);
     }
+
+    [Fact]
+    public async Task AcquireAsync_Completes_After_Capacity_Is_Released()
+    {
+        var gate = new MemoryBufferCapacityGate(1);
+        Assert.True(gate.TryAcquire());
+
+        var waitingTask = gate.AcquireAsync(1, default).AsTask();
+        Assert.False(waitingTask.IsCompleted);
+
+        gate.Release();
+
+        await waitingTask.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.False(gate.TryAcquire());
+    }
+
+    [Fact]
+    public async Task AcquireAsync_Uses_Whole_Batch_Fifo_Admission()
+    {
+        var gate = new MemoryBufferCapacityGate(3);
+        Assert.True(gate.TryAcquire(3));
+
+        var batchTask = gate.AcquireAsync(3, default).AsTask();
+        var singleTask = gate.AcquireAsync(1, default).AsTask();
+
+        gate.Release();
+
+        Assert.False(batchTask.IsCompleted);
+        Assert.False(singleTask.IsCompleted);
+        Assert.False(gate.TryAcquire());
+
+        gate.Release(2);
+        await batchTask.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.False(singleTask.IsCompleted);
+
+        gate.Release();
+        await singleTask.WaitAsync(TimeSpan.FromSeconds(10));
+    }
+
+    [Fact]
+    public async Task Canceling_Head_Waiter_Allows_Next_Waiter_To_Proceed()
+    {
+        var gate = new MemoryBufferCapacityGate(2);
+        Assert.True(gate.TryAcquire(2));
+        using var cancellationTokenSource = new CancellationTokenSource();
+
+        var batchTask = gate.AcquireAsync(2, cancellationTokenSource.Token).AsTask();
+        var singleTask = gate.AcquireAsync(1, default).AsTask();
+        gate.Release();
+
+        cancellationTokenSource.Cancel();
+
+        await Assert.ThrowsAsync<TaskCanceledException>(async () => await batchTask);
+        await singleTask.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.False(gate.TryAcquire());
+    }
+
+    [Fact]
+    public async Task AcquireAsync_Observes_Cancellation_Without_Consuming_Capacity()
+    {
+        var gate = new MemoryBufferCapacityGate(1);
+        using var cancellationTokenSource = new CancellationTokenSource();
+        cancellationTokenSource.Cancel();
+
+        await Assert.ThrowsAsync<TaskCanceledException>(async () =>
+            await gate.AcquireAsync(1, cancellationTokenSource.Token));
+
+        Assert.True(gate.TryAcquire());
+    }
 }

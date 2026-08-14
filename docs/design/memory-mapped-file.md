@@ -25,6 +25,12 @@ within a partition, not across all partitions. The selected partition-key routin
 `PartitionNumber` must stay compatible across restarts; see
 [Partitioning and concurrency](partitioning-and-concurrency.md).
 
+MMF implements the same four `IBufferProducer<T>` core methods as Memory storage, and every
+method accepts an optional `CancellationToken`. It is unbounded, so neither `TryProduceAsync`
+nor `ProduceAsync` waits for capacity and there is no `BufferQueueFullMode` option. The
+`IEnumerable<T>` batch convenience overloads remain extensions and materialize non-array
+inputs before calling the core `ReadOnlyMemory<T>` methods.
+
 ## Directory Layout
 
 Each topic partition is stored under:

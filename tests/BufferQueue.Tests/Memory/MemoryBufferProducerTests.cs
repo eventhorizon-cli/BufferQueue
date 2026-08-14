@@ -42,6 +42,24 @@ public class MemoryBufferProducerTests
     }
 
     [Fact]
+    public async Task Canceled_IEnumerable_Batch_Does_Not_Enumerate_The_Input()
+    {
+        var partition = new MemoryBufferPartition<int>(0, 8);
+        IBufferProducer<int> producer = new MemoryBufferProducer<int>(
+            new MemoryBufferQueueOptions { TopicName = "test" },
+            [partition]);
+        using var cancellationTokenSource = new CancellationTokenSource();
+        cancellationTokenSource.Cancel();
+
+        await Assert.ThrowsAsync<OperationCanceledException>(async () =>
+            await producer.ProduceAsync(ThrowWhenEnumerated(), cancellationTokenSource.Token));
+        await Assert.ThrowsAsync<OperationCanceledException>(async () =>
+            await producer.TryProduceAsync(ThrowWhenEnumerated(), cancellationTokenSource.Token));
+
+        Assert.Equal(0UL, partition.Count);
+    }
+
+    [Fact]
     public async Task ProduceAsync_Batch_RoundRobin_Routes_Each_Item_To_The_Next_Partition()
     {
         var appendLock = new object();
@@ -84,20 +102,206 @@ public class MemoryBufferProducerTests
     }
 
     [Fact]
-    public async Task ProduceAsync_Batch_WithoutEnoughBoundedCapacity_Throws_WithoutAppending_A_PartialBatch()
+    public async Task ProduceAsync_Batch_In_Fail_Mode_WithoutEnoughCapacity_Throws_WithoutAppending_A_PartialBatch()
     {
         var partition = new MemoryBufferPartition<int>(0, 8);
         IBufferProducer<int> producer = new MemoryBufferProducer<int>(
             new MemoryBufferQueueOptions
             {
                 TopicName = "test",
-                BoundedCapacity = 2
+                BoundedCapacity = 2,
+                FullMode = BufferQueueFullMode.Fail
             },
             [partition]);
         var items = new[] { 1, 2, 3 };
 
         await Assert.ThrowsAsync<BufferQueueFullException>(async () =>
             await producer.ProduceAsync(items.AsMemory()));
+
+        Assert.Equal(0UL, partition.Count);
+    }
+
+    [Fact]
+    public async Task ProduceAsync_Wait_Mode_Completes_After_Exact_Full_Capacity_Is_Committed()
+    {
+        var partition = new MemoryBufferPartition<int>(0, 8);
+        var producer = new MemoryBufferProducer<int>(
+            new MemoryBufferQueueOptions
+            {
+                TopicName = "test",
+                BoundedCapacity = 1,
+                FullMode = BufferQueueFullMode.Wait
+            },
+            [partition]);
+
+        await producer.ProduceAsync(1);
+        var waitingTask = producer.ProduceAsync(2).AsTask();
+
+        Assert.False(waitingTask.IsCompleted);
+        Assert.False(await producer.TryProduceAsync(3));
+        Assert.True(partition.TryPull("TestGroup", 1, out var firstBatch));
+        Assert.Equal(new[] { 1 }, firstBatch);
+
+        partition.Commit("TestGroup");
+
+        await waitingTask.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.True(partition.TryPull("TestGroup", 1, out var secondBatch));
+        Assert.Equal(new[] { 2 }, secondBatch);
+    }
+
+    [Fact]
+    public async Task ProduceAsync_Wait_Mode_Cancellation_Does_Not_Write_Or_Lose_Capacity()
+    {
+        var partition = new MemoryBufferPartition<int>(0, 8);
+        var producer = new MemoryBufferProducer<int>(
+            new MemoryBufferQueueOptions
+            {
+                TopicName = "test",
+                BoundedCapacity = 1,
+                FullMode = BufferQueueFullMode.Wait
+            },
+            [partition]);
+        using var cancellationTokenSource = new CancellationTokenSource();
+
+        await producer.ProduceAsync(1);
+        var canceledWrite = producer.ProduceAsync(2, cancellationTokenSource.Token).AsTask();
+        cancellationTokenSource.Cancel();
+
+        await Assert.ThrowsAsync<TaskCanceledException>(async () => await canceledWrite);
+        Assert.True(partition.TryPull("TestGroup", 1, out var firstBatch));
+        Assert.Equal(new[] { 1 }, firstBatch);
+        partition.Commit("TestGroup");
+
+        Assert.True(await producer.TryProduceAsync(3));
+        Assert.True(partition.TryPull("TestGroup", 1, out var secondBatch));
+        Assert.Equal(new[] { 3 }, secondBatch);
+    }
+
+    [Fact]
+    public async Task ProduceAsync_Wait_Mode_Batch_Waits_For_The_Whole_Capacity()
+    {
+        var partition = new MemoryBufferPartition<int>(0, 8);
+        var producer = new MemoryBufferProducer<int>(
+            new MemoryBufferQueueOptions
+            {
+                TopicName = "test",
+                BoundedCapacity = 3,
+                FullMode = BufferQueueFullMode.Wait
+            },
+            [partition]);
+
+        await producer.ProduceAsync(new[] { 1, 2 }.AsMemory());
+        var waitingBatch = producer.ProduceAsync(new[] { 3, 4 }.AsMemory()).AsTask();
+        Assert.False(waitingBatch.IsCompleted);
+
+        Assert.True(partition.TryPull("TestGroup", 1, out var firstBatch));
+        Assert.Equal(new[] { 1 }, firstBatch);
+        partition.Commit("TestGroup");
+
+        await waitingBatch.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.True(partition.TryPull("TestGroup", 3, out var remainingItems));
+        Assert.Equal(new[] { 2, 3, 4 }, remainingItems);
+    }
+
+    [Fact]
+    public async Task ProduceAsync_Wait_Mode_Rejects_A_Batch_Larger_Than_Capacity()
+    {
+        var partition = new MemoryBufferPartition<int>(0, 8);
+        var producer = new MemoryBufferProducer<int>(
+            new MemoryBufferQueueOptions
+            {
+                TopicName = "test",
+                BoundedCapacity = 2,
+                FullMode = BufferQueueFullMode.Wait
+            },
+            [partition]);
+
+        var exception = await Assert.ThrowsAsync<ArgumentOutOfRangeException>(async () =>
+            await producer.ProduceAsync(new[] { 1, 2, 3 }.AsMemory()));
+
+        Assert.Equal("items", exception.ParamName);
+        Assert.Equal(0UL, partition.Count);
+    }
+
+    [Fact]
+    public async Task Capacity_Is_Released_Only_After_All_Known_Groups_Commit()
+    {
+        var partition = new MemoryBufferPartition<int>(0, 8);
+        var producer = new MemoryBufferProducer<int>(
+            new MemoryBufferQueueOptions
+            {
+                TopicName = "test",
+                BoundedCapacity = 1,
+                FullMode = BufferQueueFullMode.Wait
+            },
+            [partition]);
+
+        await producer.ProduceAsync(1);
+        Assert.True(partition.TryPull("Group1", 1, out _));
+        Assert.True(partition.TryPull("Group2", 1, out _));
+        var waitingTask = producer.ProduceAsync(2).AsTask();
+
+        partition.Commit("Group1");
+        Assert.False(waitingTask.IsCompleted);
+
+        partition.Commit("Group2");
+        await waitingTask.WaitAsync(TimeSpan.FromSeconds(10));
+    }
+
+    [Fact]
+    public async Task New_Group_Starts_After_Capacity_Already_Released()
+    {
+        var partition = new MemoryBufferPartition<int>(0, 8);
+        var producer = new MemoryBufferProducer<int>(
+            new MemoryBufferQueueOptions
+            {
+                TopicName = "test",
+                BoundedCapacity = 1
+            },
+            [partition]);
+
+        await producer.ProduceAsync(1);
+        Assert.True(partition.TryPull("Group1", 1, out _));
+        partition.Commit("Group1");
+        await producer.ProduceAsync(2);
+
+        Assert.True(partition.TryPull("Group2", 1, out var items));
+        Assert.Equal(new[] { 2 }, items);
+    }
+
+    [Fact]
+    public async Task New_Group_Skips_Multiple_Segments_Before_The_Released_Position()
+    {
+        var partition = new MemoryBufferPartition<int>(0, 2);
+        var producer = new MemoryBufferProducer<int>(
+            new MemoryBufferQueueOptions
+            {
+                TopicName = "test",
+                BoundedCapacity = 5
+            },
+            [partition]);
+
+        await producer.ProduceAsync(new[] { 1, 2, 3, 4, 5 }.AsMemory());
+        Assert.True(partition.TryPull("Group1", 5, out _));
+        partition.Commit("Group1");
+        await producer.ProduceAsync(6);
+
+        Assert.True(partition.TryPull("Group2", 1, out var items));
+        Assert.Equal(new[] { 6 }, items);
+    }
+
+    [Fact]
+    public async Task Canceled_TryProduceAsync_Does_Not_Write()
+    {
+        var partition = new MemoryBufferPartition<int>(0, 8);
+        var producer = new MemoryBufferProducer<int>(
+            new MemoryBufferQueueOptions { TopicName = "test" },
+            [partition]);
+        using var cancellationTokenSource = new CancellationTokenSource();
+        cancellationTokenSource.Cancel();
+
+        await Assert.ThrowsAsync<OperationCanceledException>(async () =>
+            await producer.TryProduceAsync(1, cancellationTokenSource.Token));
 
         Assert.Equal(0UL, partition.Count);
     }
@@ -499,6 +703,13 @@ public class MemoryBufferProducerTests
     {
         Assert.True(partition.TryPull($"TestGroup-{partition.PartitionId}", 16, out var items));
         Assert.Equal(expectedItems, items);
+    }
+
+    private static IEnumerable<int> ThrowWhenEnumerated()
+    {
+        yield return Throw();
+
+        static int Throw() => throw new InvalidOperationException("The input must not be enumerated.");
     }
 
     private static void AssertNumericPartition<TNumber>(TNumber partitionKey, int expectedPartitionIndex)

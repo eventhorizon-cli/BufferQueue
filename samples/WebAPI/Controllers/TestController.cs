@@ -14,14 +14,14 @@ public class TestController(
     [HttpPost("foo1")]
     public async Task<IActionResult> PostFoo1([FromBody] Foo foo)
     {
-        await foo1Producer.ProduceAsync(foo);
+        await foo1Producer.ProduceAsync(foo, HttpContext.RequestAborted);
         return Ok();
     }
 
     [HttpPost("foo2")]
     public async Task<IActionResult> PostFoo2([FromBody] Foo foo)
     {
-        await foo2Producer.ProduceAsync(foo);
+        await foo2Producer.ProduceAsync(foo, HttpContext.RequestAborted);
         return Ok();
     }
 
@@ -29,9 +29,9 @@ public class TestController(
     public async Task<IActionResult> PostBar([FromBody] Bar bar)
     {
         var producer = bufferQueue.GetProducer<Bar>("topic-bar");
-        await producer.ProduceAsync(bar);
+        await producer.ProduceAsync(bar, HttpContext.RequestAborted);
         // TryProduceAsync can be used if you want to check if the item was produced successfully
-        // bool success = await producer.TryProduceAsync(bar);
+        // bool success = await producer.TryProduceAsync(bar, HttpContext.RequestAborted);
         return Ok();
     }
 }

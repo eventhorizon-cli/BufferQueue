@@ -14,36 +14,8 @@ public class MemoryMappedFileBufferOptionsBuilder(IServiceCollection services)
         var options = new MemoryMappedFileBufferQueueOptions<T>();
         configure(options);
 
-        var topicName = options.TopicName;
-        var partitionNumber = options.PartitionNumber;
-
-        if (string.IsNullOrWhiteSpace(topicName))
-        {
-            throw new ArgumentException("Topic name cannot be null or whitespace.", nameof(options.TopicName));
-        }
-
-        if (partitionNumber <= 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(options.PartitionNumber),
-                "Partition number must be greater than zero.");
-        }
-
-        _ = options.GetSegmentSizeInBytes();
-        _ = options.GetMaxRetainedConsumedSegments();
-
-        if (!Enum.IsDefined(options.FlushStrategy))
-        {
-            throw new ArgumentOutOfRangeException(nameof(options.FlushStrategy),
-                "The flush strategy is not supported.");
-        }
-
-        if (options.FlushStrategy == MemoryMappedFileFlushStrategy.Batch && options.FlushBatchSize <= 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(options.FlushBatchSize),
-                "Flush batch size must be greater than zero when using the batch flush strategy.");
-        }
-
-        ArgumentNullException.ThrowIfNull(options.Serializer, nameof(options.Serializer));
+        options.Validate();
+        var topicName = options.TopicName!;
 
         if (options.PartitionIndexSelector is { } partitionIndexSelector)
         {

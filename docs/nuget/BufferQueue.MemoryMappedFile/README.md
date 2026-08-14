@@ -93,33 +93,48 @@ using Microsoft.Extensions.DependencyInjection;
 public sealed class OrderEventWriter(
     [FromKeyedServices("order-events")] IBufferProducer<OrderEvent> producer)
 {
-    public ValueTask WriteAsync(OrderEvent orderEvent) =>
-        producer.ProduceAsync(orderEvent);
+    public ValueTask WriteAsync(OrderEvent orderEvent, CancellationToken cancellationToken = default) =>
+        producer.ProduceAsync(orderEvent, cancellationToken);
 }
 ```
 
 For a topic selected at runtime, inject `IBufferQueue` and call
 `GetProducer<T>(topicName)`.
 
-`IBufferProducer<T>` directly exposes `TryProduceAsync` for a single item and
-for `ReadOnlyMemory<T>`. `BufferProducerExtensions` provides the same-name
-`ProduceAsync` forms plus the `IEnumerable<T>` convenience overloads:
+`IBufferProducer<T>` directly exposes four core methods, each with an optional
+`CancellationToken`:
 
 ~~~csharp
+ValueTask<bool> TryProduceAsync(T item, CancellationToken cancellationToken = default);
+ValueTask<bool> TryProduceAsync(ReadOnlyMemory<T> items, CancellationToken cancellationToken = default);
+ValueTask ProduceAsync(T item, CancellationToken cancellationToken = default);
+ValueTask ProduceAsync(ReadOnlyMemory<T> items, CancellationToken cancellationToken = default);
+~~~
+
+`BufferProducerExtensions` provides only the `IEnumerable<T>` convenience
+overloads, which also accept a cancellation token:
+
+~~~csharp
+CancellationToken cancellationToken = default;
 ReadOnlyMemory<OrderEvent> bufferedEvents = pendingEvents.AsMemory();
 
-await producer.ProduceAsync(bufferedEvents);
-var accepted = await producer.TryProduceAsync(bufferedEvents);
+await producer.ProduceAsync(bufferedEvents, cancellationToken);
+var accepted = await producer.TryProduceAsync(bufferedEvents, cancellationToken);
 
 IEnumerable<OrderEvent> eventsFromAnEnumerable = GetPendingEvents();
-await producer.ProduceAsync(eventsFromAnEnumerable);
+await producer.ProduceAsync(eventsFromAnEnumerable, cancellationToken);
 ~~~
 
 Use `ReadOnlyMemory<T>` when the source is already contiguous or can be exposed
 as memory. It is the allocation-conscious core form because it avoids the input
 materialization required by a non-array `IEnumerable<T>`. The `IEnumerable<T>` form is
-convenient but materializes a non-array input before batch submission. `ProduceAsync`
-is an extension that converts a rejected try into the normal full-queue exception.
+convenient but materializes a non-array input before batch submission. The single-item and
+`ReadOnlyMemory<T>` `ProduceAsync` methods are core interface methods, not extensions.
+
+MemoryMappedFile topics are unbounded. `TryProduceAsync` and `ProduceAsync` use
+the same cancellation-aware API as Memory storage, but neither waits for capacity
+and there is no `FullMode` option. Each batch item is still routed and persisted as
+an individual record according to the configured flush strategy.
 
 MMF processes every batch item as a normal record: it selects the partition,
 serializes the item, writes its record, and applies the configured flush

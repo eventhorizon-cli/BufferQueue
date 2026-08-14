@@ -1,4 +1,5 @@
 using BufferQueue;
+using BufferQueue.Memory;
 using WebAPI;
 using WebApp;
 
@@ -35,7 +36,8 @@ builder.Services.AddBufferQueue(bufferOptionsBuilder =>
                 {
                     options.TopicName = "topic-bar";
                     options.PartitionNumber = 8;
-                    options.BoundedCapacity = 100_000; // Set a bounded capacity for the Bar topic
+                    options.BoundedCapacity = 100_000;
+                    options.FullMode = BufferQueueFullMode.Wait;
                 });
         })
         .AddPushCustomers(typeof(Program).Assembly);

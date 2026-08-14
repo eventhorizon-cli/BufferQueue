@@ -33,8 +33,8 @@ BufferQueue 当前提供两种存储模式：
 
 结果摘要：
 
-- 单条写入：在本次测试配置下，BufferQueue Memory 模式的写入性能接近 `Channel<T>`。Unbounded 和 Bounded 模式的耗时分别高约 `16%` 和 `22%`。
-- `ReadOnlyMemory<T>` 批量写入：Memory 模式在 Unbounded 下比单条路径快约 `3.17x`，在 Bounded 下快约 `3.43x`；在本次测试配置下，也分别比 `Channel<T>` 快约 `2.73x` 和 `2.82x`。
+- 单条写入：在本次测试配置下，BufferQueue Memory 模式的写入性能接近 `Channel<T>`。Unbounded 和 Bounded 模式的耗时分别高约 `16%` 和 `19%`。
+- `ReadOnlyMemory<T>` 批量写入：Memory 模式在 Unbounded 下比单条路径快约 `3.22x`，在 Bounded 下快约 `3.52x`；在本次测试配置下，也分别比 `Channel<T>` 快约 `2.78x` 和 `2.95x`。
 - 消费：BufferQueue 的主要优势在批量消费；本组测试从 `BatchSize = 1` 到 `1000` 均快于 `Channel<T>`，批量越大优势越明显，该次记录参数下最高约快 `103x`。
 - 内存分配：生产场景 BufferQueue 分配较少；消费场景 `Channel<T>` 分配较少。
 
@@ -47,6 +47,9 @@ BufferQueue 当前提供两种存储模式：
 `MessageSize = 8192` 表示消息条数，而非单条消息的字节大小。生产测试将这组整数分为 `12` 份，交由
 `12` 个并发任务写入：单条路径逐个遍历各自的分片；批量路径则对每个分片仅调用一次
 `producer.ProduceAsync(chunk.AsMemory())`。消费测试会在计时前将同一组整数预先写入待测队列。
+
+Bounded 的 BufferQueue 生产测试使用默认的 `Wait` 模式，容量与 `MessageSize` 相同。这里测量的是容量充足时
+的接纳路径，不包含队列写满后的等待时间。本组生产结果仅覆盖 Memory 模式，没有运行 MemoryMappedFile 写入测试。
 
 `IterationSetup` 不计入测量，测量范围只包含并发排空队列：Channel 使用 `TryRead` 逐条读取，
 BufferQueue 按 `BatchSize` 批量返回并启用 Auto Commit，不包含逐条业务处理。`BatchSize` 只作用于
@@ -66,8 +69,8 @@ MemoryMappedFile queue 对比使用 `MessageSize = 1024` 和 short-run job，
 
 | 模式 | `MessageSize` | `Producers` | `Channel<T>` Mean | BufferQueue 单条 Mean | BufferQueue `ReadOnlyMemory<T>` 批量 Mean | 结论 |
 | --- | ---: | ---: | ---: | ---: | ---: | --- |
-| Unbounded | 8192 | 12 | `288.6 μs` | `335.7 μs` | `105.9 μs` | 批量比单条快 `3.17x`，比 `Channel<T>` 快 `2.73x` |
-| Bounded | 8192 | 12 | `298.7 μs` | `363.4 μs` | `105.9 μs` | 批量比单条快 `3.43x`，比 `Channel<T>` 快 `2.82x` |
+| Unbounded | 8192 | 12 | `284.6 μs` | `328.8 μs` | `102.2 μs` | 批量比单条快 `3.22x`，比 `Channel<T>` 快 `2.78x` |
+| Bounded | 8192 | 12 | `302.4 μs` | `359.8 μs` | `102.4 μs` | 批量比单条快 `3.52x`，比 `Channel<T>` 快 `2.95x` |
 
 消费性能：
 
@@ -162,6 +165,8 @@ BufferQueue 支持两种消费模式：pull 模式和 push 模式。
 Memory 模式把数据保存在进程内存中，并支持可选的有界容量。
 
 ```csharp
+using BufferQueue.Memory;
+
 builder.Services.AddBufferQueue(bufferOptionsBuilder =>
 {
     bufferOptionsBuilder
@@ -187,6 +192,7 @@ builder.Services.AddBufferQueue(bufferOptionsBuilder =>
                     options.PartitionNumber = 8;
                     // 可以设置缓冲区的最大容量
                     options.BoundedCapacity = 100_000;
+                    options.FullMode = BufferQueueFullMode.Wait;
                 });
         })
         // 添加 push 模式的消费者
@@ -474,8 +480,11 @@ Producer 示例：
 - 在声明依赖时 topic 已固定：使用 `[FromKeyedServices("topic-name")]` 注入 `IBufferProducer<T>`。
 - topic 需要在运行时确定：注入 `IBufferQueue`，再调用 `GetProducer<T>(topicName)` 获取 Producer。
 
-在 Memory 模式下，配置 `BoundedCapacity` 后，如果队列已满，`ProduceAsync` 会拒绝本次写入并抛出
-`BufferQueueFullException`。需要自行处理写入失败时，可改用 `TryProduceAsync` 检查返回值。
+在 Memory 模式下，有界 topic 的 `FullMode` 默认为 `Wait`：容量不足时，`ProduceAsync` 会异步等待，直到
+容量可用。生产代码应传入 `CancellationToken`，以便取消背压等待。需要立即拒绝写入时，可将 `FullMode`
+设为 `Fail`；此时 `ProduceAsync` 会抛出 `BufferQueueFullException`。`TryProduceAsync` 永远不会等待有界容量，
+单条数据或整个批次无法接纳时会立即返回 `false`。批量接纳必须整批完成；在 `Wait` 模式下，Producer 会等待
+整个批次，且大于配置容量的批次属于无效参数。
 
 ```csharp
 using Microsoft.Extensions.DependencyInjection;
@@ -490,14 +499,14 @@ public class TestController(
     [HttpPost("foo1")]
     public async Task<IActionResult> PostFoo1([FromBody] Foo foo)
     {
-        await foo1Producer.ProduceAsync(foo);
+        await foo1Producer.ProduceAsync(foo, HttpContext.RequestAborted);
         return Ok();
     }
 
     [HttpPost("foo2")]
     public async Task<IActionResult> PostFoo2([FromBody] Foo foo)
     {
-        await foo2Producer.ProduceAsync(foo);
+        await foo2Producer.ProduceAsync(foo, HttpContext.RequestAborted);
         return Ok();
     }
 
@@ -505,9 +514,9 @@ public class TestController(
     public async Task<IActionResult> PostBar([FromBody] Bar bar)
     {
         var producer = bufferQueue.GetProducer<Bar>("topic-bar");
-        await producer.ProduceAsync(bar);
+        await producer.ProduceAsync(bar, HttpContext.RequestAborted);
         // TryProduceAsync 会返回一个布尔值，表示数据是否成功发送
-        // bool success = await producer.TryProduceAsync(bar);
+        // bool success = await producer.TryProduceAsync(bar, HttpContext.RequestAborted);
         return Ok();
     }
 }
@@ -515,9 +524,16 @@ public class TestController(
 
 ### 批量写入
 
-`IBufferProducer<T>` 的核心接口提供单条数据和 `ReadOnlyMemory<T>` 两种 `TryProduceAsync` 写入方式。
-`BufferProducerExtensions` 在此基础上提供对应的 `ProduceAsync` 重载，以及接收 `IEnumerable<T>` 的
-`ProduceAsync` 和 `TryProduceAsync` 便捷重载。传入的序列不是数组时，会先物化为数组，再进入核心批量写入路径。
+`IBufferProducer<T>` 的核心接口提供四个方法，每个方法都接收可选的 `CancellationToken`：
+
+- `TryProduceAsync(T item, CancellationToken cancellationToken = default)`
+- `TryProduceAsync(ReadOnlyMemory<T> items, CancellationToken cancellationToken = default)`
+- `ProduceAsync(T item, CancellationToken cancellationToken = default)`
+- `ProduceAsync(ReadOnlyMemory<T> items, CancellationToken cancellationToken = default)`
+
+`BufferProducerExtensions` 只提供接收 `IEnumerable<T>` 的便捷重载，这些重载同样接收 `CancellationToken`。
+传入的序列不是数组时，会先物化为数组，再进入核心批量写入路径。核心 `ProduceAsync` 方法属于接口本身，
+不是扩展方法。
 
 ```csharp
 Order[] orders = GetOrders();
@@ -533,7 +549,10 @@ if (!await producer.TryProduceAsync(orders.AsMemory()))
 
 路由仍以单条数据为单位：Round-robin 每写入一条数据都会向前轮转一次；PartitionKey 会为批次中的每条数据
 调用 selector。因此，一个批次可以写入多个 partition。对于有界容量的 Memory 队列，剩余容量不足以容纳整个批次时，
-`TryProduceAsync` 返回 `false`，`ProduceAsync` 抛出异常；两者都不会写入该批次中的任何一条数据。
+`TryProduceAsync` 不等待并返回 `false`；`ProduceAsync` 在 `Fail` 模式下抛出异常，在 `Wait` 模式下等待整个批次，
+然后才写入数据。两者都不会写入部分批次。容量上限由 topic 下的所有 partition 共享；每个 partition 会在所有
+已知 consumer group 的最小 committed position 向前推进时归还容量，包括只推进到 segment 中间位置的情况。
+较晚创建的 consumer group 会从当前逻辑上的最早位置开始消费，无法读取容量已经释放的数据。
 
 ## 示例项目
 
