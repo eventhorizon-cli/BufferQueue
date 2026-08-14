@@ -124,7 +124,7 @@ The queue and consumer logic only depend on this abstraction. This keeps common 
 
 Each topic has one or more partitions. Producers use round-robin selection by default. Memory topics can call
 `MemoryBufferQueueOptions<T>.UsePartitionKey` with a key-selector delegate to route equal keys to the same
-partition. MemoryMappedFile topics support the same option. Selectors should be deterministic and safe for
+partition. MemoryMappedFile topics support the same option. Selectors must be deterministic and safe for
 concurrent calls.
 
 Consumers are created per consumer group. A group may contain multiple consumers. Partitions are assigned evenly across the consumers in that group:
@@ -214,9 +214,11 @@ partition.
 
 The partition attempts to append to the current tail segment. If the tail segment is full, a new segment is created or an old fully consumed segment is recycled.
 
-The memory producer and its partitions share one append lock, which serializes partition routing,
-bounded-capacity accounting, and append. The selected partition then stores the item and publishes the new readable
-cursor with a release write. Consumers read the published range without taking the append lock.
+For default round-robin routing, the memory producer and its partitions share one append lock, which serializes
+selection, bounded-capacity accounting, and append. Partition-key routing selects a partition before taking that
+partition's append lock, so concurrent producers can append to different partitions in parallel. Appends to one
+partition remain serialized. The selected partition then stores the item and publishes the new readable cursor with a
+release write. Consumers read the published range without taking an append lock.
 
 After enqueue succeeds, the partition notifies all registered consumers.
 
@@ -492,10 +494,10 @@ The implementation is designed for concurrent production and consumption within 
 Important concurrency points:
 
 - Producers choose partitions with round-robin counters by default; either storage mode can instead use its
-  configured partition-key selector. The memory producer performs either selection inside the serialized append
-  section, while the shared partitioner makes MemoryMappedFile selection thread-safe.
-- A memory queue's producer and partitions share one lock that serializes partition routing, bounded-capacity
-  accounting, and append operations.
+  configured partition-key selector. Selectors must be safe for concurrent calls.
+- For default round-robin routing, a memory queue uses one lock for selection, bounded-capacity accounting, and
+  append. Partition-key routing uses one append lock per partition, allowing writes to different partitions to run in
+  parallel.
 - A memory partition publishes its segment cursor only after the corresponding item has been stored, so consumers
   never observe an unwritten slot and do not need to take the append lock.
 - Consumer group creation is guarded by a queue-level lock.

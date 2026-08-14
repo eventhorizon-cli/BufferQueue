@@ -123,7 +123,7 @@ internal interface IBufferPartition<TItem>
 
 每个 topic 可以包含一个或多个 partitions。Producer 默认使用 round-robin 方式分发数据。Memory topic
 可以调用 options 的 `UsePartitionKey` 并传入 key selector 委托，把相同 key 的数据路由到同一个
-partition。Memory 和 MemoryMappedFile topic 都支持该选项。Selector 应保持确定性，并能安全地被并发调用。
+partition。Memory 和 MemoryMappedFile topic 都支持该选项。Selector 必须保持确定性，并能安全地被并发调用。
 
 Consumer 按 consumer group 创建。一个 group 可以包含多个 consumers。Partitions 会在同一个 group 内的 consumers 之间均分：
 
@@ -209,9 +209,10 @@ head segment -> segment -> ... -> tail segment
 
 Partition 会尝试写入当前 tail segment。如果 tail segment 已满，就创建新 segment，或者复用一个已经被所有 consumer groups 消费完成的旧 segment。
 
-Memory queue 的 producer 和 partitions 共享一个 append lock，用于串行执行 partition 路由、bounded
-capacity 计数和 append。选中的 partition 写入 item 后，使用 release write 发布新的可读 cursor。
-Consumer 读取已发布区间时不获取 append lock。
+默认 round-robin 路由时，Memory queue 的 producer 和 partitions 共享一个 append lock，用于串行执行
+partition 选择、bounded capacity 计数和 append。PartitionKey 路由会先选择 partition，再获取该 partition
+的 append lock，因此并发 Producer 可以并行写入不同 partition；同一个 partition 的写入仍然串行。选中的
+partition 写入 item 后，使用 release write 发布新的可读 cursor。Consumer 读取已发布区间时不获取 append lock。
 
 写入成功后，partition 通知所有已注册 consumers。
 
@@ -486,9 +487,9 @@ services.AddBufferQueue(builder =>
 关键并发点：
 
 - Producer 默认使用 round-robin 计数器选择 partition；两种存储模式都可以改用配置的 PartitionKey
-  selector。Memory producer 在串行 append 区间内完成对应选择，共享 partitioner 保证
-  MemoryMappedFile 的选择可安全并发执行。
-- Memory queue 的 producer 和 partitions 共享一个 lock，串行执行 partition 路由、bounded capacity 计数和 append。
+  selector。Selector 必须能够安全地被并发调用。
+- 默认 round-robin 路由时，Memory queue 使用一个 lock 串行执行 partition 选择、bounded capacity 计数和
+  append。PartitionKey 路由则为每个 partition 使用一个 append lock，因此不同 partition 的写入可以并行执行。
 - Memory partition 只在对应 item 写入完成后发布 segment cursor，因此 consumer 不会读到尚未写入的 slot，也不需要获取 append lock。
 - Consumer group 创建由 queue 级别 lock 保护。
 - Consumer 等待和唤醒状态由 `ReaderWriterLockSlim` 保护。

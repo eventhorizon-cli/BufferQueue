@@ -24,7 +24,9 @@ internal sealed class MemoryBufferProducer<T>(
     private readonly MemoryBufferCapacityGate? _capacityGate = options.BoundedCapacity is { } capacity
         ? new(capacity)
         : null;
-    private readonly object _appendLock = GetSharedAppendLock(partitions);
+    private readonly object? _serializedAppendLock = partitioner.SupportsConcurrentSelection
+        ? null
+        : GetSharedAppendLock(partitions);
 
     public string TopicName { get; } = options.TopicName!;
 
@@ -49,19 +51,24 @@ internal sealed class MemoryBufferProducer<T>(
         var capacityGate = _capacityGate;
         if (capacityGate == null)
         {
-            MemoryBufferPartition<T> unboundedPartition;
-            lock (_appendLock)
-            {
-                unboundedPartition = SelectPartition(item);
-                unboundedPartition.AppendFromSerializedProducer(item);
-            }
+            var unboundedPartition = Append(item, out _);
 
             unboundedPartition.NotifyConsumers();
             return true;
         }
 
+        if (_serializedAppendLock is { } serializedAppendLock)
+        {
+            return TryEnqueueSerialized(item, capacityGate, serializedAppendLock);
+        }
+
+        return TryEnqueueConcurrent(item, capacityGate);
+    }
+
+    private bool TryEnqueueSerialized(T item, MemoryBufferCapacityGate capacityGate, object appendLock)
+    {
         MemoryBufferPartition<T> partition;
-        lock (_appendLock)
+        lock (appendLock)
         {
             if (!capacityGate.TryAcquire())
             {
@@ -71,8 +78,7 @@ internal sealed class MemoryBufferProducer<T>(
             ulong reclaimedCount;
             try
             {
-                partition = SelectPartition(item);
-                reclaimedCount = partition.AppendFromSerializedProducer(item);
+                partition = AppendSelectedPartition(item, out reclaimedCount);
             }
             catch
             {
@@ -85,6 +91,61 @@ internal sealed class MemoryBufferProducer<T>(
 
         partition.NotifyConsumers();
         return true;
+    }
+
+    private bool TryEnqueueConcurrent(T item, MemoryBufferCapacityGate capacityGate)
+    {
+        if (!capacityGate.TryAcquire())
+        {
+            return false;
+        }
+
+        MemoryBufferPartition<T> partition;
+        var appended = false;
+        try
+        {
+            partition = Append(item, out var reclaimedCount);
+            appended = true;
+            capacityGate.Release(reclaimedCount);
+        }
+        catch
+        {
+            if (!appended)
+            {
+                capacityGate.Release();
+            }
+
+            throw;
+        }
+
+        partition.NotifyConsumers();
+        return true;
+    }
+
+    private MemoryBufferPartition<T> Append(T item, out ulong reclaimedCount)
+    {
+        if (_serializedAppendLock is { } serializedAppendLock)
+        {
+            lock (serializedAppendLock)
+            {
+                return AppendSelectedPartition(item, out reclaimedCount);
+            }
+        }
+
+        var partition = SelectPartition(item);
+        lock (partition.AppendLock)
+        {
+            reclaimedCount = partition.AppendFromSerializedProducer(item);
+        }
+
+        return partition;
+    }
+
+    private MemoryBufferPartition<T> AppendSelectedPartition(T item, out ulong reclaimedCount)
+    {
+        var partition = SelectPartition(item);
+        reclaimedCount = partition.AppendFromSerializedProducer(item);
+        return partition;
     }
 
     private MemoryBufferPartition<T> SelectPartition(T item) =>

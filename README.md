@@ -209,8 +209,9 @@ the normalized mathematical modulo of `(key - 1)` and `PartitionNumber`. This al
 zero and negative keys. String selectors use only the first four UTF-16 characters
 to choose a partition. Equal keys therefore keep their per-partition ordering, while
 different keys can share a partition. When `UsePartitionKey` is not called, production
-continues to use round-robin routing.
-The selector should be deterministic and safe for concurrent calls.
+continues to use round-robin routing. The selector must be deterministic and safe for concurrent calls.
+In Memory mode, concurrent producers can append to different key-selected partitions in parallel; appends to the
+same partition remain serialized.
 
 ### Partition-Key Routing Benchmark
 

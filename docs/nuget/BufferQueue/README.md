@@ -51,8 +51,9 @@ route with the normalized mathematical modulo of `(key - 1)` and
 `PartitionNumber`, so zero and negative keys are accepted. String selectors use
 only the first four UTF-16 characters to choose a partition. Equal keys are
 routed to the same partition and retain their per-partition order; different
-keys can share a partition. Omit the call to retain round-robin routing. The selector should be deterministic
-and safe for concurrent calls.
+keys can share a partition. Omit the call to retain round-robin routing. The selector must be deterministic
+and safe for concurrent calls. In Memory mode, concurrent producers can append to different key-selected
+partitions in parallel; appends to the same partition remain serialized.
 
 ## Produce
 

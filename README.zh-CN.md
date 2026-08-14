@@ -198,8 +198,8 @@ builder.Services.AddHostedService<Foo1PullConsumerHostService>();
 `UsePartitionKey` 必须传入 selector 委托。数值 selector 支持内置的
 `INumber<TNumber>` 类型，但结果必须是有限的整数，路由使用 `(key - 1)` 对 `PartitionNumber`
 的归一化数学取模，因此零和负数也可作为 key。字符串 selector 只使用前四个 UTF-16 字符选择 partition。
-相同 key 因此能保持 partition 内顺序，不同 key 仍可能进入同一个 partition。未调用 `UsePartitionKey` 时，Producer 继续使用默认的轮询路由。Selector 应保持确定性，
-并能安全地被并发调用。
+相同 key 因此能保持 partition 内顺序，不同 key 仍可能进入同一个 partition。未调用 `UsePartitionKey` 时，Producer 继续使用默认的轮询路由。Selector 必须保持确定性，
+并能安全地被并发调用。Memory 模式下，并发 Producer 可以并行写入不同 key 选中的 partition；写入同一个 partition 仍会串行执行。
 
 ### PartitionKey 路由性能
 
