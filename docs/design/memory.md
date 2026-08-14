@@ -34,9 +34,11 @@ The partition appends to its tail segment. When the tail is full, it creates a n
 recycles an old segment that every consumer group has fully consumed.
 
 For default round-robin routing, the Memory producer and its partitions share one append lock. The
-lock serializes partition selection, bounded-capacity accounting, and append. Partition-key routing
-selects a partition before taking that partition's append lock, so concurrent producers can append
-to different partitions in parallel. Appends within one partition remain serialized.
+lock serializes partition selection and append; immediate single-item capacity admission also runs
+under this lock. Batch admission and a resumed `Wait` write reserve capacity before taking the
+append lock. Partition-key routing selects a partition before taking that partition's append lock,
+so concurrent producers can append to different partitions in parallel. Appends within one
+partition remain serialized.
 
 After storing the item, the selected partition publishes its new readable cursor with a release
 write. Consumers read the published range without taking an append lock, so they cannot observe a
@@ -63,18 +65,35 @@ has read it.
 
 ## Bounded Capacity
 
-Memory mode supports optional bounded capacity through
-`MemoryBufferQueueOptions.BoundedCapacity`.
+Memory mode supports optional topic-wide bounded capacity through
+`MemoryBufferQueueOptions.BoundedCapacity`. The limit is shared by every partition in the topic.
 
-When capacity is configured and the queue is full:
+`MemoryBufferQueueOptions.FullMode` controls `ProduceAsync` when capacity is
+unavailable. Its default is `BufferQueueFullMode.Wait`:
 
-- `ProduceAsync` throws `BufferQueueFullException`.
-- `TryProduceAsync` returns `false`.
+- `Wait` asynchronously waits for capacity and can be canceled through the
+  method's `CancellationToken`.
+- `Fail` throws `BufferQueueFullException` immediately.
+
+`TryProduceAsync` never waits for bounded capacity. It returns `false`
+immediately when the item or complete batch cannot be admitted.
 
 For a batch, bounded-capacity admission reserves the complete item count before any item is
-appended. If the remaining capacity is insufficient, `ProduceAsync` throws and
-`TryProduceAsync` returns `false`; neither appends a partial batch. This applies to both batch
-input forms after an `IEnumerable<T>` has been materialized.
+appended. If the remaining capacity is insufficient, `TryProduceAsync` returns `false` without
+appending a partial batch. In `Wait` mode, `ProduceAsync` waits for the entire batch to fit and then
+appends it as one admission; callers should pass a cancellation token so that the backpressure wait
+can be stopped. In `Fail` mode, `ProduceAsync` throws. A batch larger than the configured capacity
+is invalid in `Wait` mode and throws `ArgumentOutOfRangeException` rather than waiting forever.
+These rules apply to both batch input forms after an `IEnumerable<T>` has been materialized.
+
+Each partition returns capacity to the topic-wide gate only when the minimum committed position
+across all known consumer groups advances. The release can cover only part of a segment; a group
+that has not committed past the same position continues to hold that capacity. A topic with no
+consumer group cannot release capacity.
+
+A consumer group registered after capacity has already been released starts at the current logical
+earliest position. Records before that position are no longer available to the new group, even if a
+physical segment has not yet been recycled.
 
 MemoryMappedFile currently does not support bounded capacity. See
 [MemoryMappedFile storage](memory-mapped-file.md) for durable-storage behavior.

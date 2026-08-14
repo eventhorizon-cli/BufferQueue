@@ -70,10 +70,12 @@ The queue is designed for concurrent production and consumption within one proce
 
 - Producers select a partition through round-robin counters by default, or through the configured
   partition-key selector. Selector implementations must be safe for concurrent calls.
-- In Memory mode, default round-robin routing uses one append lock for partition selection,
-  bounded-capacity accounting, and append. Partition-key routing selects a partition first, then
-  uses that partition's append lock, allowing appends to different partitions to proceed in
-  parallel. Appends to one partition remain serialized.
+- In Memory mode, default round-robin routing uses one append lock for partition selection and
+  append. Immediate single-item capacity admission also occurs inside that lock, while batch
+  reservations and writes resumed after a `Wait` reserve their complete capacity before taking the
+  append lock. Partition-key routing selects a partition first, then uses that partition's append
+  lock, allowing appends to different partitions to proceed in parallel. Appends to one partition
+  remain serialized.
 - A Memory partition publishes its readable segment cursor only after it stores the item. Consumers
   never observe an unwritten slot and do not take the append lock while reading.
 - Consumer-group creation is guarded by a queue-level lock.

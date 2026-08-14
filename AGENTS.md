@@ -59,8 +59,12 @@ semantic, persistence format, or consumer lifecycle.
   `MemoryBufferQueueOptions.BoundedCapacity`.
 - A memory segment may be recycled only after every consumer group has advanced past it. A slow group must never lose
   unread data.
-- `ProduceAsync` throws `BufferQueueFullException` when a bounded queue is full; `TryProduceAsync` returns
-  `false`.
+- `MemoryBufferQueueOptions.FullMode` defaults to `Wait`: `ProduceAsync` asynchronously waits with cancellation support
+  when a bounded queue has no capacity. `Fail` throws `BufferQueueFullException` immediately. `TryProduceAsync` never
+  waits for bounded capacity and returns `false` when admission is unavailable.
+- Batch admission is all-or-nothing. In `Wait` mode, `ProduceAsync` waits for the complete batch, and a batch larger
+  than the configured capacity is invalid. Capacity is released when the minimum committed position across all known
+  consumer groups advances, including partial segments.
 
 ### MemoryMappedFile
 

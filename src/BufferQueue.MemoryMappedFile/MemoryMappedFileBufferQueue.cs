@@ -21,7 +21,7 @@ internal sealed class MemoryMappedFileBufferQueue<T> : BufferQueue<T>, IDisposab
     internal MemoryMappedFileBufferQueue(
         MemoryMappedFileBufferQueueOptions<T> options,
         IPartitioner<T> partitioner)
-        : this(options, partitioner, CreatePartitions(options))
+        : this(options.Validate(), partitioner, CreatePartitions(options))
     {
     }
 
@@ -51,7 +51,6 @@ internal sealed class MemoryMappedFileBufferQueue<T> : BufferQueue<T>, IDisposab
 
     private static MemoryMappedFileBufferPartition<T>[] CreatePartitions(MemoryMappedFileBufferQueueOptions<T> options)
     {
-        ValidateOptions(options);
         ValidateExistingPartitions(options);
 
         var partitions = new MemoryMappedFileBufferPartition<T>[options.PartitionNumber];
@@ -75,25 +74,6 @@ internal sealed class MemoryMappedFileBufferQueue<T> : BufferQueue<T>, IDisposab
         }
 
         return partitions;
-    }
-
-    private static void ValidateOptions(MemoryMappedFileBufferQueueOptions<T> options)
-    {
-        _ = options.GetSegmentSizeInBytes();
-        _ = options.GetMaxRetainedConsumedSegments();
-        ArgumentNullException.ThrowIfNull(options.Serializer, nameof(options.Serializer));
-
-        if (!Enum.IsDefined(options.FlushStrategy))
-        {
-            throw new ArgumentOutOfRangeException(nameof(options.FlushStrategy),
-                "The flush strategy is not supported.");
-        }
-
-        if (options.FlushStrategy == MemoryMappedFileFlushStrategy.Batch && options.FlushBatchSize <= 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(options.FlushBatchSize),
-                "Flush batch size must be greater than zero when using the batch flush strategy.");
-        }
     }
 
     private static void ValidateExistingPartitions(MemoryMappedFileBufferQueueOptions<T> options)

@@ -84,30 +84,42 @@ using Microsoft.Extensions.DependencyInjection;
 public sealed class OrderEventWriter(
     [FromKeyedServices("order-events")] IBufferProducer<OrderEvent> producer)
 {
-    public ValueTask WriteAsync(OrderEvent orderEvent) =>
-        producer.ProduceAsync(orderEvent);
+    public ValueTask WriteAsync(OrderEvent orderEvent, CancellationToken cancellationToken = default) =>
+        producer.ProduceAsync(orderEvent, cancellationToken);
 }
 ```
 
 需要在运行时选择 topic 时，注入 `IBufferQueue` 并调用 `GetProducer<T>(topicName)`。
 
-`IBufferProducer<T>` 直接提供单条数据和 `ReadOnlyMemory<T>` 两种 `TryProduceAsync` 方法。
-`BufferProducerExtensions` 在此基础上提供对应的 `ProduceAsync` 形式，以及接收 `IEnumerable<T>` 的便捷重载：
+`IBufferProducer<T>` 直接提供四个核心方法，每个方法都接收可选的 `CancellationToken`：
 
 ~~~csharp
+ValueTask<bool> TryProduceAsync(T item, CancellationToken cancellationToken = default);
+ValueTask<bool> TryProduceAsync(ReadOnlyMemory<T> items, CancellationToken cancellationToken = default);
+ValueTask ProduceAsync(T item, CancellationToken cancellationToken = default);
+ValueTask ProduceAsync(ReadOnlyMemory<T> items, CancellationToken cancellationToken = default);
+~~~
+
+`BufferProducerExtensions` 只提供接收 `IEnumerable<T>` 的便捷重载，这些重载同样接收 `CancellationToken`：
+
+~~~csharp
+CancellationToken cancellationToken = default;
 ReadOnlyMemory<OrderEvent> bufferedEvents = pendingEvents.AsMemory();
 
-await producer.ProduceAsync(bufferedEvents);
-var accepted = await producer.TryProduceAsync(bufferedEvents);
+await producer.ProduceAsync(bufferedEvents, cancellationToken);
+var accepted = await producer.TryProduceAsync(bufferedEvents, cancellationToken);
 
 IEnumerable<OrderEvent> eventsFromAnEnumerable = GetPendingEvents();
-await producer.ProduceAsync(eventsFromAnEnumerable);
+await producer.ProduceAsync(eventsFromAnEnumerable, cancellationToken);
 ~~~
 
 数据已经连续存储，或可以直接表示为内存区间时，应优先使用 `ReadOnlyMemory<T>`。这是核心批量写入形式，
 能避免非数组 `IEnumerable<T>` 在提交前产生的物化。`IEnumerable<T>` 重载用于方便调用；当输入不是数组时，
-会先物化为数组，再提交整个批次。`ProduceAsync` 是扩展方法：当 `TryProduceAsync` 返回 `false` 时，它会抛出
-队列已满异常。
+会先物化为数组，再提交整个批次。单条和 `ReadOnlyMemory<T>` 的 `ProduceAsync` 都是核心接口方法，不是扩展方法。
+
+MemoryMappedFile topic 没有有界容量。它与 Memory 存储使用相同的、支持取消的 `IBufferProducer<T>` API，
+但 `TryProduceAsync` 和 `ProduceAsync` 都不会等待容量，也没有 `FullMode` 配置。批次中的每条数据仍会根据配置的
+flush 策略单独路由并持久化为一条记录。
 
 MMF 会将批次中的每条数据视为一条普通记录：选择 partition、序列化、写入记录，然后应用配置的 flush
 策略。一个批次不会合并为一条记录，也不会作为单个 partition 的分组或一次 flush 的单位。

@@ -23,6 +23,8 @@ internal sealed class MemoryBufferPartition<T>
     private readonly HashSet<IBufferPartitionConsumer<T>> _consumers;
 
     private readonly object _appendLock;
+    private MemoryBufferPartitionOffset _releasedCapacityPosition;
+    private Action<ulong>? _releaseCapacity;
 
     public MemoryBufferPartition(int id, int segmentSize)
         : this(id, segmentSize, new())
@@ -40,6 +42,7 @@ internal sealed class MemoryBufferPartition<T>
         _consumers = [];
 
         _appendLock = appendLock;
+        _releasedCapacityPosition = _head.StartOffset;
     }
 
     public int PartitionId { get; }
@@ -57,21 +60,54 @@ internal sealed class MemoryBufferPartition<T>
         }
     }
 
-    public void RegisterConsumer(IBufferPartitionConsumer<T> consumer) => _consumers.Add(consumer);
+    public void RegisterConsumer(IBufferPartitionConsumer<T> consumer)
+    {
+        lock (_appendLock)
+        {
+            _consumers.Add(consumer);
+            _consumerReaders.TryAdd(consumer.GroupName, CreateReader());
+        }
+    }
 
-    public void UnregisterConsumer(IBufferPartitionConsumer<T> consumer) => _consumers.Remove(consumer);
+    public void UnregisterConsumer(IBufferPartitionConsumer<T> consumer)
+    {
+        ulong releasedCount;
+        lock (_appendLock)
+        {
+            _consumers.Remove(consumer);
+            _consumerReaders.TryRemove(consumer.GroupName, out _);
+            releasedCount = ReleaseCommittedCapacity();
+        }
+
+        _releaseCapacity?.Invoke(releasedCount);
+    }
 
     public void Enqueue(T item)
     {
         lock (_appendLock)
         {
-            _ = AppendSingleWriter(item);
+            AppendSingleWriter(item);
         }
 
         NotifyConsumers();
     }
 
-    internal ulong AppendFromSerializedProducer(T item) => AppendSingleWriter(item);
+    internal void AppendFromSerializedProducer(T item) => AppendSingleWriter(item);
+
+    internal void SetCapacityReleaseHandler(Action<ulong> releaseCapacity)
+    {
+        ArgumentNullException.ThrowIfNull(releaseCapacity);
+
+        lock (_appendLock)
+        {
+            if (_releaseCapacity != null)
+            {
+                throw new InvalidOperationException("A capacity release handler is already registered.");
+            }
+
+            _releaseCapacity = releaseCapacity;
+        }
+    }
 
     internal void NotifyConsumers()
     {
@@ -81,20 +117,19 @@ internal sealed class MemoryBufferPartition<T>
         }
     }
 
-    private ulong AppendSingleWriter(T item)
+    private void AppendSingleWriter(T item)
     {
         var tail = _tail;
         if (tail.TryEnqueueSingleWriter(item))
         {
-            return 0;
+            return;
         }
 
         var newSegmentStartOffset = tail.EndOffset + 1;
         var newSegment = TryRecycleSegment(
             newSegmentStartOffset,
             out var recycledSegment,
-            out var recycledHead,
-            out var reclaimedCount)
+            out var recycledHead)
             ? recycledSegment
             : new(_segmentSize, newSegmentStartOffset);
         if (!newSegment.TryEnqueueSingleWriter(item))
@@ -108,38 +143,45 @@ internal sealed class MemoryBufferPartition<T>
         {
             _head = recycledHead;
         }
-
-        return reclaimedCount;
     }
 
     public bool TryPull(string groupName, int batchSize, [NotNullWhen(true)] out IEnumerable<T>? items)
     {
-        var reader = _consumerReaders.GetOrAdd(
-            groupName,
-            _ => new Reader(_head, _head.StartOffset));
+        if (!_consumerReaders.TryGetValue(groupName, out var reader))
+        {
+            lock (_appendLock)
+            {
+                reader = _consumerReaders.GetOrAdd(groupName, _ => CreateReader());
+            }
+        }
 
         return reader.TryRead(batchSize, out items);
     }
 
     public void Commit(string groupName)
     {
-        if (!_consumerReaders.TryGetValue(groupName, out var reader))
+        ulong releasedCount;
+        lock (_appendLock)
         {
-            throw new InvalidOperationException("Specified group name not found.");
+            if (!_consumerReaders.TryGetValue(groupName, out var reader))
+            {
+                throw new InvalidOperationException("Specified group name not found.");
+            }
+
+            reader.MoveNext();
+            releasedCount = ReleaseCommittedCapacity();
         }
 
-        reader.MoveNext();
+        _releaseCapacity?.Invoke(releasedCount);
     }
 
     private bool TryRecycleSegment(
         MemoryBufferPartitionOffset newSegmentStartOffset,
         [NotNullWhen(true)] out MemoryBufferSegment<T>? recycledSegment,
-        out MemoryBufferSegment<T>? recycledHead,
-        out ulong reclaimedCount)
+        out MemoryBufferSegment<T>? recycledHead)
     {
         recycledSegment = null;
         recycledHead = null;
-        reclaimedCount = 0;
 
         if (_head == _tail)
         {
@@ -155,13 +197,11 @@ internal sealed class MemoryBufferPartition<T>
             if (wholeSegmentConsumed)
             {
                 recyclableSegment = segment;
-                reclaimedCount += (ulong)segment.Count;
             }
         }
 
         if (recyclableSegment == null)
         {
-            reclaimedCount = 0;
             return false;
         }
 
@@ -169,6 +209,33 @@ internal sealed class MemoryBufferPartition<T>
         recycledHead = recyclableSegment.NextSegment!;
 
         return true;
+    }
+
+    private Reader CreateReader()
+    {
+        var head = _head;
+        var startPosition = _releasedCapacityPosition > head.StartOffset
+            ? _releasedCapacityPosition
+            : head.StartOffset;
+        return new(head, startPosition);
+    }
+
+    private ulong ReleaseCommittedCapacity()
+    {
+        if (_releaseCapacity == null || _consumerReaders.IsEmpty)
+        {
+            return 0;
+        }
+
+        var minConsumerReadPosition = MinConsumerReadPosition();
+        if (!(minConsumerReadPosition > _releasedCapacityPosition))
+        {
+            return 0;
+        }
+
+        var releasedCount = (minConsumerReadPosition - _releasedCapacityPosition).ToUInt64();
+        _releasedCapacityPosition = minConsumerReadPosition;
+        return releasedCount;
     }
 
     private MemoryBufferPartitionOffset MinConsumerReadPosition()
@@ -213,13 +280,8 @@ internal sealed class MemoryBufferPartition<T>
 
             while (true)
             {
-                if (currentSegment.EndOffset < readPosition)
+                while (currentSegment.EndOffset < readPosition && currentSegment.NextSegment != null)
                 {
-                    if (currentSegment.NextSegment == null)
-                    {
-                        break;
-                    }
-
                     currentSegment = currentSegment.NextSegment;
                 }
 

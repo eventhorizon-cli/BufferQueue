@@ -40,7 +40,8 @@ BufferQueue 是一个面向 .NET 的、按 topic 划分的强类型缓冲队列�
 public sealed class FooPublisher(
     [FromKeyedServices("topic-foo")] IBufferProducer<Foo> producer)
 {
-    public ValueTask PublishAsync(Foo item) => producer.ProduceAsync(item);
+    public ValueTask PublishAsync(Foo item, CancellationToken cancellationToken = default) =>
+        producer.ProduceAsync(item, cancellationToken);
 }
 
 var producer = bufferQueue.GetProducer<Foo>("topic-foo");
@@ -67,31 +68,36 @@ var consumer = bufferQueue.CreatePullConsumer<Foo>(new BufferPullConsumerOptions
 
 ### 批量写入
 
-`IBufferProducer<T>` 只定义两个不抛异常的核心写入方法：
+`IBufferProducer<T>` 自身定义四个核心写入方法，每个方法都接收可选的
+`CancellationToken`：
 
-- `ValueTask<bool> TryProduceAsync(T item)`
-- `ValueTask<bool> TryProduceAsync(ReadOnlyMemory<T> items)`
+- `ValueTask<bool> TryProduceAsync(T item, CancellationToken cancellationToken = default)`
+- `ValueTask<bool> TryProduceAsync(ReadOnlyMemory<T> items, CancellationToken cancellationToken = default)`
+- `ValueTask ProduceAsync(T item, CancellationToken cancellationToken = default)`
+- `ValueTask ProduceAsync(ReadOnlyMemory<T> items, CancellationToken cancellationToken = default)`
 
-`BufferProducerExtensions` 在此基础上提供常用的便利 API：
+`BufferProducerExtensions` 只保留接收 `IEnumerable<T>` 的便捷重载：
 
-- `ValueTask ProduceAsync(T item)`
-- `ValueTask ProduceAsync(ReadOnlyMemory<T> items)`
-- `ValueTask ProduceAsync(IEnumerable<T> items)`
-- `ValueTask<bool> TryProduceAsync(IEnumerable<T> items)`
+- `ValueTask ProduceAsync(IEnumerable<T> items, CancellationToken cancellationToken = default)`
+- `ValueTask<bool> TryProduceAsync(IEnumerable<T> items, CancellationToken cancellationToken = default)`
 
 ~~~csharp
+CancellationToken cancellationToken = default;
 ReadOnlyMemory<Foo> bufferedItems = pendingItems.AsMemory();
 
-await producer.ProduceAsync(bufferedItems);
-var accepted = await producer.TryProduceAsync(bufferedItems);
+await producer.ProduceAsync(bufferedItems, cancellationToken);
+var accepted = await producer.TryProduceAsync(bufferedItems, cancellationToken);
 
 IEnumerable<Foo> itemsFromAnEnumerable = GetPendingItems();
-await producer.ProduceAsync(itemsFromAnEnumerable);
+await producer.ProduceAsync(itemsFromAnEnumerable, cancellationToken);
 ~~~
 
 数据已经连续存储，或可以直接表示为内存区间时，应优先使用 `ReadOnlyMemory<T>`。这是核心批量写入形式，
 可以避免非数组 `IEnumerable<T>` 在提交前所需的物化。`IEnumerable<T>` 重载用于方便调用；当输入不是数组时，
-会先物化为数组，再提交整个批次。非 `Try` 扩展会在核心方法返回 `false` 时抛出 `BufferQueueFullException`。
+会先物化为数组，再提交整个批次。核心 `ProduceAsync` 方法不是扩展方法；它们定义各存储模式的正常写入行为。
+
+写入开始前会检查取消；Memory 写入因 `Wait` 等待容量时，也可以通过 token 取消。整批数据完成接纳并开始 append
+后，不会在每条数据之间反复检查 token，因此取消不会让一个批次只写入一部分。
 
 批量写入是 Producer 的核心能力。不同存储模式下的容量检查、路由和持久化行为，参见对应的设计文档。
 

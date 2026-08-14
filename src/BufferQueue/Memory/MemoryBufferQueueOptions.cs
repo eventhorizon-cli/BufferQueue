@@ -24,11 +24,43 @@ public class MemoryBufferQueueOptions
     /// The maximum capacity of the bounded memory buffer queue. Default is null, which means unbounded.
     /// </summary>
     /// <remarks>
-    /// If set, the non-try producer extension will throw a <see cref="BufferQueueFullException"/> when the queue
-    /// is full, and
-    /// <see cref="IBufferProducer{T}.TryProduceAsync(T)"/> will return false when the queue is full.
+    /// When set, <see cref="FullMode"/> controls how <see cref="IBufferProducer{T}.ProduceAsync(T, CancellationToken)"/>
+    /// behaves when the queue is full. <see cref="IBufferProducer{T}.TryProduceAsync(T, CancellationToken)"/> always
+    /// returns false immediately when capacity is unavailable.
     /// </remarks>
     public ulong? BoundedCapacity { get; set; }
+
+    /// <summary>
+    /// Controls how a bounded queue handles writes when capacity is unavailable. Default is Wait.
+    /// </summary>
+    public BufferQueueFullMode FullMode { get; set; } = BufferQueueFullMode.Wait;
+
+    internal MemoryBufferQueueOptions Validate()
+    {
+        if (string.IsNullOrWhiteSpace(TopicName))
+        {
+            throw new ArgumentException("Topic name cannot be null or whitespace.", nameof(TopicName));
+        }
+
+        if (PartitionNumber <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(PartitionNumber),
+                "Partition number must be greater than zero.");
+        }
+
+        if (BoundedCapacity == 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(BoundedCapacity),
+                "Bounded capacity must be greater than zero.");
+        }
+
+        if (!Enum.IsDefined(FullMode))
+        {
+            throw new ArgumentOutOfRangeException(nameof(FullMode), "The full mode is not supported.");
+        }
+
+        return this;
+    }
 }
 
 public class MemoryBufferQueueOptions<T> : MemoryBufferQueueOptions

@@ -20,6 +20,7 @@ dotnet add package BufferQueue
 
 ```csharp
 using BufferQueue;
+using BufferQueue.Memory;
 
 builder.Services.AddBufferQueue(queue =>
 {
@@ -32,8 +33,9 @@ builder.Services.AddBufferQueue(queue =>
                 topic.PartitionNumber = 4;
                 topic.UsePartitionKey(order => order.Id);
 
-                // Optional. Memory topics are unbounded by default.
+                // 可选。Memory topic 默认不限制容量。
                 topic.BoundedCapacity = 100_000;
+                topic.FullMode = BufferQueueFullMode.Wait;
             });
         })
         .AddPushCustomers(typeof(Program).Assembly);
@@ -67,34 +69,46 @@ using Microsoft.Extensions.DependencyInjection;
 public sealed class OrderWriter(
     [FromKeyedServices("orders")] IBufferProducer<Order> producer)
 {
-    public ValueTask WriteAsync(Order order) =>
-        producer.ProduceAsync(order);
+    public ValueTask WriteAsync(Order order, CancellationToken cancellationToken = default) =>
+        producer.ProduceAsync(order, cancellationToken);
 }
 ```
 
 需要在运行时选择 topic 时，注入 `IBufferQueue` 并调用 `GetProducer<T>(topicName)`。
 
-`IBufferProducer<T>` 直接提供单条数据和 `ReadOnlyMemory<T>` 两种 `TryProduceAsync` 方法。
-`BufferProducerExtensions` 在此基础上提供对应的 `ProduceAsync` 形式，以及接收 `IEnumerable<T>` 的便捷重载：
+`IBufferProducer<T>` 直接提供四个核心方法，每个方法都接收可选的 `CancellationToken`：
 
 ~~~csharp
+ValueTask<bool> TryProduceAsync(T item, CancellationToken cancellationToken = default);
+ValueTask<bool> TryProduceAsync(ReadOnlyMemory<T> items, CancellationToken cancellationToken = default);
+ValueTask ProduceAsync(T item, CancellationToken cancellationToken = default);
+ValueTask ProduceAsync(ReadOnlyMemory<T> items, CancellationToken cancellationToken = default);
+~~~
+
+`BufferProducerExtensions` 只提供接收 `IEnumerable<T>` 的便捷重载，这些重载同样接收 `CancellationToken`：
+
+~~~csharp
+CancellationToken cancellationToken = default;
 ReadOnlyMemory<Order> bufferedOrders = pendingOrders.AsMemory();
 
-await producer.ProduceAsync(bufferedOrders);
-var accepted = await producer.TryProduceAsync(bufferedOrders);
+await producer.ProduceAsync(bufferedOrders, cancellationToken);
+var accepted = await producer.TryProduceAsync(bufferedOrders, cancellationToken);
 
 IEnumerable<Order> ordersFromAnEnumerable = GetPendingOrders();
-await producer.ProduceAsync(ordersFromAnEnumerable);
+await producer.ProduceAsync(ordersFromAnEnumerable, cancellationToken);
 ~~~
 
 数据已经连续存储，或可以直接表示为内存区间时，应优先使用 `ReadOnlyMemory<T>`。这是核心批量写入形式，
 能避免非数组 `IEnumerable<T>` 在提交前产生的物化。`IEnumerable<T>` 重载用于方便调用；当输入不是数组时，
-会先物化为数组，再提交整个批次。`ProduceAsync` 是扩展方法：当 `TryProduceAsync` 返回 `false` 时，它会抛出
-队列已满异常。
+会先物化为数组，再提交整个批次。单条和 `ReadOnlyMemory<T>` 的 `ProduceAsync` 都是核心接口方法，不是扩展方法。
 
-对于配置了有界容量的 Memory topic，队列已满时 `ProduceAsync` 会抛出 `BufferQueueFullException`。如果更适合
-由调用方处理失败，可使用 `TryProduceAsync` 并检查其 `false` 返回值。批量写入必须整批接纳：剩余容量不足时，
-`ProduceAsync` 抛出异常，`TryProduceAsync` 返回 `false`，且不会写入该批次中的任何一条数据。
+对于配置了有界容量的 Memory topic，`FullMode` 默认为 `Wait`：容量不足时，`ProduceAsync` 会异步等待，直到
+容量可用。生产代码应传入 `CancellationToken`，以便取消背压等待。需要立即拒绝写入时，可将 `FullMode` 设为
+`Fail`；此时 `ProduceAsync` 会抛出 `BufferQueueFullException`。`TryProduceAsync` 永远不会等待，单条数据或整个
+批次无法接纳时会立即返回 `false`。批量接纳必须整批完成；在 `Wait` 模式下，Producer 会等待整个批次，且大于
+配置容量的批次属于无效参数。容量上限由 topic 下的所有 partition 共享。每个 partition 会在所有已知 consumer group 的最小 committed position 向前推进时
+归还容量；即使只推进到 segment 中间，也会归还相应部分，因此较慢的 group 仍可能在其他 group 提交后继续占用
+容量。较晚创建的 consumer group 会从当前逻辑上的最早位置开始消费，无法读取容量已经释放的数据。
 
 ## 批量消费
 

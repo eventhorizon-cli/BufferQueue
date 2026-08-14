@@ -83,6 +83,38 @@ public class MemoryMappedFileBufferQueueOptions<T>
             PartitionKeyRouting.SelectStringPartition(partitionKeySelector(item), partitionCount);
     }
 
+    internal MemoryMappedFileBufferQueueOptions<T> Validate()
+    {
+        if (string.IsNullOrWhiteSpace(TopicName))
+        {
+            throw new ArgumentException("Topic name cannot be null or whitespace.", nameof(TopicName));
+        }
+
+        if (PartitionNumber <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(PartitionNumber),
+                "Partition number must be greater than zero.");
+        }
+
+        _ = GetSegmentSizeInBytes();
+        _ = GetMaxRetainedConsumedSegments();
+
+        if (!Enum.IsDefined(FlushStrategy))
+        {
+            throw new ArgumentOutOfRangeException(nameof(FlushStrategy),
+                "The flush strategy is not supported.");
+        }
+
+        if (FlushStrategy == MemoryMappedFileFlushStrategy.Batch && FlushBatchSize <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(FlushBatchSize),
+                "Flush batch size must be greater than zero when using the batch flush strategy.");
+        }
+
+        ArgumentNullException.ThrowIfNull(Serializer, nameof(Serializer));
+        return this;
+    }
+
     internal long GetSegmentSizeInBytes()
     {
         if (SegmentSizeInBytes <= MemoryMappedFileBufferPartition<T>.MaxRecordOverhead)

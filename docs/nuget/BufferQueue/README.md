@@ -22,6 +22,7 @@ package.
 
 ```csharp
 using BufferQueue;
+using BufferQueue.Memory;
 
 builder.Services.AddBufferQueue(queue =>
 {
@@ -36,6 +37,7 @@ builder.Services.AddBufferQueue(queue =>
 
                 // Optional. Memory topics are unbounded by default.
                 topic.BoundedCapacity = 100_000;
+                topic.FullMode = BufferQueueFullMode.Wait;
             });
         })
         .AddPushCustomers(typeof(Program).Assembly);
@@ -74,39 +76,55 @@ using Microsoft.Extensions.DependencyInjection;
 public sealed class OrderWriter(
     [FromKeyedServices("orders")] IBufferProducer<Order> producer)
 {
-    public ValueTask WriteAsync(Order order) =>
-        producer.ProduceAsync(order);
+    public ValueTask WriteAsync(Order order, CancellationToken cancellationToken = default) =>
+        producer.ProduceAsync(order, cancellationToken);
 }
 ```
 
 For a topic selected at runtime, inject `IBufferQueue` and call
 `GetProducer<T>(topicName)`.
 
-`IBufferProducer<T>` directly exposes `TryProduceAsync` for a single item and
-for `ReadOnlyMemory<T>`. `BufferProducerExtensions` provides the same-name
-`ProduceAsync` forms plus the `IEnumerable<T>` convenience overloads:
+`IBufferProducer<T>` directly exposes four core methods, each with an optional
+`CancellationToken`:
 
 ~~~csharp
+ValueTask<bool> TryProduceAsync(T item, CancellationToken cancellationToken = default);
+ValueTask<bool> TryProduceAsync(ReadOnlyMemory<T> items, CancellationToken cancellationToken = default);
+ValueTask ProduceAsync(T item, CancellationToken cancellationToken = default);
+ValueTask ProduceAsync(ReadOnlyMemory<T> items, CancellationToken cancellationToken = default);
+~~~
+
+`BufferProducerExtensions` provides only the `IEnumerable<T>` convenience
+overloads, which also accept a cancellation token:
+
+~~~csharp
+CancellationToken cancellationToken = default;
 ReadOnlyMemory<Order> bufferedOrders = pendingOrders.AsMemory();
 
-await producer.ProduceAsync(bufferedOrders);
-var accepted = await producer.TryProduceAsync(bufferedOrders);
+await producer.ProduceAsync(bufferedOrders, cancellationToken);
+var accepted = await producer.TryProduceAsync(bufferedOrders, cancellationToken);
 
 IEnumerable<Order> ordersFromAnEnumerable = GetPendingOrders();
-await producer.ProduceAsync(ordersFromAnEnumerable);
+await producer.ProduceAsync(ordersFromAnEnumerable, cancellationToken);
 ~~~
 
 Use `ReadOnlyMemory<T>` when the source is already contiguous or can be exposed
 as memory. It is the allocation-conscious core form because it avoids the input
 materialization required by a non-array `IEnumerable<T>`. The `IEnumerable<T>` form is
-convenient but materializes a non-array input before batch submission. `ProduceAsync`
-is an extension that converts a rejected try into the normal full-queue exception.
+convenient but materializes a non-array input before batch submission. The single-item and
+`ReadOnlyMemory<T>` `ProduceAsync` methods are core interface methods, not extensions.
 
-On a bounded Memory topic, `ProduceAsync` throws
-`BufferQueueFullException` when the queue is full. Use `TryProduceAsync`
-when a `false` result is preferable to an exception. A batch must fit as a
-whole: if the remaining capacity is insufficient, `ProduceAsync` throws and
-`TryProduceAsync` returns `false` without appending any item from that batch.
+On a bounded Memory topic, `FullMode` defaults to `Wait`: `ProduceAsync` asynchronously
+waits until capacity is available. Supply a cancellation token so that the backpressure
+wait can be canceled. Set `FullMode` to `Fail` when immediate rejection is required;
+`ProduceAsync` then throws `BufferQueueFullException`. `TryProduceAsync` never waits and
+returns `false` immediately when the item or complete batch cannot be admitted. Batch admission
+is all-or-nothing. In `Wait` mode, the producer waits for the entire batch and a batch larger than
+the configured capacity is invalid. The capacity limit is shared by every partition. Each partition returns
+capacity as the minimum committed position across all known consumer groups advances, including
+within a segment, so a slow group can hold capacity after another group commits. A group created
+later starts at the current logical earliest position and cannot read records whose capacity has
+already been released.
 
 ## Consume in batches
 

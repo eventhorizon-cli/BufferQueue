@@ -12,7 +12,10 @@ internal sealed class MemoryBufferQueue<T> : BufferQueue<T>
     }
 
     internal MemoryBufferQueue(MemoryBufferQueueOptions options, IPartitioner<T> partitioner)
-        : this(options, partitioner, CreatePartitions(options, partitioner.SupportsConcurrentSelection))
+        : this(
+            options.Validate(),
+            partitioner,
+            CreatePartitions(options, partitioner.SupportsConcurrentSelection))
     {
     }
 

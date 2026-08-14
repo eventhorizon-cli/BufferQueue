@@ -42,7 +42,8 @@ Choose producer access based on when the topic is known:
 public sealed class FooPublisher(
     [FromKeyedServices("topic-foo")] IBufferProducer<Foo> producer)
 {
-    public ValueTask PublishAsync(Foo item) => producer.ProduceAsync(item);
+    public ValueTask PublishAsync(Foo item, CancellationToken cancellationToken = default) =>
+        producer.ProduceAsync(item, cancellationToken);
 }
 
 var producer = bufferQueue.GetProducer<Foo>("topic-foo");
@@ -70,33 +71,39 @@ name.
 
 ### Batch Production
 
-`IBufferProducer<T>` keeps the implementation contract to the two write attempts:
+`IBufferProducer<T>` owns the four core write methods. Each accepts an optional
+`CancellationToken`:
 
-- `ValueTask<bool> TryProduceAsync(T item)`
-- `ValueTask<bool> TryProduceAsync(ReadOnlyMemory<T> items)`
+- `ValueTask<bool> TryProduceAsync(T item, CancellationToken cancellationToken = default)`
+- `ValueTask<bool> TryProduceAsync(ReadOnlyMemory<T> items, CancellationToken cancellationToken = default)`
+- `ValueTask ProduceAsync(T item, CancellationToken cancellationToken = default)`
+- `ValueTask ProduceAsync(ReadOnlyMemory<T> items, CancellationToken cancellationToken = default)`
 
-`BufferProducerExtensions` provides the convenience surface:
+`BufferProducerExtensions` keeps only the `IEnumerable<T>` convenience overloads:
 
-- `ValueTask ProduceAsync(T item)`
-- `ValueTask ProduceAsync(ReadOnlyMemory<T> items)`
-- `ValueTask ProduceAsync(IEnumerable<T> items)`
-- `ValueTask<bool> TryProduceAsync(IEnumerable<T> items)`
+- `ValueTask ProduceAsync(IEnumerable<T> items, CancellationToken cancellationToken = default)`
+- `ValueTask<bool> TryProduceAsync(IEnumerable<T> items, CancellationToken cancellationToken = default)`
 
 ~~~csharp
+CancellationToken cancellationToken = default;
 ReadOnlyMemory<Foo> bufferedItems = pendingItems.AsMemory();
 
-await producer.ProduceAsync(bufferedItems);
-var accepted = await producer.TryProduceAsync(bufferedItems);
+await producer.ProduceAsync(bufferedItems, cancellationToken);
+var accepted = await producer.TryProduceAsync(bufferedItems, cancellationToken);
 
 IEnumerable<Foo> itemsFromAnEnumerable = GetPendingItems();
-await producer.ProduceAsync(itemsFromAnEnumerable);
+await producer.ProduceAsync(itemsFromAnEnumerable, cancellationToken);
 ~~~
 
 Use `ReadOnlyMemory<T>` when the source is already contiguous or can be supplied as memory. It
 is the allocation-conscious core attempt because it avoids the input materialization required by a
 non-array `IEnumerable<T>` form. The `IEnumerable<T>` overload is a convenience API and materializes
-a non-array input before dispatching the batch. The non-try extensions translate a `false` result into the
-normal full-queue exception.
+a non-array input before dispatching the batch. The core `ProduceAsync` methods are not extensions;
+they define the normal write behavior for each storage mode.
+
+Cancellation is checked before a write starts and while a Memory `Wait` write is waiting for
+capacity. Once a batch has been admitted and append begins, the token is not polled between items;
+cancellation therefore cannot stop the batch halfway through.
 
 Batch production is a core producer capability. Storage-specific batch admission, routing, and
 persistence behavior is described in the related design notes.
