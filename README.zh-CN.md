@@ -2,13 +2,16 @@ BufferQueue
 ===========
 
 [![codecov](https://codecov.io/gh/eventhorizon-cli/BufferQueue/graph/badge.svg?token=GYTOIKCXD5)](https://codecov.io/gh/eventhorizon-cli/BufferQueue)
-[![Nuget](https://img.shields.io/nuget/v/BufferQueue)](https://www.nuget.org/packages/BufferQueue/)
+[![Build](https://github.com/eventhorizon-cli/BufferQueue/actions/workflows/dotnet-build.yml/badge.svg?branch=main)](https://github.com/eventhorizon-cli/BufferQueue/actions/workflows/dotnet-build.yml)
+[![NuGet BufferQueue](https://img.shields.io/nuget/v/BufferQueue)](https://www.nuget.org/packages/BufferQueue/)
+[![NuGet BufferQueue.MemoryMappedFile](https://img.shields.io/nuget/v/BufferQueue.MemoryMappedFile)](https://www.nuget.org/packages/BufferQueue.MemoryMappedFile/)
 
-English | [简体中文](./README.zh-CN.md)
+[English](./README.md) | 简体中文
 
-设计文档：[English](./docs/design.md) | [简体中文](./docs/design.zh-CN.md)
+设计文档：[English](./docs/README.md) | [简体中文](./docs/README.zh-CN.md)
 
 BufferQueue 是一个用 .NET 编写的高性能的缓冲队列实现，支持多线程并发操作。
+包同时支持 .NET 8 和 .NET 10。
 
 BufferQueue 当前提供两种存储模式：
 
@@ -24,24 +27,26 @@ BufferQueue 当前提供两种存储模式：
 
 ## 和其他常用内存缓存 Queue 的对比
 
-**BufferQueue 的 Memory 模式写入性能已接近 `Channel<T>`，核心优势则在于批量消费时的高性能表现。**
+**BufferQueue 的 Memory 模式单条写入性能已接近 `Channel<T>`，同时支持高性能的批量写入和批量消费。**
 
 项目内置 BenchmarkDotNet 基准测试，对比 BufferQueue 在 Memory 模式下与 `Channel<T>`、`BlockingCollection<T>` 的并发生产、并发消费表现。下表展示与 `Channel<T>` 的对比结果摘要。
 
 结果摘要：
 
-- 生产：在该次记录参数下，BufferQueue Memory 模式的写入性能已非常接近 `Channel<T>`。Unbounded 和 Bounded 模式的耗时分别仅高约 `17%` 和 `21%`，两种 queue 完成 8192 条并发写入均处于亚毫秒级。
+- 单条写入：在本次测试配置下，BufferQueue Memory 模式的写入性能接近 `Channel<T>`。Unbounded 和 Bounded 模式的耗时分别高约 `16%` 和 `22%`。
+- `ReadOnlyMemory<T>` 批量写入：Memory 模式在 Unbounded 下比单条路径快约 `3.17x`，在 Bounded 下快约 `3.43x`；在本次测试配置下，也分别比 `Channel<T>` 快约 `2.73x` 和 `2.82x`。
 - 消费：BufferQueue 的主要优势在批量消费；本组测试从 `BatchSize = 1` 到 `1000` 均快于 `Channel<T>`，批量越大优势越明显，该次记录参数下最高约快 `103x`。
 - 内存分配：生产场景 BufferQueue 分配较少；消费场景 `Channel<T>` 分配较少。
 
-下面保留的是已记录 benchmark 的代表性数据。纯内存 queue 对比使用 `MessageSize = 8192`。生产数据的
-Bounded 和 Unbounded 模式使用同一个 `Fixed` job，配置为 `LaunchCount = 1`、`WarmupCount = 6`、
-`IterationCount = 15`。消费 benchmark 使用默认 job，并因 `IterationSetup` 使用 `InvocationCount = 1`、
-`UnrollFactor = 1`。两组 benchmark 均运行于 .NET 10。
+下列写入数据来自最近一次基准测试。消费数据保留自独立的历史测试，本次加入批量写入后没有重新测量。
+纯内存 queue 对比使用 `MessageSize = 8192`。生产数据的 Bounded 和 Unbounded 模式使用同一个 `Fixed` job，
+配置为 `LaunchCount = 1`、`WarmupCount = 6`、`IterationCount = 15`。消费 benchmark 使用默认 job，并因
+`IterationSetup` 使用 `InvocationCount = 1`、`UnrollFactor = 1`。两组 benchmark 均运行于 .NET 10。
 
 生产和消费测试均使用 `int` 消息，依次写入从 `0` 到 `8191` 的 8192 个整数。这里的
-`MessageSize = 8192` 表示消息条数，不是单条消息的字节大小。生产测试把这组整数分片给 `12` 个并发任务；
-消费测试则在计时前把同一组整数预先写入待测队列。
+`MessageSize = 8192` 表示消息条数，而非单条消息的字节大小。生产测试将这组整数分为 `12` 份，交由
+`12` 个并发任务写入：单条路径逐个遍历各自的分片；批量路径则对每个分片仅调用一次
+`producer.ProduceAsync(chunk.AsMemory())`。消费测试会在计时前将同一组整数预先写入待测队列。
 
 `IterationSetup` 不计入测量，测量范围只包含并发排空队列：Channel 使用 `TryRead` 逐条读取，
 BufferQueue 按 `BatchSize` 批量返回并启用 Auto Commit，不包含逐条业务处理。`BatchSize` 只作用于
@@ -59,10 +64,10 @@ MemoryMappedFile queue 对比使用 `MessageSize = 1024` 和 short-run job，
 
 生产性能：
 
-| 模式 | `MessageSize` | `Producers` | `Channel<T>` Mean | BufferQueue（Memory）Mean | 结论 |
-| --- | ---: | ---: | ---: | ---: | --- |
-| Unbounded | 8192 | 12 | `287.0 μs` | `335.0 μs` | 性能接近；`Channel<T>` 约快 `1.17x` |
-| Bounded | 8192 | 12 | `300.8 μs` | `364.1 μs` | 性能接近；`Channel<T>` 约快 `1.21x` |
+| 模式 | `MessageSize` | `Producers` | `Channel<T>` Mean | BufferQueue 单条 Mean | BufferQueue `ReadOnlyMemory<T>` 批量 Mean | 结论 |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| Unbounded | 8192 | 12 | `288.6 μs` | `335.7 μs` | `105.9 μs` | 批量比单条快 `3.17x`，比 `Channel<T>` 快 `2.73x` |
+| Bounded | 8192 | 12 | `298.7 μs` | `363.4 μs` | `105.9 μs` | 批量比单条快 `3.43x`，比 `Channel<T>` 快 `2.82x` |
 
 消费性能：
 
@@ -75,12 +80,12 @@ MemoryMappedFile queue 对比使用 `MessageSize = 1024` 和 short-run job，
 | Unbounded | 8192 | 1000 | 12 | `3,485.82 μs` | `33.97 μs` | 该组参数下 BufferQueue 约快 `102.61x` |
 | Bounded | 8192 | 1000 | 12 | `2,115.11 μs` | `35.68 μs` | 该组参数下 BufferQueue 约快 `59.28x` |
 
-Benchmark 测试平台：
+最新生产 benchmark 的测试平台：
 
 | 项目 | 信息 |
 | --- | --- |
 | CPU | Apple M2 Max，`12` logical / `12` physical cores |
-| 操作系统 | macOS `15.7.7` (`24G720`) |
+| 操作系统 | macOS `15.7.8` (`24G824`) |
 | 运行时标识 | `osx-arm64` |
 | .NET SDK | `10.0.100` |
 | .NET runtime | `10.0.0`, `arm64` |
@@ -107,7 +112,7 @@ dotnet run -c Release --project tests/BufferQueue.Benchmarks/BufferQueue.Benchma
 
 3. 支持同一个 Consumer Group 创建多个 Consumer，以负载均衡的方式消费数据。
 
-4. 支持数据的批量消费，可以一次性获取多条数据。
+4. 支持批量写入和批量消费，可以一次写入或获取多条数据。
 
 5. 支持 pull 模式和 push 模式两种消费模式。
 
@@ -197,8 +202,8 @@ builder.Services.AddHostedService<Foo1PullConsumerHostService>();
 `UsePartitionKey` 必须传入 selector 委托。数值 selector 支持内置的
 `INumber<TNumber>` 类型，但结果必须是有限的整数，路由使用 `(key - 1)` 对 `PartitionNumber`
 的归一化数学取模，因此零和负数也可作为 key。字符串 selector 只使用前四个 UTF-16 字符选择 partition。
-相同 key 因此能保持 partition 内顺序，不同 key 仍可能进入同一个 partition。未调用 `UsePartitionKey` 时，Producer 继续使用默认的轮询路由。Selector 应保持确定性，
-并能安全地被并发调用。
+相同 key 因此能保持 partition 内顺序，不同 key 仍可能进入同一个 partition。未调用 `UsePartitionKey` 时，Producer 继续使用默认的轮询路由。Selector 必须保持确定性，
+并能安全地被并发调用。Memory 模式下，并发 Producer 可以并行写入不同 key 选中的 partition；写入同一个 partition 仍会串行执行。
 
 ### PartitionKey 路由性能
 
@@ -457,11 +462,7 @@ public class BarPushConsumer(ILogger<BarPushConsumer> logger) : IBufferManualCom
             logger.LogInformation("BarPushConsumer.ConsumeAsync: {Bar}", bar);
         }
 
-        var commitTask = committer.CommitAsync();
-        if (!commitTask.IsCompletedSuccessfully)
-        {
-            await commitTask.AsTask();
-        }
+        await committer.CommitAsync();
     }
 }
 ```
@@ -473,7 +474,8 @@ Producer 示例：
 - 在声明依赖时 topic 已固定：使用 `[FromKeyedServices("topic-name")]` 注入 `IBufferProducer<T>`。
 - topic 需要在运行时确定：注入 `IBufferQueue`，再调用 `GetProducer<T>(topicName)` 获取 Producer。
 
-在 Memory 模式下，如果设置了 BoundedCapacity，当缓冲区满时，ProduceAsync 方法会丢弃数据并抛出 MemoryBufferQueueFullException。可以使用 TryProduceAsync 方法来检查数据是否成功发送。
+在 Memory 模式下，配置 `BoundedCapacity` 后，如果队列已满，`ProduceAsync` 会拒绝本次写入并抛出
+`BufferQueueFullException`。需要自行处理写入失败时，可改用 `TryProduceAsync` 检查返回值。
 
 ```csharp
 using Microsoft.Extensions.DependencyInjection;
@@ -510,6 +512,28 @@ public class TestController(
     }
 }
 ```
+
+### 批量写入
+
+`IBufferProducer<T>` 的核心接口提供单条数据和 `ReadOnlyMemory<T>` 两种 `TryProduceAsync` 写入方式。
+`BufferProducerExtensions` 在此基础上提供对应的 `ProduceAsync` 重载，以及接收 `IEnumerable<T>` 的
+`ProduceAsync` 和 `TryProduceAsync` 便捷重载。传入的序列不是数组时，会先物化为数组，再进入核心批量写入路径。
+
+```csharp
+Order[] orders = GetOrders();
+
+await producer.ProduceAsync(orders.AsMemory());
+await producer.ProduceAsync(orders.Where(order => order.Total > 0));
+
+if (!await producer.TryProduceAsync(orders.AsMemory()))
+{
+    // 有界容量的 Memory 队列无法接纳整个批次。
+}
+```
+
+路由仍以单条数据为单位：Round-robin 每写入一条数据都会向前轮转一次；PartitionKey 会为批次中的每条数据
+调用 selector。因此，一个批次可以写入多个 partition。对于有界容量的 Memory 队列，剩余容量不足以容纳整个批次时，
+`TryProduceAsync` 返回 `false`，`ProduceAsync` 抛出异常；两者都不会写入该批次中的任何一条数据。
 
 ## 示例项目
 

@@ -1,5 +1,4 @@
 using System.Buffers.Binary;
-using BufferQueue.MemoryMappedFile;
 
 namespace BufferQueue.MemoryMappedFile.Tests;
 

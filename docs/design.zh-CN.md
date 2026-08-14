@@ -1,541 +1,126 @@
 # BufferQueue 设计文档
 
+[English 设计文档](README.md) | [简体中文设计文档](README.zh-CN.md)
+
+此旧入口为已有链接保留。设计内容现已拆分为聚焦的文章；下方原有章节锚点会链接到对应文章。
+
 ## 目标
 
-BufferQueue 是一个面向 .NET 的、按 Topic 划分的强类型缓冲队列库。它提供统一的队列模型，并允许底层存储实现可插拔。
-
-当前代码包含两种存储模式：
-
-- Memory 模式：数据保存在当前进程内的分段内存结构中。
-- MemoryMappedFile 模式：数据序列化后写入内存映射分段文件，并持久化 producer offset 和已提交的 consumer offset。
-
-两种模式共享相同的 producer、pull consumer、consumer group、partition 分配、批量消费和等待唤醒语义。存储差异被隔离在内部 partition 抽象之后。
-
-两种实现在 project 和 package 边界上相互独立：
-
-- `BufferQueue` 包含共享队列抽象、Memory 存储和 push consumer 集成。
-- `BufferQueue.MemoryMappedFile` 包含可选的 MemoryMappedFile 存储实现，并依赖 `BufferQueue`。
-
-核心 `BufferQueue` project 不引用 `BufferQueue.MemoryMappedFile`。MMF project 通过 friend assembly 访问复用共享的 internal 队列抽象。这个拆分不会改变公共 namespace 或 `.UseMemoryMappedFile(...)` 注册调用。
+参见[架构与注册](design/architecture.zh-CN.md)。
 
 ## 公共模型
 
-根据 topic 的确定时机选择访问方式：
-
-- 在声明依赖时 topic 已固定：使用 `[FromKeyedServices("topic-name")]` 注入 `IBufferProducer<T>`。
-- topic 需要在运行时确定：注入 `IBufferQueue`，再调用 `GetProducer<T>(topicName)` 获取 Producer。
-
-```csharp
-public sealed class FooPublisher(
-    [FromKeyedServices("topic-foo")] IBufferProducer<Foo> producer)
-{
-    public ValueTask PublishAsync(Foo item) => producer.ProduceAsync(item);
-}
-
-var producer = bufferQueue.GetProducer<Foo>("topic-foo");
-var consumer = bufferQueue.CreatePullConsumer<Foo>(new BufferPullConsumerOptions
-{
-    TopicName = "topic-foo",
-    GroupName = "group-a",
-    AutoCommit = false,
-    BatchSize = 100
-});
-```
-
-公共 API 保持较小的表面积：
-
-- `IBufferProducer<T>`：向 topic 生产强类型数据。
-- `IBufferPullConsumer<T>`：从 topic 批量消费数据。
-- `IBufferConsumerCommitter`：用于手动提交消费进度。
-- `BufferPullConsumerOptions`：配置 topic、group、auto commit 和 batch size。
-- `BufferOptionsBuilder`：把存储实现注册到依赖注入容器中。
-
-内部每个已注册 topic 都对应一个 `IBufferQueue<T>`。对应的 keyed `IBufferProducer<T>` 注册会转发到该 queue
-持有的 producer。非泛型 `BufferQueue` 根据 topic name 从 DI 容器中解析对应的 typed queue。
+参见[架构与注册](design/architecture.zh-CN.md)。
 
 ## 总体架构
 
-```text
-Application
-    |
-    v
-IBufferQueue
-    |
-    v
-BufferQueue
-    |
-    v
-按 topic name 注册的 IBufferQueue<T>
-    |
-    v
-BufferQueue<TItem>
-    |
-    +-- IBufferProducer<TItem>
-    +-- BufferPullConsumer<TItem>
-    +-- IBufferPartition<TItem>[]
-            |
-            +-- MemoryBufferPartition<TItem>
-            +-- MemoryMappedFileBufferPartition<TItem>
-```
-
-`BufferQueue<TItem>` 是单个 typed topic 的共享抽象队列父类，承载上层通用队列行为：
-
-- 校验 consumer 参数；
-- 阻止同一个 queue 实例中重复创建相同 consumer group；
-- 创建 `BufferPullConsumer<TItem>`；
-- 把 partitions 均分给同一个 group 内的多个 consumers；
-- 暴露 topic producer。
-
-具体队列实现只负责创建自己的 partition 和 producer：
-
-- `MemoryBufferQueue<T>` 创建 `MemoryBufferPartition<T>[]` 和 `MemoryBufferProducer<T>`。
-- `MemoryMappedFileBufferQueue<T>` 创建 `MemoryMappedFileBufferPartition<T>[]` 和 `MemoryMappedFileBufferProducer<T>`。
-
-两个 producer 都使用共享的 `IPartitioner<TItem>`，每个 topic 以 keyed service 注册选定的实现。
-共享实现包含 round-robin 和 PartitionKey 路由，两种存储模式都通过 topic 配置开放这两种策略。
+参见[架构与注册](design/architecture.zh-CN.md)。
 
 ## 内部 Partition 抽象
 
-存储实现通过 `IBufferPartition<TItem>` 接入上层逻辑。
-
-```csharp
-internal interface IBufferPartition<TItem>
-{
-    int PartitionId { get; }
-
-    void RegisterConsumer(IBufferPartitionConsumer<TItem> consumer);
-
-    void Enqueue(TItem item);
-
-    bool TryPull(string groupName, int batchSize, out IEnumerable<TItem>? items);
-
-    void Commit(string groupName);
-}
-```
-
-队列和 consumer 逻辑只依赖这个抽象。因此，上层行为只实现一套，而 partition 可以使用完全不同的存储方式。
-
-`IBufferPartitionConsumer<TItem>` 是 partition 用来通知 consumer 的最小接口。当有新数据写入时，partition 通过该接口唤醒等待中的 consumer。
+参见[架构与注册](design/architecture.zh-CN.md)。
 
 ## Partition 和 Consumer Group
 
-每个 topic 可以包含一个或多个 partitions。Producer 默认使用 round-robin 方式分发数据。Memory topic
-可以调用 options 的 `UsePartitionKey` 并传入 key selector 委托，把相同 key 的数据路由到同一个
-partition。Memory 和 MemoryMappedFile topic 都支持该选项。Selector 应保持确定性，并能安全地被并发调用。
-
-Consumer 按 consumer group 创建。一个 group 可以包含多个 consumers。Partitions 会在同一个 group 内的 consumers 之间均分：
-
-- consumer 数量必须大于 0；
-- consumer 数量不能超过 partition 数量；
-- 每个 group 有独立的读取进度；
-- 每个 group 都会消费 topic 的完整数据，但同一个 group 内通过 partition 分配实现负载均衡。
-
-例如 5 个 partitions 和 2 个 consumers：
-
-```text
-consumer-0: partition-0, partition-1, partition-2
-consumer-1: partition-3, partition-4
-```
-
-不同 consumer group 之间相互独立。两个 group 消费同一个 topic 时，各自维护自己的消费进度。
+参见[Partition 与并发](design/partitioning-and-concurrency.zh-CN.md)。
 
 ## Pull Consumer 设计
 
-`BufferPullConsumer<TItem>` 是唯一的通用 pull consumer 实现，不依赖具体存储。
-
-它负责：
-
-- 保存已分配的 partitions；
-- 按 round-robin 选择 partition；
-- 从 partition 拉取批量数据；
-- 当前 partition 无数据时尝试其他已分配 partitions；
-- 所有 partitions 都无数据时异步等待；
-- 手动提交已消费批次；
-- 在 `AutoCommit` 开启时自动提交。
-
-消费接口返回批量数据的异步流：
-
-```csharp
-await foreach (var batch in consumer.ConsumeAsync(cancellationToken))
-{
-    foreach (var item in batch)
-    {
-        // process item
-    }
-
-    await consumer.CommitAsync();
-}
-```
-
-当 `AutoCommit` 为 false 时，consumer 的读取位置不会在 `CommitAsync` 之前推进。这在当前进程内提供 at-least-once 语义。对 MemoryMappedFile 模式来说，已经到达 flush 边界的记录还能跨进程重启保留该语义；`CommitAsync` 本身会强制建立这个边界。
+参见[Consumer 模型与投递](design/consumer-model.zh-CN.md)。
 
 ## Consumer 唤醒设计
 
-Consumer 在无数据时不应该自旋。通用 consumer 使用 `PendingDataValueTaskSource<T>` 等待新数据。
-
-流程如下：
-
-1. Consumer 尝试从选中的 partition 拉取数据。
-2. 如果没有数据，再尝试所有其他已分配 partitions。
-3. 如果仍然没有数据，重置 pending-data value task source 并进入等待。
-4. Producer 向某个 partition 追加数据。
-5. Partition 通过 `IBufferPartitionConsumer<TItem>` 通知已注册 consumers。
-6. Consumer 增加 pending-data version，并完成 pending value task。
-7. Consumer 被唤醒后，从触发通知的 partition 尝试拉取数据。
-
-pending-data version 用来避免 lost wake-up：如果数据在最后一次拉取尝试和进入等待状态之间到达，consumer 可以检测到版本变化并重新尝试消费。
+参见[Consumer 模型与投递](design/consumer-model.zh-CN.md)。
 
 ## Memory 模式
 
-Memory 模式面向进程内缓冲和批量消费优化。
+参见[Memory 存储](design/memory.zh-CN.md)。
 
 ### 存储结构
 
-`MemoryBufferPartition<T>` 使用 `MemoryBufferSegment<T>` 链表保存数据。每个 segment 持有一个固定长度的对象数组。
-
-```text
-head segment -> segment -> ... -> tail segment
-```
-
-每条记录的 offset 由 `MemoryBufferPartitionOffset` 表示。这里的 offset 是逻辑 item 位置，不是字节位置。
+参见[Memory 存储](design/memory.zh-CN.md#存储结构)。
 
 ### 写入
 
-`MemoryBufferProducer<T>` 默认按 round-robin 选择 partition。启用 PartitionKey 后，数值 selector 的
-结果必须是有限的整数，并使用 `(key - 1)` 对 `PartitionNumber` 的归一化数学取模映射；零和负数也可以作为 key。
-字符串 selector 只使用前四个 UTF-16 字符计算 partition。相同 key 因此能保持 partition 内顺序，不同 key 仍可能映射到同一个 partition。
-
-Partition 会尝试写入当前 tail segment。如果 tail segment 已满，就创建新 segment，或者复用一个已经被所有 consumer groups 消费完成的旧 segment。
-
-Memory queue 的 producer 和 partitions 共享一个 append lock，用于串行执行 partition 路由、bounded
-capacity 计数和 append。选中的 partition 写入 item 后，使用 release write 发布新的可读 cursor。
-Consumer 读取已发布区间时不获取 append lock。
-
-写入成功后，partition 通知所有已注册 consumers。
+参见[Memory 存储](design/memory.zh-CN.md#写入路径)。
 
 ### 读取和提交
 
-每个 consumer group 在每个 partition 上都有一个 reader。Reader 保存：
-
-- 当前 segment；
-- 当前 read position；
-- 上次读取数量。
-
-`TryPull` 最多读取 `BatchSize` 条数据。只有调用 `Commit` 后，reader 的已提交读取位置才会推进。
+参见[Memory 存储](design/memory.zh-CN.md#读取与提交)。
 
 ### Segment 复用
 
-Memory 模式可以复用旧 segment。只有当所有 consumer groups 都已经消费过某个 segment 的结尾后，该 segment 才能被复用。这可以避免慢 consumer group 还没读到的数据被覆盖。
+参见[Memory 存储](design/memory.zh-CN.md#segment-复用)。
 
 ### 容量控制
 
-Memory 模式支持通过 `MemoryBufferQueueOptions.BoundedCapacity` 配置有界容量。
-
-配置有界容量后：
-
-- 队列满时，`ProduceAsync` 抛出 `MemoryBufferQueueFullException`；
-- 队列满时，`TryProduceAsync` 返回 `false`。
+参见[Memory 存储](design/memory.zh-CN.md#有界容量)。
 
 ## MemoryMappedFile 模式
 
-MemoryMappedFile 模式把生产的数据持久化到内存映射分段文件，同时持久化 producer offset 和已提交的 consumer offsets，适合本地持久化缓冲和简单恢复。新追加记录何时到达显式持久化边界由配置的 flush 策略决定。
-
-`MemoryMappedFileBufferQueueOptions<T>.SegmentSizeInBytes` 以字节为单位配置 segment size，默认值为 `256L * 1024 * 1024`（256 MiB）。
-
-`MaxRetainedConsumedSegments` 控制每个 partition 对已完整消费 segment 的删除。默认值为 `null`，表示不删除；`0` 表示不保留任何可回收的已消费 segment；正数表示保留最新的对应数量。
+参见[MemoryMappedFile 存储](design/memory-mapped-file.zh-CN.md)。
 
 ### 目录结构
 
-每个 topic 和 partition 的数据位于：
-
-```text
-{DataDirectory}/{TopicName}/partition-{PartitionId:D5}/
-```
-
-数据 segment 文件按 segment index 命名：
-
-```text
-00000000000000000000.log
-00000000000000000001.log
-...
-```
-
-Consumer offset 位于：
-
-```text
-{DataDirectory}/{TopicName}/partition-{PartitionId:D5}/offsets/
-```
-
-每个 consumer group 在 `offsets` 下对应一个可读目录。目录名格式是 `{escaped-group-name}`。如果 group name 本身可以作为合法文件夹名，就直接使用原始名称；只有 `/` 这类不能作为单个路径组件的字符才会被百分号编码。百分号 `%` 本身也会被编码，避免和已转义名称发生冲突。
-
-```text
-{DataDirectory}/{TopicName}/partition-{PartitionId:D5}/offsets/{escaped-group-name}/consumer.offset
-```
-
-例如 topic 为 `orders`、partition 为 `0`、group 为 `billing-worker-1` 时，路径是：
-
-```text
-bufferqueue/orders/partition-00000/offsets/billing-worker-1/consumer.offset
-```
-
-如果 group name 是 `orders/worker 1`，斜杠会被编码，空格保持可见：
-
-```text
-bufferqueue/orders/partition-00000/offsets/orders%2Fworker 1/consumer.offset
-```
-
-Partition producer offset 存储在：
-
-```text
-{DataDirectory}/{TopicName}/partition-{PartitionId:D5}/producer.offset
-```
-
-例如：
-
-```text
-bufferqueue/orders/partition-00000/producer.offset
-```
-
-最早保留的 segment boundary 存储在：
-
-```text
-{DataDirectory}/{TopicName}/partition-{PartitionId:D5}/earliest.offset
-```
-
-`earliest.offset`、`producer.offset` 和 consumer offset 文件都包含一个 8 字节 little-endian integer。
+参见[MemoryMappedFile 存储](design/memory-mapped-file.zh-CN.md#目录结构)。
 
 ### 记录格式
 
-每条数据记录格式如下：
-
-```text
-4 bytes  payload length，little-endian int32
-N bytes  payload
-1 byte   record end marker
-```
-
-record end marker 用于在读取和恢复时检测未完整写入或损坏的记录。
-
-如果当前 segment 剩余空间不足以写入下一条记录，并且至少还剩 4 字节，partition 会写入 segment-end marker，然后从下一个 segment 继续写；如果剩余空间不足 4 字节，则把未使用的尾部直接视为 segment padding。segment-end marker 使用 int32 length 值 `-1` 表示。
+参见[MemoryMappedFile 存储](design/memory-mapped-file.zh-CN.md#记录格式)。
 
 ### 序列化
 
-`MemoryMappedFileBufferQueueOptions<T>` 提供一个可插拔序列化属性：
-
-- `Serializer: IMemoryMappedFileSerializer<T>`
-
-`IMemoryMappedFileSerializer<T>` 在一个契约中同时定义两个操作：`Serialize(T)` 返回 `byte[]`，`Deserialize(ReadOnlyMemory<byte>)` 返回 `T`。
-
-当前提供以下实现：
-
-- 默认使用的 internal `System.Text.Json` 实现；
-- 基于 MessagePack for C# 的 `MessagePackMemoryMappedFileSerializer<T>`。无参构造函数使用 `MessagePackSerializerOptions.Standard`，另一个构造函数可以接收显式 MessagePack options。自定义 resolver 和 formatter 必须能够安全并发使用；
-- `UnmanagedMemoryMappedFileSerializer<T>`，要求 `T : unmanaged`，直接复制值的 native 内存表示。反序列化时要求 payload 长度与 `Unsafe.SizeOf<T>()` 严格相等。
-
-使用标准 MessagePack options 时，自定义类型应使用 `[MessagePackObject]` 和稳定的数字 `[Key]`。应用项目应直接引用 MessagePack，因为 `BufferQueue.MemoryMappedFile` 包对 MessagePack 的传递 runtime 依赖不会提供它的 analyzer 和 source generator。可以通过自定义 options 启用 contractless 序列化，但它会把成员名写入持久化格式，不是推荐的 MMF schema。Resolver、key、压缩和安全配置都是持久化格式的一部分；已删除字段的数字 key 不能复用。
-
-Unmanaged serializer 可以消除格式编解码，但不是零拷贝实现，因为当前 serializer 契约和 partition 仍会创建 payload byte array。Native endianness、padding、字段顺序、packing、runtime 和进程架构都属于 wire format。`[StructLayout]` 是可选的，但建议显式固定 sequential 或 explicit layout 及 packing。不应持久化 pointer-sized 或进程相关字段。
-
-Serializer 及其 wire schema 是 topic 持久化格式的一部分，在 queue 重启和应用升级时必须与已有记录保持兼容。
-
-配置的 serializer 实例由 topic 的所有 partition 共享，并且可能被并发调用。实现必须是线程安全的，两个操作都不能返回 `null`。
+参见[MemoryMappedFile 存储](design/memory-mapped-file.zh-CN.md#序列化与-schema-兼容性)。
 
 ### Flush 策略
 
-`MemoryMappedFileBufferQueueOptions<T>` 提供两种 flush 策略：
-
-- `MemoryMappedFileFlushStrategy.Immediate` 是默认策略，每写入一条记录都显式 flush；
-- `MemoryMappedFileFlushStrategy.Batch` 在一个 partition 累积追加 `FlushBatchSize` 条记录后显式 flush，`FlushBatchSize` 默认为 `100`。
-
-在两种策略下，segment rollover 和 consumer commit 都是无条件的 flush 边界。因此，Batch 模式也可能在达到 `FlushBatchSize` 之前 flush。如果后续没有继续生产，也没有 segment rollover 或 consumer commit，未满一批的尾部记录不保证已经被显式 flush。
+参见[MemoryMappedFile 存储](design/memory-mapped-file.zh-CN.md#flush-边界与写入)。
 
 ### 写入
 
-`MemoryMappedFileBufferProducer<T>` 使用共享 partitioner，默认按 round-robin 选择 partition，也可以使用
-配置的 key selector。为保持重启前后的同 key partition 顺序，selector 和 `PartitionNumber` 必须保持稳定。
-数值与字符串路由都是确定性的；字符串路由不使用 `string.GetHashCode()`。Partition 随后序列化 item，
-计算记录大小，找到当前 segment，写入记录，推进进程内 write offset，应用配置的 flush 策略，并通知 consumers。
-
-每次到达 flush 边界时，partition 都会先 flush memory-mapped accessor，只有 flush 成功后才把对应 offset 写入 `producer.offset`。Segment rollover 会在写入下一个 segment 前 flush 已完成的 segment。Consumer commit 也会 flush 待处理的日志数据并推进 `producer.offset`，然后才持久化 consumer offset。
-
-如果序列化后的 item 大于 segment size，生产会失败并抛出 `InvalidOperationException`。
+参见[MemoryMappedFile 存储](design/memory-mapped-file.zh-CN.md#flush-边界与写入)。
 
 ### 恢复
 
-MemoryMappedFile partition 启动时会先读取 `earliest.offset`；文件不存在时默认值为 `0`。然后读取 `producer.offset`；如果 producer checkpoint 不存在，就从最早保留 offset 开始扫描。如果 producer offset 有效，并且指向最早保留 offset 之后的真实 record boundary，就从该位置继续向后扫描，找到最后一个有效 write offset。
-
-扫描遇到以下情况时停止：
-
-- 空 length；
-- 非 positive length，且不是 segment-end marker；
-- 记录跨越 segment 边界；
-- record end marker 缺失。
-
-这样既能让正常启动更快，也能容忍预期内的崩溃窗口：
-
-- 数据已经 flush，但 `producer.offset` 还没更新；
-- 操作系统在显式 flush 之前已持久化 pending batch 中的完整记录；
-- 尾部数据只写入了一部分。
-
-这些情况下，启动扫描都会找到最后一个有效记录边界。由于 `producer.offset` 只会在对应日志成功 flush 后推进，恢复可以把它作为安全 checkpoint，并继续向后扫描其他完整记录。在 `Batch` 模式下，异常终止后未显式 flush 的尾部记录可能不存在。明显不一致的 checkpoint 状态仍会被视为损坏并快速失败。`earliest.offset` 必须对齐到 segment boundary，并且不能超过 producer offset。保留区间中的 segment 文件必须连续。无效 offset、缺失的保留 segment、长度错误的 segment 文件和没有对齐到 record boundary 的 checkpoint 都会抛出异常，不会创建替代文件或静默 fallback。
+参见[MemoryMappedFile 存储](design/memory-mapped-file.zh-CN.md#恢复)。
 
 ### Offset 持久化
 
-MemoryMappedFile 模式按 partition 和 consumer group 持久化已提交 offset。
-
-调用 `Commit` 时，partition 会先强制 flush 待处理的日志数据并推进 `producer.offset`，然后把已提交 offset 以 8 字节 little-endian integer 写入该 group 的 `consumer.offset` checkpoint 文件。这个顺序可以避免持久化的 consumer offset 超过已经成功 flush 的日志数据。Checkpoint 写入过程先写临时文件，再 replace 或 move，避免读取到部分写入的 offset 文件。
-
-Consumer group 被分配 partition 时，如果还没有 checkpoint，每个 partition 都会在最早保留 offset 处创建初始 offset checkpoint。因此该 group 在第一次 pull 前就会参与 retention 水位计算。Reader 创建时：
-
-- 如果 offset 文件存在且包含有效 offset，从该 offset 开始读取；
-- 如果是新 offset 文件，从最早保留 offset 开始读取；
-- 如果 offset 文件长度错误或包含负数 offset，抛出 `InvalidDataException`；
-- 如果存储的 offset 早于最早保留 offset、超过当前 write offset，或者没有落在 record boundary，则抛出异常，而不是静默重置消费进度。
-
-初始 offset 和后续已提交 offset 都会被持久化。如果 consumer 读取了一个 batch 但没有提交，其 checkpoint 不会推进，下一个 queue 实例会再次读取该 batch。
+参见[MemoryMappedFile 存储](design/memory-mapped-file.zh-CN.md#consumer-checkpoint)。
 
 ### Segment 保留策略
 
-只有当所有已知 consumer group 都已经提交越过某个 segment 的末尾后，该 segment 才可回收。Partition 会计算所有已持久化 group checkpoint 的最小 committed offset，包括当前进程中未激活的 group。Offset 可以在不跳过记录的前提下跨过 segment-end marker 和 padding 进行规范化。没有已知 group 时不会删除任何 segment。
-
-Retention 值为 `N` 时，partition 会保留最新的 `N` 个可回收 segment，以及第一个尚未被所有 group 完整消费的 segment 之后的所有数据。因此慢速、未提交、离线和废弃的 group checkpoint 都会阻止回收。移除废弃 group 是显式管理操作：必须停止 queue，并在每个 partition 中删除完整的 `offsets/{escaped-group-name}/` 目录，而不只是其中的 `consumer.offset` 文件。
-
-删除会在 consumer 成功提交后执行，也会在启动时重试未完成的清理。持久化顺序是：
-
-1. flush 日志数据并推进 `producer.offset`；
-2. 持久化 consumer offset；
-3. 原子推进 `earliest.offset` 到新的 segment boundary；
-4. dispose 旧 segment 的 mapped views 并删除文件。
-
-如果进程在第 3 步之后停止，旧文件可能仍然存在，但已经位于逻辑保留区间之外，会在后续启动或提交时删除。如果 `earliest.offset` 已推进后某个 segment 文件无法删除，consumer commit 仍然已经持久化，并会抛出明确说明清理可重试的 `IOException`。
+参见[MemoryMappedFile 存储](design/memory-mapped-file.zh-CN.md#segment-保留策略)。
 
 ### Producer Offset 持久化
 
-到达 flush 边界时，partition 会先 flush memory-mapped file accessor，再把最新成功 flush 的 producer offset 写入 `producer.offset`，格式是 8 字节 little-endian integer。`Immediate` 会为每条记录建立该边界；`Batch` 会在累积 `FlushBatchSize` 条记录时建立该边界，而 segment rollover 或 consumer commit 会忽略待处理数量并建立该边界。
-
-Producer offset 写入使用和 consumer offset 相同的临时文件加 replace 或 move 模式，避免有效 offset 文件被部分写入文件替换。
-
-Producer offset 是启动优化和恢复提示，不是唯一事实来源。在 `Batch` 模式下，如果仍有未满一批的记录等待 flush，它可能落后于当前进程内 write offset。启动时 partition 仍会从存储的 producer offset 向后校验记录。如果持久化的 producer offset 落后于数据文件中的完整记录，扫描会追上；如果 producer offset 文件不存在，partition 会从最早保留 offset 开始扫描。如果 producer offset 文件存在但和日志不一致，恢复会快速失败。
+参见[MemoryMappedFile 存储](design/memory-mapped-file.zh-CN.md#producer-checkpoint)。
 
 ## Push Consumer 模式
 
-Push consumer 模式构建在 pull consumer 之上。Host service 扫描带 attribute 的 push consumers，创建对应 pull consumers，并把 batch 交给 push consumer 实现处理。
-
-Auto-commit push consumer 会在成功 Pull 后、业务处理 batch 前推进消费进度，因此 Handler 失败不会让该批次重新进入可重放状态。Manual-commit push consumer 会收到 `IBufferConsumerCommitter`，由业务代码决定何时提交；未提交的 batch 可能再次交付。
-
-配置的 `ServiceLifetime` 决定 push consumer 的解析方式。`Singleton` consumer 从根容器解析，并在不同 batch 和并发消费循环之间复用，因此实现必须线程安全。`Scoped` 和 `Transient` consumer 会为每个交付的 batch 创建新的异步 DI Scope，并在 Handler 成功或抛出异常后异步释放该 Scope 及其中的服务；Scoped 依赖不能逃逸出本次 Handler 调用。
+参见[Consumer 模型与投递](design/consumer-model.zh-CN.md)。
 
 ## 依赖注入
 
-库会注册一个公共 `IBufferQueue` 服务。每个 topic 都以 topic name 为 key 注册 `IBufferQueue<T>` 和
-`IBufferProducer<T>`。固定 topic 使用 keyed `IBufferProducer<T>` 注入；运行时选择 topic 时使用
-`IBufferQueue.GetProducer<T>(topicName)`。
-
-Memory 模式：
-
-```csharp
-services.AddBufferQueue(builder =>
-{
-    builder.UseMemory(memory =>
-    {
-        memory.AddTopic<Foo>(options =>
-        {
-            options.TopicName = "topic-foo";
-            options.PartitionNumber = 4;
-            options.SegmentSize = 1024;
-            options.UsePartitionKey(foo => foo.Id);
-        });
-    });
-});
-```
-
-MemoryMappedFile 模式：
-
-应用必须引用 `BufferQueue.MemoryMappedFile` project 或 package。它会传递依赖核心 `BufferQueue` 包，公共 namespace 和注册 API 保持不变。
-
-MemoryMappedFile topic queue 由依赖注入容器创建并持有。Dispose service provider 时会关闭所有 partition view 和 memory-mapped-file handle。Dispose 只负责释放资源，不是显式 flush 边界，也不会为待处理 batch 推进 `producer.offset`。
-
-```csharp
-services.AddBufferQueue(builder =>
-{
-    builder.UseMemoryMappedFile(memoryMappedFile =>
-    {
-        memoryMappedFile.AddTopic<Foo>(options =>
-        {
-            options.TopicName = "topic-foo";
-            options.PartitionNumber = 4;
-            options.SegmentSizeInBytes = 64L * 1024 * 1024;
-            options.MaxRetainedConsumedSegments = 2;
-            options.DataDirectory = "/var/lib/bufferqueue";
-            options.FlushStrategy = MemoryMappedFileFlushStrategy.Batch;
-            options.FlushBatchSize = 100;
-            options.UsePartitionKey(foo => foo.Id);
-        });
-    });
-});
-```
-
-不同 topic 可以使用不同存储模式，只要 topic name 不重复即可。
+参见[架构与注册](design/architecture.zh-CN.md)。
 
 ## 并发模型
 
-当前实现面向单进程内的并发生产和消费。
-
-关键并发点：
-
-- Producer 默认使用 round-robin 计数器选择 partition；两种存储模式都可以改用配置的 PartitionKey
-  selector。Memory producer 在串行 append 区间内完成对应选择，共享 partitioner 保证
-  MemoryMappedFile 的选择可安全并发执行。
-- Memory queue 的 producer 和 partitions 共享一个 lock，串行执行 partition 路由、bounded capacity 计数和 append。
-- Memory partition 只在对应 item 写入完成后发布 segment cursor，因此 consumer 不会读到尚未写入的 slot，也不需要获取 append lock。
-- Consumer group 创建由 queue 级别 lock 保护。
-- Consumer 等待和唤醒状态由 `ReaderWriterLockSlim` 保护。
-- MemoryMappedFile producer offset 和 consumer offset 写入使用 replace/move 语义，避免部分写入的 offset 文件。
-
-当前设计不提供多个进程同时写入同一个 memory-mapped-file topic directory 的协调能力。除非增加外部协调机制，否则 MemoryMappedFile 模式应视为一个 active queue 实例使用的本地持久化机制。
+参见[Partition 与并发](design/partitioning-and-concurrency.zh-CN.md)。
 
 ## 投递语义
 
-手动提交模式提供 at-least-once 行为：
-
-- 如果 batch 已读取但未提交，该 batch 可能再次被投递；
-- Auto-commit 会在成功拉取后立即推进进度；
-- Manual commit 会在业务代码调用 `CommitAsync` 后推进进度。
-
-Memory 模式的 offset 保存在进程内存中。MemoryMappedFile 模式会把 producer offset 和已提交 consumer offsets 持久化到磁盘。Consumer commit 会先强制待处理日志数据到达 flush 边界。在 `Batch` 模式下，异常终止后未提交且未满一批的尾部记录不保证仍然存在。
+参见[Consumer 模型与投递](design/consumer-model.zh-CN.md)。
 
 ## 扩展点
 
-主要扩展点是 `IBufferPartition<TItem>`。新增一种存储实现通常需要：
-
-- 实现一个 `IBufferPartition<TItem>` partition 类型；
-- 实现一个 producer，负责选择 partition 并调用 `Enqueue`；
-- 实现一个继承 `BufferQueue<TItem>` 的 queue 类型，把 partitions 和 producer 传给父类构造函数；
-- 提供 options 和 DI builder 扩展。
-
-存储实现不应该重复实现通用 queue 和 consumer 行为。
+参见[架构与注册](design/architecture.zh-CN.md)。
 
 ## 已知限制
 
-- 废弃的 MemoryMappedFile consumer group checkpoint 会阻止 segment 回收，直到在 queue 停止时移除其完整 group 目录。
-- MemoryMappedFile 模式当前没有 bounded capacity。
-- MemoryMappedFile 模式不协调多个进程同时写同一个 topic directory。
-- Memory 模式不持久化数据或 offsets。
-- 同一个 queue 实例中 consumer group 名称必须唯一；重复创建相同 group 会被拒绝。
+参见[MemoryMappedFile 存储](design/memory-mapped-file.zh-CN.md)和
+[Memory 存储](design/memory.zh-CN.md)。
 
 ## 测试策略
 
-测试项目与生产项目边界保持一致：`BufferQueue.Tests` 覆盖核心与 Memory 实现，`BufferQueue.MemoryMappedFile.Tests` 覆盖可选的 MMF 程序集。
-
-测试覆盖：
-
-- Memory queue 生产和消费；
-- 手动提交和自动提交行为；
-- consumer 等待和唤醒行为；
-- 多 partition 和多 consumer 的 partition 分配；
-- Memory segment 行为和复用；
-- DI 注册；
-- MemoryMappedFile 生产和消费；
-- MemoryMappedFile offset 持久化和未提交重放。
-
-这些测试保证两种存储模式对外提供相同的队列语义，同时把各自的存储行为保留在 partition 抽象之后。
+参见[架构与注册](design/architecture.zh-CN.md)。

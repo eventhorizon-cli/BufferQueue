@@ -1,10 +1,39 @@
 using System.Buffers.Binary;
-using BufferQueue.MemoryMappedFile;
 
 namespace BufferQueue.MemoryMappedFile.Tests;
 
 public class MemoryMappedFileBufferQueueTests
 {
+    [Fact]
+    public async Task Produce_Batches_Preserves_Item_Order()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        using var queue = new MemoryMappedFileBufferQueue<int>(new MemoryMappedFileBufferQueueOptions<int>
+        {
+            TopicName = "test",
+            DataDirectory = temporaryDirectory.Path,
+            PartitionNumber = 1,
+            SegmentSizeInBytes = 1024
+        });
+        var producer = queue.GetProducer();
+        var consumer = queue.CreateConsumer(new BufferPullConsumerOptions
+        {
+            TopicName = "test",
+            GroupName = "TestGroup",
+            AutoCommit = true,
+            BatchSize = 5
+        });
+
+        await producer.ProduceAsync(new[] { 1, 2, 3 }.AsMemory());
+        await producer.ProduceAsync((IEnumerable<int>)new[] { 4, 5 });
+
+        await foreach (var items in consumer.ConsumeAsync())
+        {
+            Assert.Equal(new[] { 1, 2, 3, 4, 5 }, items);
+            break;
+        }
+    }
+
     [Fact]
     public async Task Produce_And_Consume()
     {

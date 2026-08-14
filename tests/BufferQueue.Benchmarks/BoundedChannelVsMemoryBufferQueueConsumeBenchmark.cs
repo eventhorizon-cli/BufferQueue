@@ -33,7 +33,7 @@ public class BoundedChannelVsMemoryBufferQueueConsumeBenchmark
         for (var i = 0; i < MessageSize; i++)
         {
             _boundedChannel.Writer.TryWrite(i);
-            boundedMemoryBufferQueueProducer.ProduceAsync(i);
+            boundedMemoryBufferQueueProducer.ProduceAsync(i).GetAwaiter().GetResult();
         }
 
         _boundedMemoryBufferQueueConsumers = boundedMemoryBufferQueue.CreateConsumers(

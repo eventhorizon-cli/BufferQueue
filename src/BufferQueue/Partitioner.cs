@@ -6,12 +6,16 @@ namespace BufferQueue;
 
 internal interface IPartitioner<in TItem>
 {
+    bool SupportsConcurrentSelection { get; }
+
     int SelectPartition(TItem item, int partitionCount);
 }
 
 internal sealed class RoundRobinPartitioner<TItem> : IPartitioner<TItem>
 {
     private int _partitionIndex;
+
+    public bool SupportsConcurrentSelection => false;
 
     public int SelectPartition(TItem item, int partitionCount)
     {
@@ -30,6 +34,8 @@ internal sealed class RoundRobinPartitioner<TItem> : IPartitioner<TItem>
 internal sealed class ConcurrentRoundRobinPartitioner<TItem> : IPartitioner<TItem>
 {
     private int _partitionIndex = -1;
+
+    public bool SupportsConcurrentSelection => true;
 
     public int SelectPartition(TItem item, int partitionCount)
     {
@@ -53,6 +59,8 @@ internal sealed class KeyPartitioner<TItem> : IPartitioner<TItem>
         ArgumentNullException.ThrowIfNull(partitionIndexSelector);
         _partitionIndexSelector = partitionIndexSelector;
     }
+
+    public bool SupportsConcurrentSelection => true;
 
     public int SelectPartition(TItem item, int partitionCount)
     {

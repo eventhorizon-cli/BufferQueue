@@ -1,10 +1,12 @@
 # BufferQueue
 
+English | [简体中文](README.zh-CN.md)
+
 BufferQueue is a typed, topic-based in-process queue for concurrent producers
 and partitioned batch consumers. The core package includes segmented Memory
 storage, consumer groups, pull and push consumers, and auto or manual commit.
 
-BufferQueue supports .NET 8 and later.
+BufferQueue targets .NET 8 and .NET 10.
 
 ## Install
 
@@ -51,8 +53,15 @@ route with the normalized mathematical modulo of `(key - 1)` and
 `PartitionNumber`, so zero and negative keys are accepted. String selectors use
 only the first four UTF-16 characters to choose a partition. Equal keys are
 routed to the same partition and retain their per-partition order; different
-keys can share a partition. Omit the call to retain round-robin routing. The selector should be deterministic
-and safe for concurrent calls.
+keys can share a partition. Omit the call to retain round-robin routing. The selector must be deterministic
+and safe for concurrent calls. In Memory mode, concurrent producers can append to different key-selected
+partitions in parallel; appends to the same partition remain serialized.
+
+Batch production applies the same routing to every item. A round-robin batch is
+not assigned to one partition: selection advances once per item. A key-routed
+batch runs its selector for every item and preserves equal-key input order in
+the selected partition. Ordering remains per partition rather than global
+across the batch.
 
 ## Produce
 
@@ -73,9 +82,31 @@ public sealed class OrderWriter(
 For a topic selected at runtime, inject `IBufferQueue` and call
 `GetProducer<T>(topicName)`.
 
+`IBufferProducer<T>` directly exposes `TryProduceAsync` for a single item and
+for `ReadOnlyMemory<T>`. `BufferProducerExtensions` provides the same-name
+`ProduceAsync` forms plus the `IEnumerable<T>` convenience overloads:
+
+~~~csharp
+ReadOnlyMemory<Order> bufferedOrders = pendingOrders.AsMemory();
+
+await producer.ProduceAsync(bufferedOrders);
+var accepted = await producer.TryProduceAsync(bufferedOrders);
+
+IEnumerable<Order> ordersFromAnEnumerable = GetPendingOrders();
+await producer.ProduceAsync(ordersFromAnEnumerable);
+~~~
+
+Use `ReadOnlyMemory<T>` when the source is already contiguous or can be exposed
+as memory. It is the allocation-conscious core form because it avoids the input
+materialization required by a non-array `IEnumerable<T>`. The `IEnumerable<T>` form is
+convenient but materializes a non-array input before batch submission. `ProduceAsync`
+is an extension that converts a rejected try into the normal full-queue exception.
+
 On a bounded Memory topic, `ProduceAsync` throws
-`MemoryBufferQueueFullException` when the queue is full. Use `TryProduceAsync`
-when a `false` result is preferable to an exception.
+`BufferQueueFullException` when the queue is full. Use `TryProduceAsync`
+when a `false` result is preferable to an exception. A batch must fit as a
+whole: if the remaining capacity is insufficient, `ProduceAsync` throws and
+`TryProduceAsync` returns `false` without appending any item from that batch.
 
 ## Consume in batches
 
@@ -220,6 +251,6 @@ the handler completes or throws.
 
 - [Repository and documentation](https://github.com/eventhorizon-cli/BufferQueue)
 - [Chinese documentation](https://github.com/eventhorizon-cli/BufferQueue/blob/main/README.zh-CN.md)
-- [Design](https://github.com/eventhorizon-cli/BufferQueue/blob/main/docs/design.md)
+- [Design notes](https://github.com/eventhorizon-cli/BufferQueue/blob/main/docs/README.md)
 - [ASP.NET Core sample](https://github.com/eventhorizon-cli/BufferQueue/tree/main/samples/WebAPI)
 - [Issues](https://github.com/eventhorizon-cli/BufferQueue/issues)

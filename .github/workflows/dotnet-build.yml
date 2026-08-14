@@ -2,29 +2,127 @@ name: .NET Build
 
 on:
   push:
-    branches: [ "main" ]
+    branches:
+      - main
   pull_request:
-    branches: [ "main" ]
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dotnet-build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: "true"
+  DOTNET_NOLOGO: "true"
+  NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
 
 jobs:
-  dotnet-build:
+  validate:
+    name: Format and build
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
-    - uses: actions/checkout@v3
-    - name: Setup .NET
-      uses: actions/setup-dotnet@v3
-      with:
-        dotnet-version: 8.0.x
-    - name: Restore dependencies
-      run: dotnet restore
-    - name: Build
-      run: dotnet build
-    - name: Format
-      run: dotnet format --verify-no-changes --verbosity diagnostic
-    - name: Test
-      run: dotnet test -c Release --collect:"XPlat Code Coverage"
-    - name: Upload coverage reports to Codecov
-      uses: codecov/codecov-action@v3
-      env:
-        CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup .NET SDKs
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.NUGET_PACKAGES }}
+          key: ${{ runner.os }}-nuget-${{ hashFiles('BufferQueue.slnx', '**/*.csproj', 'NuGet.config') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Restore
+        run: dotnet restore BufferQueue.slnx
+
+      - name: Verify formatting
+        run: >-
+          dotnet format BufferQueue.slnx
+          --no-restore
+          --verify-no-changes
+          --verbosity diagnostic
+
+      - name: Build
+        run: >-
+          dotnet build BufferQueue.slnx
+          --configuration Release
+          --no-restore
+
+  unit_tests:
+    name: ${{ matrix.name }} unit tests and coverage
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        include:
+          - name: Core and Memory
+            test_project: tests/BufferQueue.Tests/BufferQueue.Tests.csproj
+            coverage_directory: core-memory
+            coverage_name: bufferqueue-core-memory-unit-tests
+          - name: MemoryMappedFile
+            test_project: tests/BufferQueue.MemoryMappedFile.Tests/BufferQueue.MemoryMappedFile.Tests.csproj
+            coverage_directory: memory-mapped-file
+            coverage_name: bufferqueue-memory-mapped-file-unit-tests
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup .NET SDKs
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.NUGET_PACKAGES }}
+          key: ${{ runner.os }}-nuget-${{ hashFiles('BufferQueue.slnx', '**/*.csproj', 'NuGet.config') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Restore
+        run: dotnet restore "${{ matrix.test_project }}"
+
+      - name: Build
+        run: >-
+          dotnet build "${{ matrix.test_project }}"
+          --configuration Release
+          --no-restore
+
+      - name: Test
+        run: >-
+          dotnet test "${{ matrix.test_project }}"
+          --configuration Release
+          --no-build
+          --no-restore
+          --collect:"XPlat Code Coverage"
+          --results-directory "${{ runner.temp }}/coverage/${{ matrix.coverage_directory }}"
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v7
+        with:
+          directory: ${{ runner.temp }}/coverage/${{ matrix.coverage_directory }}
+          fail_ci_if_error: true
+          flags: unit-tests
+          name: ${{ matrix.coverage_name }}
+          token: ${{ secrets.CODECOV_TOKEN }}

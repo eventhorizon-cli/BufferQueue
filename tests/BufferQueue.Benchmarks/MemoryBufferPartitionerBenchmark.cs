@@ -143,7 +143,7 @@ public class MemoryBufferPartitionerBenchmark
                 var produceTask = _producer.ProduceAsync(message);
                 if (!produceTask.IsCompletedSuccessfully)
                 {
-                    produceTask.AsTask().GetAwaiter().GetResult();
+                    produceTask.GetAwaiter().GetResult();
                 }
             }
         }

@@ -39,11 +39,7 @@ public class MemoryBufferQueueTests
                 Assert.Equal(expectedValues[index++], item);
             }
 
-            var valueTask = consumer.CommitAsync();
-            if (!valueTask.IsCompletedSuccessfully)
-            {
-                await valueTask.AsTask();
-            }
+            await consumer.CommitAsync();
 
             if (index == 10)
             {
@@ -127,11 +123,7 @@ public class MemoryBufferQueueTests
                 break;
             }
 
-            var valueTask = consumer.CommitAsync();
-            if (!valueTask.IsCompletedSuccessfully)
-            {
-                await valueTask.AsTask();
-            }
+            await consumer.CommitAsync();
         }
 
         Assert.Equal(expectedValues, consumedValues.OrderBy(x => x));
@@ -243,11 +235,7 @@ public class MemoryBufferQueueTests
             break;
         }
 
-        var valueTask = consumer.CommitAsync();
-        if (!valueTask.IsCompletedSuccessfully)
-        {
-            await valueTask.AsTask();
-        }
+        await consumer.CommitAsync();
 
         await foreach (var items in consumer.ConsumeAsync())
         {
@@ -386,11 +374,7 @@ public class MemoryBufferQueueTests
             {
                 foreach (var item in chunk)
                 {
-                    var valueTask = producer.ProduceAsync(item);
-                    if (!valueTask.IsCompletedSuccessfully)
-                    {
-                        await valueTask.AsTask();
-                    }
+                    await producer.ProduceAsync(item);
                 }
             });
         }
@@ -437,11 +421,7 @@ public class MemoryBufferQueueTests
             {
                 foreach (var item in chunk)
                 {
-                    var valueTask = producer.ProduceAsync(item);
-                    if (!valueTask.IsCompletedSuccessfully)
-                    {
-                        await valueTask.AsTask();
-                    }
+                    await producer.ProduceAsync(item);
                 }
             });
         }
@@ -514,11 +494,7 @@ public class MemoryBufferQueueTests
         {
             for (var i = 0; i < messageSize; i++)
             {
-                var valueTask = producer.ProduceAsync(i);
-                if (!valueTask.IsCompletedSuccessfully)
-                {
-                    await valueTask.AsTask();
-                }
+                await producer.ProduceAsync(i);
             }
         });
 
@@ -581,11 +557,7 @@ public class MemoryBufferQueueTests
             {
                 foreach (var item in chunk)
                 {
-                    var valueTask = producer.ProduceAsync(item);
-                    if (!valueTask.IsCompletedSuccessfully)
-                    {
-                        await valueTask.AsTask();
-                    }
+                    await producer.ProduceAsync(item);
                 }
             });
         }

@@ -48,7 +48,7 @@ public class BlockingCollectionVsMemoryBufferQueueProduceBenchmark
                 var valueTask = producer.ProduceAsync(item);
                 if (!valueTask.IsCompletedSuccessfully)
                 {
-                    await valueTask.AsTask();
+                    await valueTask;
                 }
             }
         })).ToArray();
@@ -72,7 +72,34 @@ public class BlockingCollectionVsMemoryBufferQueueProduceBenchmark
                 var valueTask = producer.ProduceAsync(item);
                 if (!valueTask.IsCompletedSuccessfully)
                 {
-                    await valueTask.AsTask();
+                    await valueTask;
+                }
+            }
+        })).ToArray();
+
+        await Task.WhenAll(tasks);
+    }
+
+    [Benchmark]
+    public async Task MemoryBufferQueue_Produce_ConcurrentProcessorCountPartitionsWithPartitionKey()
+    {
+        var options = new MemoryBufferQueueOptions<int>
+        {
+            TopicName = "test",
+            PartitionNumber = Environment.ProcessorCount
+        };
+        options.UsePartitionKey(static item => item + 1);
+
+        var queue = new MemoryBufferQueue<int>(options);
+        var producer = queue.GetProducer();
+        var tasks = _chunks.Select(chunk => Task.Run(async () =>
+        {
+            foreach (var item in chunk)
+            {
+                var valueTask = producer.ProduceAsync(item);
+                if (!valueTask.IsCompletedSuccessfully)
+                {
+                    await valueTask;
                 }
             }
         })).ToArray();

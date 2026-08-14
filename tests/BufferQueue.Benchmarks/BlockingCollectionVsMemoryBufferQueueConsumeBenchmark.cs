@@ -27,7 +27,7 @@ public class BlockingCollectionVsMemoryBufferQueueConsumeBenchmark
         for (var i = 0; i < MessageSize; i++)
         {
             _blockingCollection.Add(i);
-            producer.ProduceAsync(i);
+            producer.ProduceAsync(i).GetAwaiter().GetResult();
         }
 
         _consumers = _memoryBufferQueue!.CreateConsumers(

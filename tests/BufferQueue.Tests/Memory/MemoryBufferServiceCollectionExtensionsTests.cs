@@ -1,4 +1,3 @@
-using BufferQueue.Memory;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace BufferQueue.Tests.Memory;

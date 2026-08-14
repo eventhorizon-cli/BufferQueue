@@ -12,15 +12,7 @@ internal sealed class MemoryBufferQueue<T> : BufferQueue<T>
     }
 
     internal MemoryBufferQueue(MemoryBufferQueueOptions options, IPartitioner<T> partitioner)
-        : this(options, partitioner, new object())
-    {
-    }
-
-    private MemoryBufferQueue(
-        MemoryBufferQueueOptions options,
-        IPartitioner<T> partitioner,
-        object appendLock)
-        : this(options, partitioner, CreatePartitions(options, appendLock))
+        : this(options, partitioner, CreatePartitions(options, partitioner.SupportsConcurrentSelection))
     {
     }
 
@@ -32,12 +24,17 @@ internal sealed class MemoryBufferQueue<T> : BufferQueue<T>
     {
     }
 
-    private static MemoryBufferPartition<T>[] CreatePartitions(MemoryBufferQueueOptions options, object appendLock)
+    private static MemoryBufferPartition<T>[] CreatePartitions(
+        MemoryBufferQueueOptions options,
+        bool useIndependentAppendLocks)
     {
         var partitions = new MemoryBufferPartition<T>[options.PartitionNumber];
+        var appendLock = useIndependentAppendLocks ? null : new object();
         for (var i = 0; i < partitions.Length; i++)
         {
-            partitions[i] = new MemoryBufferPartition<T>(i, options.SegmentSize, appendLock);
+            partitions[i] = appendLock == null
+                ? new MemoryBufferPartition<T>(i, options.SegmentSize)
+                : new MemoryBufferPartition<T>(i, options.SegmentSize, appendLock);
         }
 
         return partitions;

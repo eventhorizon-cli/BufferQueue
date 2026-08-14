@@ -20,10 +20,6 @@ public class BarPushConsumer(ILogger<BarPushConsumer> logger) : IBufferManualCom
             logger.LogInformation("BarPushConsumer.ConsumeAsync: {Bar}", bar);
         }
 
-        var commitTask = committer.CommitAsync();
-        if (!commitTask.IsCompletedSuccessfully)
-        {
-            await commitTask.AsTask();
-        }
+        await committer.CommitAsync();
     }
 }

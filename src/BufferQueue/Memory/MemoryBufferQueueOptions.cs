@@ -24,8 +24,8 @@ public class MemoryBufferQueueOptions
     /// The maximum capacity of the bounded memory buffer queue. Default is null, which means unbounded.
     /// </summary>
     /// <remarks>
-    /// If set, <see cref="IBufferProducer{T}.ProduceAsync(T)"/> will throw a <see cref="MemoryBufferQueueFullException"/>
-    /// when the queue is full, and
+    /// If set, the non-try producer extension will throw a <see cref="BufferQueueFullException"/> when the queue
+    /// is full, and
     /// <see cref="IBufferProducer{T}.TryProduceAsync(T)"/> will return false when the queue is full.
     /// </remarks>
     public ulong? BoundedCapacity { get; set; }
@@ -41,7 +41,7 @@ public class MemoryBufferQueueOptions<T> : MemoryBufferQueueOptions
     /// <param name="partitionKeySelector">Selects the integer-valued partition key from an item.</param>
     /// <remarks>
     /// Values must be finite integers and route with <c>(key - 1) mod partitionCount</c>.
-    /// The selector should be deterministic and safe for concurrent calls.
+    /// The selector must be deterministic and safe for concurrent calls.
     /// </remarks>
     public void UsePartitionKey<TNumber>(Func<T, TNumber> partitionKeySelector)
         where TNumber : INumber<TNumber>
@@ -54,7 +54,7 @@ public class MemoryBufferQueueOptions<T> : MemoryBufferQueueOptions
     /// Enables partition-key routing for a string key. The first four UTF-16 characters determine the partition.
     /// </summary>
     /// <param name="partitionKeySelector">Selects the string partition key from an item.</param>
-    /// <remarks>The selector should be deterministic and safe for concurrent calls.</remarks>
+    /// <remarks>The selector must be deterministic and safe for concurrent calls.</remarks>
     public void UsePartitionKey(Func<T, string> partitionKeySelector)
     {
         ArgumentNullException.ThrowIfNull(partitionKeySelector);

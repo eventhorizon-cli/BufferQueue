@@ -28,7 +28,7 @@ public class UnboundedChannelVsMemoryBufferQueueConsumeBenchmark
         for (var i = 0; i < MessageSize; i++)
         {
             _unboundedChannel.Writer.TryWrite(i);
-            unboundedMemoryBufferQueueProducer.ProduceAsync(i);
+            unboundedMemoryBufferQueueProducer.ProduceAsync(i).GetAwaiter().GetResult();
         }
 
         _unboundedMemoryBufferQueueConsumers = unboundedMemoryBufferQueue.CreateConsumers(
