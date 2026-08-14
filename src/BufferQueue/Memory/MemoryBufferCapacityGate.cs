@@ -16,18 +16,28 @@ internal sealed class MemoryBufferCapacityGate
 
     public bool TryAcquire()
     {
+        return TryAcquire(1);
+    }
+
+    public bool TryAcquire(ulong count)
+    {
+        if (count == 0)
+        {
+            return true;
+        }
+
         var spinWait = new SpinWait();
         while (true)
         {
             var availableSlots = Volatile.Read(ref _availableSlots);
-            if (availableSlots == 0)
+            if (availableSlots < count)
             {
                 return false;
             }
 
             if (Interlocked.CompareExchange(
                     ref _availableSlots,
-                    availableSlots - 1,
+                    availableSlots - count,
                     availableSlots)
                 == availableSlots)
             {

@@ -101,7 +101,7 @@ public class MemoryVsMemoryMappedFileBufferQueueProduceBenchmark
                 var valueTask = producer.ProduceAsync(item);
                 if (!valueTask.IsCompletedSuccessfully)
                 {
-                    await valueTask.AsTask();
+                    await valueTask;
                 }
             }
         })).ToArray();

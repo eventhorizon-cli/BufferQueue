@@ -48,7 +48,7 @@ public class BlockingCollectionVsMemoryBufferQueueProduceBenchmark
                 var valueTask = producer.ProduceAsync(item);
                 if (!valueTask.IsCompletedSuccessfully)
                 {
-                    await valueTask.AsTask();
+                    await valueTask;
                 }
             }
         })).ToArray();
@@ -72,7 +72,7 @@ public class BlockingCollectionVsMemoryBufferQueueProduceBenchmark
                 var valueTask = producer.ProduceAsync(item);
                 if (!valueTask.IsCompletedSuccessfully)
                 {
-                    await valueTask.AsTask();
+                    await valueTask;
                 }
             }
         })).ToArray();
@@ -99,7 +99,7 @@ public class BlockingCollectionVsMemoryBufferQueueProduceBenchmark
                 var valueTask = producer.ProduceAsync(item);
                 if (!valueTask.IsCompletedSuccessfully)
                 {
-                    await valueTask.AsTask();
+                    await valueTask;
                 }
             }
         })).ToArray();

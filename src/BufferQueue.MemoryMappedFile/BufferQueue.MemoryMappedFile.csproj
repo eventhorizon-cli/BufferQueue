@@ -20,6 +20,7 @@
 
     <ItemGroup>
         <None Include="..\..\docs\nuget\BufferQueue.MemoryMappedFile\README.md" Pack="true" PackagePath="\" />
+        <None Include="..\..\docs\nuget\BufferQueue.MemoryMappedFile\README.zh-CN.md" Pack="true" PackagePath="\" />
     </ItemGroup>
 
 </Project>

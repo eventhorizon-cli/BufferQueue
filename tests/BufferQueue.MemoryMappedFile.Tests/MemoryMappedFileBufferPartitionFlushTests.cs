@@ -1,7 +1,6 @@
 using System.Buffers.Binary;
 using System.IO.MemoryMappedFiles;
 using System.Text.Json;
-using BufferQueue.MemoryMappedFile;
 
 namespace BufferQueue.MemoryMappedFile.Tests;
 

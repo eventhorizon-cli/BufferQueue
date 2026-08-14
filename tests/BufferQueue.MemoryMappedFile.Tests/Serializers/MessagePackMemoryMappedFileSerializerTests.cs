@@ -1,4 +1,3 @@
-using BufferQueue.MemoryMappedFile;
 using MessagePack;
 using MessagePack.Resolvers;
 

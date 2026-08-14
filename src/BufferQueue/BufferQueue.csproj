@@ -16,6 +16,7 @@
 
     <ItemGroup>
         <None Include="..\..\docs\nuget\BufferQueue\README.md" Pack="true" PackagePath="\" />
+        <None Include="..\..\docs\nuget\BufferQueue\README.zh-CN.md" Pack="true" PackagePath="\" />
     </ItemGroup>
 
 </Project>

@@ -122,11 +122,11 @@ internal sealed class MemoryMappedFileBufferQueue<T> : BufferQueue<T>, IDisposab
 
     private static bool TryParsePartitionId(string partitionDirectoryName, out int partitionId)
     {
-        const string Prefix = "partition-";
+        const string prefix = "partition-";
 
         partitionId = 0;
-        return partitionDirectoryName.Length == Prefix.Length + 5
-               && partitionDirectoryName.StartsWith(Prefix, StringComparison.Ordinal)
-               && int.TryParse(partitionDirectoryName[Prefix.Length..], out partitionId);
+        return partitionDirectoryName.Length == prefix.Length + 5
+               && partitionDirectoryName.StartsWith(prefix, StringComparison.Ordinal)
+               && int.TryParse(partitionDirectoryName[prefix.Length..], out partitionId);
     }
 }

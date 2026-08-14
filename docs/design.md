@@ -1,553 +1,127 @@
 # BufferQueue Design
 
+[English design index](README.md) | [Simplified Chinese design index](README.zh-CN.md)
+
+This legacy entry point remains available for existing links. The design material now lives in
+focused articles; the original section anchors below lead to the corresponding article.
+
 ## Purpose
 
-BufferQueue is a typed, topic-based buffering library for .NET. It provides a common queue model with pluggable storage implementations. The current codebase contains two storage modes:
-
-- Memory mode: stores items in in-process segmented memory.
-- MemoryMappedFile mode: stores serialized records in memory-mapped segment files and persists producer and committed consumer offsets.
-
-The packages multi-target .NET 8 and .NET 10. Benchmarks intentionally target .NET 10 only.
-
-Both modes share the same producer, pull-consumer, consumer-group, partition-assignment, batching, and wake-up semantics. The storage-specific behavior is isolated behind the internal partition abstraction.
-
-The implementations are separated at the project and package boundary:
-
-- `BufferQueue` contains the shared queue abstractions, Memory storage, and push-consumer integration.
-- `BufferQueue.MemoryMappedFile` contains the optional MemoryMappedFile storage implementation and depends on `BufferQueue`.
-
-The core `BufferQueue` project does not reference `BufferQueue.MemoryMappedFile`. The MMF project reuses the shared internal queue abstractions through friend-assembly access. This split does not change the public namespaces or the `.UseMemoryMappedFile(...)` registration call.
+See [Architecture and registrations](design/architecture.md).
 
 ## Public Model
 
-Choose how to access a producer based on when the topic is known:
-
-- If the topic is fixed when declaring the dependency, inject `IBufferProducer<T>` with
-  `[FromKeyedServices("topic-name")]`.
-- If the topic is selected at runtime, inject `IBufferQueue` and call `GetProducer<T>(topicName)`.
-
-```csharp
-public sealed class FooPublisher(
-    [FromKeyedServices("topic-foo")] IBufferProducer<Foo> producer)
-{
-    public ValueTask PublishAsync(Foo item) => producer.ProduceAsync(item);
-}
-
-var producer = bufferQueue.GetProducer<Foo>("topic-foo");
-var consumer = bufferQueue.CreatePullConsumer<Foo>(new BufferPullConsumerOptions
-{
-    TopicName = "topic-foo",
-    GroupName = "group-a",
-    AutoCommit = false,
-    BatchSize = 100
-});
-```
-
-The public API is intentionally small:
-
-- `IBufferProducer<T>` produces typed items to a topic.
-- `IBufferPullConsumer<T>` consumes batches from a topic.
-- `IBufferConsumerCommitter` commits manually consumed batches.
-- `BufferPullConsumerOptions` configures topic, group, auto-commit, and batch size.
-- `BufferOptionsBuilder` wires storage implementations into dependency injection.
-
-Internally, each registered topic is represented as `IBufferQueue<T>`. Its keyed `IBufferProducer<T>` registration
-forwards to the producer owned by that queue. The non-generic `BufferQueue` resolves the typed topic queue from the DI
-container by topic name.
+See [Architecture and registrations](design/architecture.md).
 
 ## High-Level Architecture
 
-```text
-Application
-    |
-    v
-IBufferQueue
-    |
-    v
-BufferQueue
-    |
-    v
-IBufferQueue<T> keyed by topic name
-    |
-    v
-BufferQueue<TItem>
-    |
-    +-- IBufferProducer<TItem>
-    +-- BufferPullConsumer<TItem>
-    +-- IBufferPartition<TItem>[]
-            |
-            +-- MemoryBufferPartition<TItem>
-            +-- MemoryMappedFileBufferPartition<TItem>
-```
-
-`BufferQueue<TItem>` is the shared abstract queue base for a single typed topic. It owns the common upper-level queue behavior:
-
-- validates consumer options;
-- prevents duplicate consumer groups in one queue instance;
-- creates `BufferPullConsumer<TItem>` instances;
-- distributes partitions across consumers in the same group;
-- exposes the topic producer.
-
-Concrete queue implementations only create their storage-specific partitions and producers:
-
-- `MemoryBufferQueue<T>` creates `MemoryBufferPartition<T>[]` and `MemoryBufferProducer<T>`.
-- `MemoryMappedFileBufferQueue<T>` creates `MemoryMappedFileBufferPartition<T>[]` and `MemoryMappedFileBufferProducer<T>`.
-
-Both producers use the shared `IPartitioner<TItem>`. Each topic registers its selected implementation as a
-keyed service. The shared implementations provide round-robin and partition-key routing, and both storage modes
-expose them through topic configuration.
+See [Architecture and registrations](design/architecture.md).
 
 ## Internal Partition Abstraction
 
-Storage implementations are connected through `IBufferPartition<TItem>`.
-
-```csharp
-internal interface IBufferPartition<TItem>
-{
-    int PartitionId { get; }
-
-    void RegisterConsumer(IBufferPartitionConsumer<TItem> consumer);
-
-    void Enqueue(TItem item);
-
-    bool TryPull(string groupName, int batchSize, out IEnumerable<TItem>? items);
-
-    void Commit(string groupName);
-}
-```
-
-The queue and consumer logic only depend on this abstraction. This keeps common behavior in one implementation while allowing partitions to use completely different storage strategies.
-
-`IBufferPartitionConsumer<TItem>` is the minimal notification contract used by partitions to wake consumers when new data is available.
+See [Architecture and registrations](design/architecture.md).
 
 ## Partitioning and Consumer Groups
 
-Each topic has one or more partitions. Producers use round-robin selection by default. Memory topics can call
-`MemoryBufferQueueOptions<T>.UsePartitionKey` with a key-selector delegate to route equal keys to the same
-partition. MemoryMappedFile topics support the same option. Selectors must be deterministic and safe for
-concurrent calls.
-
-Consumers are created per consumer group. A group may contain multiple consumers. Partitions are assigned evenly across the consumers in that group:
-
-- consumer count must be greater than zero;
-- consumer count cannot exceed partition count;
-- each group has an independent read position;
-- each group receives all messages for the topic, but partitions are load-balanced within that group.
-
-Example with 5 partitions and 2 consumers:
-
-```text
-consumer-0: partition-0, partition-1, partition-2
-consumer-1: partition-3, partition-4
-```
-
-Different groups are independent. If two groups consume the same topic, each group maintains its own progress.
+See [Partitioning and concurrency](design/partitioning-and-concurrency.md).
 
 ## Pull Consumer Design
 
-`BufferPullConsumer<TItem>` is the single common pull-consumer implementation. It is not storage-specific.
-
-It is responsible for:
-
-- keeping the assigned partition list;
-- selecting partitions in round-robin order;
-- pulling batches from partitions;
-- trying other assigned partitions when the selected partition has no data;
-- waiting asynchronously when no assigned partition has data;
-- committing manually consumed batches;
-- auto-committing when `AutoCommit` is enabled.
-
-Consumption returns an async stream of batches:
-
-```csharp
-await foreach (var batch in consumer.ConsumeAsync(cancellationToken))
-{
-    foreach (var item in batch)
-    {
-        // process item
-    }
-
-    await consumer.CommitAsync();
-}
-```
-
-When `AutoCommit` is false, the consumer read position does not advance until `CommitAsync` is called. This provides at-least-once semantics inside the current process. In memory-mapped-file mode, it also applies across process restarts for records that have reached a flush boundary; `CommitAsync` itself forces that boundary.
+See [Consumer model and delivery](design/consumer-model.md).
 
 ## Consumer Wake-Up Design
 
-Consumers should not spin when no data is available. The common consumer uses `PendingDataValueTaskSource<T>` to wait for new data.
-
-The flow is:
-
-1. Consumer attempts to pull from the selected partition.
-2. If no data is found, it attempts all other assigned partitions.
-3. If no assigned partition has data, it resets a pending-data value task source.
-4. A producer appends data to a partition.
-5. The partition notifies registered consumers through `IBufferPartitionConsumer<TItem>`.
-6. The consumer increments its pending-data version and completes the pending value task.
-7. The consumer resumes and attempts to pull from the partition that produced the notification.
-
-The pending-data version prevents a lost wake-up when data arrives between the last pull attempt and the transition into the waiting state.
+See [Consumer model and delivery](design/consumer-model.md).
 
 ## Memory Mode
 
-Memory mode is optimized for in-process buffering and batch consumption.
+See [Memory storage](design/memory.md).
 
 ### Storage Layout
 
-`MemoryBufferPartition<T>` stores data in a linked list of `MemoryBufferSegment<T>` instances. Each segment owns a fixed-size item array.
-
-```text
-head segment -> segment -> ... -> tail segment
-```
-
-Each record offset is represented by `MemoryBufferPartitionOffset`. Offsets are logical item positions, not byte positions.
+See [Memory storage](design/memory.md#storage-layout).
 
 ### Append
 
-`MemoryBufferProducer<T>` selects a partition in round-robin order unless partition-key routing is enabled. With
-partition-key routing, a numeric selector result must be a finite integer and maps through the normalized
-mathematical modulo of `(key - 1)` and `PartitionNumber`; zero and negative keys are accepted. A string selector
-folds only its first four UTF-16 characters into a partition
-index. Equal keys therefore retain their order within one partition, while different keys can collide on the same
-partition.
-
-The partition attempts to append to the current tail segment. If the tail segment is full, a new segment is created or an old fully consumed segment is recycled.
-
-For default round-robin routing, the memory producer and its partitions share one append lock, which serializes
-selection, bounded-capacity accounting, and append. Partition-key routing selects a partition before taking that
-partition's append lock, so concurrent producers can append to different partitions in parallel. Appends to one
-partition remain serialized. The selected partition then stores the item and publishes the new readable cursor with a
-release write. Consumers read the published range without taking an append lock.
-
-After enqueue succeeds, the partition notifies all registered consumers.
+See [Memory storage](design/memory.md#append-path).
 
 ### Read and Commit
 
-Each consumer group has a partition reader. The reader keeps:
-
-- current segment;
-- current read position;
-- last read count.
-
-`TryPull` reads up to `BatchSize` items. The reader's committed read position is moved only by `Commit`.
+See [Memory storage](design/memory.md#read-and-commit).
 
 ### Segment Recycling
 
-Memory mode can recycle old segments. A segment can be recycled only after all consumer groups have consumed past the segment end. This prevents a slow group from losing data that it has not consumed yet.
+See [Memory storage](design/memory.md#segment-recycling).
 
 ### Capacity
 
-Memory mode supports optional bounded capacity through `MemoryBufferQueueOptions.BoundedCapacity`.
-
-When bounded capacity is configured:
-
-- `ProduceAsync` throws `MemoryBufferQueueFullException` if the queue is full;
-- `TryProduceAsync` returns `false` if the queue is full.
+See [Memory storage](design/memory.md#bounded-capacity).
 
 ## MemoryMappedFile Mode
 
-MemoryMappedFile mode persists produced data in memory-mapped segment files. It also persists the producer offset and committed consumer offsets. It is designed for local durable buffering with simple recovery. The configured flush strategy determines when newly appended records reach an explicit durability boundary.
-
-`MemoryMappedFileBufferQueueOptions<T>.SegmentSizeInBytes` configures the segment size in bytes and defaults to `256L * 1024 * 1024` (256 MiB).
-
-`MaxRetainedConsumedSegments` controls per-partition deletion of fully consumed segments. It defaults to `null`, which disables deletion. `0` retains no reclaimable consumed segments, while a positive value retains that many of the newest consumed segments.
+See [MemoryMappedFile storage](design/memory-mapped-file.md).
 
 ### Directory Layout
 
-For each topic and partition, data is stored under:
-
-```text
-{DataDirectory}/{TopicName}/partition-{PartitionId:D5}/
-```
-
-Data segment files are named by segment index:
-
-```text
-00000000000000000000.log
-00000000000000000001.log
-...
-```
-
-Consumer offsets are stored under:
-
-```text
-{DataDirectory}/{TopicName}/partition-{PartitionId:D5}/offsets/
-```
-
-Each consumer group has one readable directory under `offsets`. The directory name is `{escaped-group-name}`. The group name is used directly when it is a valid folder name. Only characters that are not safe in a single path component, such as `/`, are percent-encoded. The percent sign itself is also encoded to avoid collisions with escaped names.
-
-```text
-{DataDirectory}/{TopicName}/partition-{PartitionId:D5}/offsets/{escaped-group-name}/consumer.offset
-```
-
-For example, topic `orders`, partition `0`, and group `billing-worker-1` use:
-
-```text
-bufferqueue/orders/partition-00000/offsets/billing-worker-1/consumer.offset
-```
-
-If the group name is `orders/worker 1`, the slash is encoded and the space remains visible:
-
-```text
-bufferqueue/orders/partition-00000/offsets/orders%2Fworker 1/consumer.offset
-```
-
-The partition producer offset is stored in:
-
-```text
-{DataDirectory}/{TopicName}/partition-{PartitionId:D5}/producer.offset
-```
-
-For example:
-
-```text
-bufferqueue/orders/partition-00000/producer.offset
-```
-
-The earliest retained segment boundary is stored in:
-
-```text
-{DataDirectory}/{TopicName}/partition-{PartitionId:D5}/earliest.offset
-```
-
-`earliest.offset`, `producer.offset`, and consumer offset files all contain one 8-byte little-endian integer.
+See [MemoryMappedFile storage](design/memory-mapped-file.md#directory-layout).
 
 ### Record Format
 
-Each data record is stored as:
-
-```text
-4 bytes  payload length, little-endian int32
-N bytes  payload
-1 byte   record end marker
-```
-
-The record end marker is used to detect incomplete or corrupted records during reads and recovery.
-
-If the remaining space in the current segment cannot hold the next record, the partition writes a segment-end marker when at least four bytes remain, then continues in the next segment. With fewer than four bytes remaining, the unused tail itself is treated as segment padding. The segment-end marker is represented by an int32 length value of `-1`.
+See [MemoryMappedFile storage](design/memory-mapped-file.md#record-format).
 
 ### Serialization
 
-`MemoryMappedFileBufferQueueOptions<T>` exposes one pluggable serialization property:
-
-- `Serializer: IMemoryMappedFileSerializer<T>`
-
-`IMemoryMappedFileSerializer<T>` keeps both operations in one contract: `Serialize(T)` returns `byte[]`, and `Deserialize(ReadOnlyMemory<byte>)` returns `T`.
-
-The available implementations are:
-
-- an internal `System.Text.Json` implementation used by default;
-- `MessagePackMemoryMappedFileSerializer<T>`, backed by MessagePack for C#. Its parameterless constructor uses `MessagePackSerializerOptions.Standard`, and another constructor accepts explicit MessagePack options. Custom resolvers and formatters must be safe for concurrent use;
-- `UnmanagedMemoryMappedFileSerializer<T>`, which requires `T : unmanaged` and copies the value's native in-memory representation. Deserialization requires the payload length to exactly match `Unsafe.SizeOf<T>()`.
-
-With standard MessagePack options, custom types should use `[MessagePackObject]` and stable numeric `[Key]` values. The application project should reference MessagePack directly because the `BufferQueue.MemoryMappedFile` package's transitive runtime dependency on MessagePack does not provide its analyzer and source generator. Contractless serialization can be enabled through custom options, but it puts member names in the persisted format and is not the preferred MMF schema. Resolver, key, compression, and security choices are part of the persisted format; removed numeric keys must not be reused.
-
-The unmanaged serializer removes format encoding and decoding but is not zero-copy because the serializer contract and partition currently materialize payload byte arrays. Its native endianness, padding, field order, packing, runtime, and process architecture are part of the wire format. `[StructLayout]` is optional, but explicitly fixing a sequential or explicit layout and packing is recommended. Pointer-sized and process-specific fields should not be persisted.
-
-The serializer and its wire schema are part of the persisted topic format. They must remain compatible with existing records across queue restarts and application upgrades.
-
-The configured serializer instance is shared by all topic partitions and can be invoked concurrently. Implementations must be thread-safe, and neither operation may return `null`.
+See [MemoryMappedFile storage](design/memory-mapped-file.md#serialization-and-schema-compatibility).
 
 ### Flush Strategies
 
-`MemoryMappedFileBufferQueueOptions<T>` exposes two flush strategies:
-
-- `MemoryMappedFileFlushStrategy.Immediate` is the default and explicitly flushes after every record;
-- `MemoryMappedFileFlushStrategy.Batch` explicitly flushes after `FlushBatchSize` records have been appended to a partition. `FlushBatchSize` defaults to `100`.
-
-A segment rollover and a consumer commit are unconditional flush boundaries in both strategies. Batch mode therefore may flush before `FlushBatchSize` is reached. If a partial tail batch receives no subsequent production and there is no segment rollover or consumer commit, it is not guaranteed to have been explicitly flushed.
+See [MemoryMappedFile storage](design/memory-mapped-file.md#flush-boundaries-and-append).
 
 ### Append
 
-`MemoryMappedFileBufferProducer<T>` uses the shared partitioner. It selects partitions in round-robin order by
-default or by the configured key selector. The selector and `PartitionNumber` must remain stable across restarts to
-preserve per-key partition ordering. Numeric and string routing are deterministic; string routing does not use
-`string.GetHashCode()`. The partition serializes the item, calculates the record size, finds the active segment,
-writes the record, advances the in-process write offset, applies the configured flush strategy, and notifies consumers.
-
-At every flush boundary, the partition flushes the memory-mapped accessor first and writes the corresponding offset to `producer.offset` only after that flush succeeds. A segment rollover flushes the completed segment before writing to the next segment. A consumer commit also flushes pending log data and advances `producer.offset` before its consumer offset is persisted.
-
-If a serialized item is larger than the segment size, production fails with `InvalidOperationException`.
+See [MemoryMappedFile storage](design/memory-mapped-file.md#flush-boundaries-and-append).
 
 ### Recovery
 
-When a memory-mapped-file partition starts, it reads `earliest.offset`, defaulting to `0` when the file is absent, and then attempts to read `producer.offset`. If the producer checkpoint is missing, startup scans from the earliest retained offset. If the stored producer offset is valid and points to a real record boundary at or after the earliest retained offset, startup scans forward from that position to find the last valid write offset.
-
-The scan stops when it finds:
-
-- an empty length;
-- a non-positive length other than the segment-end marker;
-- a record that would cross the segment boundary;
-- a missing record end marker.
-
-This keeps normal startup fast while still tolerating expected crash windows:
-
-- data was flushed, but `producer.offset` was not updated yet;
-- the operating system persisted complete records from a pending batch before its explicit flush;
-- trailing data was only partially written.
-
-In these cases, the startup scan finds the last valid record boundary. Because `producer.offset` is advanced only after the corresponding log flush succeeds, recovery can use it as a safe checkpoint and scan forward for additional complete records. In `Batch` mode, records in a partial tail batch that was not explicitly flushed may be absent after an abnormal termination. Clearly inconsistent checkpoint state is still treated as corruption and fails fast. `earliest.offset` must be segment-aligned and no greater than the producer offset. Retained segment files must be contiguous. Invalid offsets, missing retained segments, incorrectly sized segment files, and non-record-boundary checkpoints throw instead of creating replacement files or silently falling back.
+See [MemoryMappedFile storage](design/memory-mapped-file.md#recovery).
 
 ### Offset Persistence
 
-MemoryMappedFile mode persists committed offsets per partition and consumer group.
-
-On `Commit`, the partition first forces pending log data to be flushed and advances `producer.offset`. It then writes the committed offset as an 8-byte little-endian integer to the group's `consumer.offset` checkpoint file. This ordering prevents a persisted consumer offset from advancing beyond successfully flushed log data. The checkpoint write uses a temporary file followed by replace or move, so readers do not observe a partially written offset file.
-
-When a consumer group is assigned partitions, each partition creates its initial offset checkpoint at the earliest retained offset if the group has no checkpoint yet. This makes the group participate in retention before its first pull. On reader creation:
-
-- if the offset file exists and contains a valid offset, reading starts from that offset;
-- if the offset file is new, reading starts from the earliest retained offset;
-- if the offset file has an invalid length or contains a negative offset, reading fails with `InvalidDataException`;
-- if the stored offset is before the earliest retained offset, beyond the current write offset, or not on a record boundary, the reader throws instead of silently resetting progress.
-
-The initial offset and subsequent committed offsets are persisted. If a consumer reads a batch but does not commit, its checkpoint does not advance and the next queue instance reads that batch again.
+See [MemoryMappedFile storage](design/memory-mapped-file.md#consumer-checkpoints).
 
 ### Segment Retention
 
-A segment is reclaimable only when every known consumer group has committed past its end. The partition computes the minimum committed offset across all persisted group checkpoints, including groups that are not active in the current process. Offsets are normalized across segment-end markers and padding without skipping records. No segment is deleted when there are no known groups.
-
-For a retention value `N`, the partition keeps the newest `N` reclaimable segments and all segments at or after the first segment that has not been fully consumed by every group. Slow, uncommitted, offline, and obsolete group checkpoints therefore block reclamation. Removing an obsolete group is an explicit administrative action: stop the queue and delete the entire `offsets/{escaped-group-name}/` directory for every partition, not only its `consumer.offset` file.
-
-Deletion runs after a successful consumer commit and during startup to retry incomplete cleanup. The durable order is:
-
-1. flush log data and advance `producer.offset`;
-2. persist the consumer offset;
-3. atomically advance `earliest.offset` to the new segment boundary;
-4. dispose mapped views for older segments and delete their files.
-
-If the process stops after step 3, old files may remain but are outside the logical retained range and are removed during a later startup or commit. If an individual segment file cannot be deleted after `earliest.offset` advances, the commit remains persisted and the operation throws an `IOException` that explicitly reports cleanup can be retried.
+See [MemoryMappedFile storage](design/memory-mapped-file.md#segment-retention).
 
 ### Producer Offset Persistence
 
-At a flush boundary, the partition flushes the memory-mapped file accessor and then writes the latest successfully flushed producer offset to `producer.offset` as an 8-byte little-endian integer. `Immediate` creates this boundary for every record. `Batch` creates it when `FlushBatchSize` records have accumulated, and segment rollover or consumer commit creates it regardless of the pending count.
-
-The producer offset write uses the same temporary-file plus replace or move pattern as consumer offsets. This prevents a valid offset file from being replaced by a partially written file.
-
-The producer offset is an optimization and recovery hint, not the only source of truth. In `Batch` mode it may lag the current in-process write offset while a partial batch is pending. On startup, the partition still validates records from the stored producer offset forward. If the persisted producer offset is behind complete records in the data files, the scan catches up. If the producer offset file is missing, the partition scans from the earliest retained offset. If the producer offset file is present but inconsistent with the log, recovery fails fast.
+See [MemoryMappedFile storage](design/memory-mapped-file.md#producer-checkpoint).
 
 ## Push Consumer Mode
 
-Push consumer mode is built on top of pull consumers. The host service discovers push consumers by attribute, creates the corresponding pull consumers, and invokes the push consumer implementation with batches.
-
-Auto-commit push consumers advance progress after a successful pull and before the push consumer processes the batch. A handler failure therefore does not make that batch eligible for replay. Manual-commit push consumers receive an `IBufferConsumerCommitter` and decide when to commit; an uncommitted batch may be delivered again.
-
-The configured `ServiceLifetime` controls push consumer resolution. A `Singleton` consumer is resolved from the root provider and reused across batches and concurrent consumer loops, so it must be thread-safe. `Scoped` and `Transient` consumers are resolved in a new asynchronous DI scope for every delivered batch. That scope and all captured services are asynchronously disposed after the handler completes or throws, and scoped dependencies must not escape the handler call.
+See [Consumer model and delivery](design/consumer-model.md).
 
 ## Dependency Injection
 
-The library registers a single public `IBufferQueue` service. Each topic is registered under its topic name as keyed
-`IBufferQueue<T>` and `IBufferProducer<T>` services. Use keyed `IBufferProducer<T>` injection for a fixed topic; use
-`IBufferQueue.GetProducer<T>(topicName)` when the topic is selected at runtime.
-
-Memory mode:
-
-```csharp
-services.AddBufferQueue(builder =>
-{
-    builder.UseMemory(memory =>
-    {
-        memory.AddTopic<Foo>(options =>
-        {
-            options.TopicName = "topic-foo";
-            options.PartitionNumber = 4;
-            options.SegmentSize = 1024;
-            options.UsePartitionKey(foo => foo.Id);
-        });
-    });
-});
-```
-
-MemoryMappedFile mode:
-
-The application must reference the `BufferQueue.MemoryMappedFile` project or package. Its dependency on the core `BufferQueue` package is transitive, and the public namespace and registration API remain unchanged.
-
-MemoryMappedFile topic queues are created and owned by the dependency injection container. Disposing the service provider closes every partition view and memory-mapped-file handle. Disposal releases resources but is not an explicit flush boundary and does not advance `producer.offset` for a pending batch.
-
-```csharp
-services.AddBufferQueue(builder =>
-{
-    builder.UseMemoryMappedFile(memoryMappedFile =>
-    {
-        memoryMappedFile.AddTopic<Foo>(options =>
-        {
-            options.TopicName = "topic-foo";
-            options.PartitionNumber = 4;
-            options.SegmentSizeInBytes = 64L * 1024 * 1024;
-            options.MaxRetainedConsumedSegments = 2;
-            options.DataDirectory = "/var/lib/bufferqueue";
-            options.FlushStrategy = MemoryMappedFileFlushStrategy.Batch;
-            options.FlushBatchSize = 100;
-            options.UsePartitionKey(foo => foo.Id);
-        });
-    });
-});
-```
-
-Different topics may use different storage modes as long as they are registered under distinct topic names.
+See [Architecture and registrations](design/architecture.md).
 
 ## Concurrency Model
 
-The implementation is designed for concurrent production and consumption within one process.
-
-Important concurrency points:
-
-- Producers choose partitions with round-robin counters by default; either storage mode can instead use its
-  configured partition-key selector. Selectors must be safe for concurrent calls.
-- For default round-robin routing, a memory queue uses one lock for selection, bounded-capacity accounting, and
-  append. Partition-key routing uses one append lock per partition, allowing writes to different partitions to run in
-  parallel.
-- A memory partition publishes its segment cursor only after the corresponding item has been stored, so consumers
-  never observe an unwritten slot and do not need to take the append lock.
-- Consumer group creation is guarded by a queue-level lock.
-- Consumer wait and wake-up state is protected by `ReaderWriterLockSlim`.
-- MemoryMappedFile producer and consumer offset writes use replace/move semantics to avoid partial offset files.
-
-The current design does not provide cross-process coordination for multiple writers to the same memory-mapped-file topic directory. MemoryMappedFile mode should be treated as a local persistence mechanism for one active queue instance unless external coordination is added.
+See [Partitioning and concurrency](design/partitioning-and-concurrency.md).
 
 ## Delivery Semantics
 
-The queue provides at-least-once behavior with manual commit:
-
-- A batch can be delivered again if it was read but not committed.
-- Auto-commit advances progress immediately after a successful pull.
-- Manual commit advances progress after user code calls `CommitAsync`.
-
-Memory mode keeps offsets in process memory. MemoryMappedFile mode persists the producer offset and committed consumer offsets to disk. A consumer commit first forces pending log data to its flush boundary. In `Batch` mode, an uncommitted partial tail batch is not guaranteed to survive an abnormal termination.
+See [Consumer model and delivery](design/consumer-model.md).
 
 ## Extension Points
 
-The main extension point is `IBufferPartition<TItem>`. A new storage implementation should provide:
-
-- a partition type implementing `IBufferPartition<TItem>`;
-- a producer that selects partitions and calls `Enqueue`;
-- a queue type inheriting `BufferQueue<TItem>` and passing partitions plus producer to the base constructor;
-- options and DI builder extensions.
-
-The common queue and consumer behavior should not be duplicated in storage implementations.
+See [Architecture and registrations](design/architecture.md).
 
 ## Known Limitations
 
-- Obsolete MemoryMappedFile consumer group checkpoints block segment reclamation until their complete group directories are removed while the queue is stopped.
-- MemoryMappedFile mode does not implement bounded capacity.
-- MemoryMappedFile mode does not coordinate multiple processes writing to the same topic directory.
-- Memory mode does not persist data or offsets.
-- Consumer groups are unique per queue instance; creating the same group twice in the same queue instance is rejected.
+See [MemoryMappedFile storage](design/memory-mapped-file.md) and
+[Memory storage](design/memory.md).
 
 ## Testing Strategy
 
-Tests follow the production project boundary: `BufferQueue.Tests` covers the core and Memory implementation, while `BufferQueue.MemoryMappedFile.Tests` covers the optional MMF assembly.
-
-The test suite covers:
-
-- memory queue production and consumption;
-- manual and automatic commit behavior;
-- consumer wait and wake-up behavior;
-- multi-partition and multi-consumer partition assignment;
-- memory segment behavior and recycling;
-- DI registration;
-- memory-mapped-file production and consumption;
-- memory-mapped-file offset persistence and uncommitted replay.
-
-These tests ensure both storage modes share the same visible queue semantics while retaining storage-specific behavior behind the partition abstraction.
+See [Architecture and registrations](design/architecture.md).

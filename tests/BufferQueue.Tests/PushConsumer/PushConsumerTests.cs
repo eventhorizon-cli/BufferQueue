@@ -107,11 +107,7 @@ public class PushConsumerTests
             IBufferConsumerCommitter committer,
             CancellationToken cancellationToken)
         {
-            var valueTask = committer.CommitAsync();
-            if (!valueTask.IsCompletedSuccessfully)
-            {
-                await valueTask.AsTask();
-            }
+            await committer.CommitAsync();
 
             _foo2CountdownEvent.Signal(buffer.Count());
         }

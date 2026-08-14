@@ -1,6 +1,5 @@
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using BufferQueue.MemoryMappedFile;
 
 namespace BufferQueue.MemoryMappedFile.Tests.Serializers;
 

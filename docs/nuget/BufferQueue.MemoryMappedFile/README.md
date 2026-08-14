@@ -1,5 +1,7 @@
 # BufferQueue.MemoryMappedFile
 
+English | [简体中文](README.zh-CN.md)
+
 BufferQueue.MemoryMappedFile is the optional local durable storage provider for
 BufferQueue. It stores serialized records in per-partition memory-mapped segment
 files and persists producer checkpoints and committed consumer offsets.
@@ -74,6 +76,12 @@ Keep the selector and `PartitionNumber` unchanged while existing records must
 preserve per-key order. Numeric and string routing are deterministic across
 process restarts; string routing does not use `string.GetHashCode()`.
 
+Batch production applies this routing to every item. A round-robin batch is not
+one partition assignment: selection advances once per item. A key-routed batch
+runs its selector for every item and preserves equal-key input order in the
+selected partition. Ordering remains per partition rather than global across
+the batch.
+
 ## Produce
 
 Inject a keyed producer when the topic is fixed at the dependency boundary:
@@ -92,6 +100,31 @@ public sealed class OrderEventWriter(
 
 For a topic selected at runtime, inject `IBufferQueue` and call
 `GetProducer<T>(topicName)`.
+
+`IBufferProducer<T>` directly exposes `TryProduceAsync` for a single item and
+for `ReadOnlyMemory<T>`. `BufferProducerExtensions` provides the same-name
+`ProduceAsync` forms plus the `IEnumerable<T>` convenience overloads:
+
+~~~csharp
+ReadOnlyMemory<OrderEvent> bufferedEvents = pendingEvents.AsMemory();
+
+await producer.ProduceAsync(bufferedEvents);
+var accepted = await producer.TryProduceAsync(bufferedEvents);
+
+IEnumerable<OrderEvent> eventsFromAnEnumerable = GetPendingEvents();
+await producer.ProduceAsync(eventsFromAnEnumerable);
+~~~
+
+Use `ReadOnlyMemory<T>` when the source is already contiguous or can be exposed
+as memory. It is the allocation-conscious core form because it avoids the input
+materialization required by a non-array `IEnumerable<T>`. The `IEnumerable<T>` form is
+convenient but materializes a non-array input before batch submission. `ProduceAsync`
+is an extension that converts a rejected try into the normal full-queue exception.
+
+MMF processes every batch item as a normal record: it selects the partition,
+serializes the item, writes its record, and applies the configured flush
+strategy. A batch is not a combined record, a single-partition group, or a
+batch-level flush unit.
 
 ## Pull consumers
 
@@ -374,5 +407,5 @@ directory from every partition.
 - [Core BufferQueue package](https://www.nuget.org/packages/BufferQueue/)
 - [Repository and documentation](https://github.com/eventhorizon-cli/BufferQueue)
 - [Chinese documentation](https://github.com/eventhorizon-cli/BufferQueue/blob/main/README.zh-CN.md)
-- [MemoryMappedFile design](https://github.com/eventhorizon-cli/BufferQueue/blob/main/docs/design.md#memorymappedfile-mode)
+- [MemoryMappedFile design](https://github.com/eventhorizon-cli/BufferQueue/blob/main/docs/design/memory-mapped-file.md)
 - [Issues](https://github.com/eventhorizon-cli/BufferQueue/issues)

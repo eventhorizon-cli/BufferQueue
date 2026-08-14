@@ -24,8 +24,8 @@ public class MemoryBufferQueueOptions
     /// The maximum capacity of the bounded memory buffer queue. Default is null, which means unbounded.
     /// </summary>
     /// <remarks>
-    /// If set, <see cref="IBufferProducer{T}.ProduceAsync(T)"/> will throw a <see cref="MemoryBufferQueueFullException"/>
-    /// when the queue is full, and
+    /// If set, the non-try producer extension will throw a <see cref="BufferQueueFullException"/> when the queue
+    /// is full, and
     /// <see cref="IBufferProducer{T}.TryProduceAsync(T)"/> will return false when the queue is full.
     /// </remarks>
     public ulong? BoundedCapacity { get; set; }

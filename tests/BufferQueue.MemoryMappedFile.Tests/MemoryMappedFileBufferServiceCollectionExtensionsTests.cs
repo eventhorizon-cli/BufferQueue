@@ -1,4 +1,3 @@
-using BufferQueue.MemoryMappedFile;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace BufferQueue.MemoryMappedFile.Tests;

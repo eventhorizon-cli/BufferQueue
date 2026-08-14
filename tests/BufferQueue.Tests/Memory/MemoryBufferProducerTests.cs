@@ -6,6 +6,133 @@ namespace BufferQueue.Tests.Memory;
 public class MemoryBufferProducerTests
 {
     [Fact]
+    public async Task ProduceAsync_ReadOnlyMemory_Batch_Appends_All_Items_In_Order()
+    {
+        var partition = new MemoryBufferPartition<int>(0, 8);
+        IBufferProducer<int> producer = new MemoryBufferProducer<int>(
+            new MemoryBufferQueueOptions
+            {
+                TopicName = "test"
+            },
+            [partition]);
+        var expectedItems = new[] { 1, 2, 3, 4 };
+
+        await producer.ProduceAsync(expectedItems.AsMemory());
+
+        Assert.True(partition.TryPull("TestGroup", expectedItems.Length, out var items));
+        Assert.Equal(expectedItems, items);
+    }
+
+    [Fact]
+    public async Task ProduceAsync_IEnumerable_Batch_Appends_All_Items_In_Order()
+    {
+        var partition = new MemoryBufferPartition<int>(0, 8);
+        IBufferProducer<int> producer = new MemoryBufferProducer<int>(
+            new MemoryBufferQueueOptions
+            {
+                TopicName = "test"
+            },
+            [partition]);
+        var expectedItems = Enumerable.Range(1, 4);
+
+        await producer.ProduceAsync(expectedItems);
+
+        Assert.True(partition.TryPull("TestGroup", 4, out var items));
+        Assert.Equal(expectedItems, items);
+    }
+
+    [Fact]
+    public async Task ProduceAsync_Batch_RoundRobin_Routes_Each_Item_To_The_Next_Partition()
+    {
+        var appendLock = new object();
+        var partitions = Enumerable.Range(0, 4)
+            .Select(index => new MemoryBufferPartition<int>(index, 8, appendLock))
+            .ToArray();
+        IBufferProducer<int> producer = new MemoryBufferProducer<int>(
+            new MemoryBufferQueueOptions
+            {
+                TopicName = "test",
+                PartitionNumber = partitions.Length
+            },
+            partitions);
+
+        await producer.ProduceAsync(new[] { 1, 2, 3, 4, 5 }.AsMemory());
+
+        AssertPartitionItems(partitions[0], 1, 5);
+        AssertPartitionItems(partitions[1], 2);
+        AssertPartitionItems(partitions[2], 3);
+        AssertPartitionItems(partitions[3], 4);
+    }
+
+    [Fact]
+    public async Task TryProduceAsync_Batch_WithoutEnoughBoundedCapacity_DoesNotAppend_A_PartialBatch()
+    {
+        var partition = new MemoryBufferPartition<int>(0, 8);
+        IBufferProducer<int> producer = new MemoryBufferProducer<int>(
+            new MemoryBufferQueueOptions
+            {
+                TopicName = "test",
+                BoundedCapacity = 2
+            },
+            [partition]);
+        var items = new[] { 1, 2, 3 };
+
+        var result = await producer.TryProduceAsync(items.AsMemory());
+
+        Assert.False(result);
+        Assert.Equal(0UL, partition.Count);
+    }
+
+    [Fact]
+    public async Task ProduceAsync_Batch_WithoutEnoughBoundedCapacity_Throws_WithoutAppending_A_PartialBatch()
+    {
+        var partition = new MemoryBufferPartition<int>(0, 8);
+        IBufferProducer<int> producer = new MemoryBufferProducer<int>(
+            new MemoryBufferQueueOptions
+            {
+                TopicName = "test",
+                BoundedCapacity = 2
+            },
+            [partition]);
+        var items = new[] { 1, 2, 3 };
+
+        await Assert.ThrowsAsync<BufferQueueFullException>(async () =>
+            await producer.ProduceAsync(items.AsMemory()));
+
+        Assert.Equal(0UL, partition.Count);
+    }
+
+    [Fact]
+    public async Task ProduceAsync_Batch_PartitionKey_Retains_PerKey_Order()
+    {
+        var options = new MemoryBufferQueueOptions<KeyedItem>
+        {
+            TopicName = "test",
+            PartitionNumber = 4
+        };
+        options.UsePartitionKey(item => item.Key);
+        var partitions = Enumerable.Range(0, options.PartitionNumber)
+            .Select(index => new MemoryBufferPartition<KeyedItem>(index, 8))
+            .ToArray();
+        IBufferProducer<KeyedItem> producer = new MemoryBufferProducer<KeyedItem>(options, partitions);
+        var items = new[]
+        {
+            new KeyedItem(1, "one-1"),
+            new KeyedItem(2, "two-1"),
+            new KeyedItem(1, "one-2"),
+            new KeyedItem(4, "four-1"),
+            new KeyedItem(2, "two-2")
+        };
+
+        await producer.ProduceAsync(items.AsMemory());
+
+        AssertPartitionItems(partitions[0], new KeyedItem(1, "one-1"), new KeyedItem(1, "one-2"));
+        AssertPartitionItems(partitions[1], new KeyedItem(2, "two-1"), new KeyedItem(2, "two-2"));
+        Assert.Equal(0UL, partitions[2].Count);
+        AssertPartitionItems(partitions[3], new KeyedItem(4, "four-1"));
+    }
+
+    [Fact]
     public async Task Partition_Key_Selector_Routes_Equal_Keys_To_The_Same_Partition()
     {
         var options = new MemoryBufferQueueOptions<KeyedItem>
@@ -366,9 +493,9 @@ public class MemoryBufferProducerTests
         Assert.Equal(3UL, partition.Count);
     }
 
-    private static void AssertPartitionItems(
-        MemoryBufferPartition<KeyedItem> partition,
-        params KeyedItem[] expectedItems)
+    private static void AssertPartitionItems<T>(
+        MemoryBufferPartition<T> partition,
+        params T[] expectedItems)
     {
         Assert.True(partition.TryPull($"TestGroup-{partition.PartitionId}", 16, out var items));
         Assert.Equal(expectedItems, items);

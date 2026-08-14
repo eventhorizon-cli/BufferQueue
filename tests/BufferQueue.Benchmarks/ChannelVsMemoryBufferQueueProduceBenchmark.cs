@@ -72,8 +72,30 @@ public class ChannelVsMemoryBufferQueueProduceBenchmark
                 var valueTask = producer.ProduceAsync(item);
                 if (!valueTask.IsCompletedSuccessfully)
                 {
-                    await valueTask.AsTask();
+                    await valueTask;
                 }
+            }
+        })).ToArray();
+
+        await Task.WhenAll(tasks);
+    }
+
+    [Benchmark]
+    public async Task MemoryBufferQueue_Produce_ReadOnlyMemoryBatch_Concurrent()
+    {
+        var queue = new MemoryBufferQueue<int>(new MemoryBufferQueueOptions
+        {
+            TopicName = "test",
+            PartitionNumber = Environment.ProcessorCount,
+            BoundedCapacity = Mode == CapacityMode.Bounded ? (ulong)MessageSize : null,
+        });
+        var producer = queue.GetProducer();
+        var tasks = _chunks.Select(chunk => Task.Run(async () =>
+        {
+            var valueTask = producer.ProduceAsync(chunk.AsMemory());
+            if (!valueTask.IsCompletedSuccessfully)
+            {
+                await valueTask;
             }
         })).ToArray();
 

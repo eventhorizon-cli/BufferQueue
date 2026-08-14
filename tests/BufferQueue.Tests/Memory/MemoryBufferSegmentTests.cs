@@ -4,7 +4,7 @@ namespace BufferQueue.Tests.Memory;
 
 public class MemoryBufferSegmentTests
 {
-    private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan _timeout = TimeSpan.FromSeconds(10);
 
     [Fact]
     public void TryEnqueueSingleWriter_Publishes_Stored_Items()
@@ -52,7 +52,7 @@ public class MemoryBufferSegmentTests
         const int producerCount = 8;
         var partition = new MemoryBufferPartition<int>(0, 4);
         var consumedItems = new List<int>(itemCount);
-        using var cancellationTokenSource = new CancellationTokenSource(Timeout);
+        using var cancellationTokenSource = new CancellationTokenSource(_timeout);
 
         var consumer = Task.Run(async () =>
         {
@@ -81,8 +81,8 @@ public class MemoryBufferSegmentTests
             }))
             .ToArray();
 
-        await Task.WhenAll(producers).WaitAsync(Timeout);
-        await consumer.WaitAsync(Timeout);
+        await Task.WhenAll(producers).WaitAsync(_timeout);
+        await consumer.WaitAsync(_timeout);
 
         Assert.Equal(itemCount, consumedItems.Count);
         Assert.Equal(Enumerable.Range(1, itemCount), consumedItems.Order());

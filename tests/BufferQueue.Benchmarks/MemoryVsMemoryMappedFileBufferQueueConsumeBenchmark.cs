@@ -111,7 +111,7 @@ public class MemoryVsMemoryMappedFileBufferQueueConsumeBenchmark
     {
         foreach (var message in _messages)
         {
-            producer.ProduceAsync(message);
+            producer.ProduceAsync(message).GetAwaiter().GetResult();
         }
     }
 

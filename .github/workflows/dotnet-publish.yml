@@ -1,56 +1,153 @@
-name: Publish NuGet Package
+name: Publish NuGet Packages
 
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nuget-publish
+  cancel-in-progress: false
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: "true"
+  DOTNET_NOLOGO: "true"
+  NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
+  NUGET_SOURCE: https://api.nuget.org/v3/index.json
+  CORE_PROJECT: src/BufferQueue/BufferQueue.csproj
+  MMF_PROJECT: src/BufferQueue.MemoryMappedFile/BufferQueue.MemoryMappedFile.csproj
+  PACKAGE_AUTHORS: Event Horizon
+  REPOSITORY_URL: https://github.com/eventhorizon-cli/BufferQueue
+  REPOSITORY_TYPE: git
+  PACKAGE_LICENSE_URL: https://raw.githubusercontent.com/eventhorizon-cli/BufferQueue/main/LICENSE
 
 jobs:
-  dotnet-publish:
+  publish:
+    name: Test, pack, and publish NuGet packages
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v7
 
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+      - name: Setup .NET SDKs
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: |
             8.0.x
             10.0.x
 
-      - name: Get version without 'v'
-        id: get_version
-        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_ENV
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.NUGET_PACKAGES }}
+          key: ${{ runner.os }}-nuget-${{ hashFiles('BufferQueue.slnx', '**/*.csproj', 'NuGet.config') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
 
-      - name: Restore dependencies
+      - name: Resolve package version
+        id: version
+        shell: bash
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          version="${TAG_NAME#v}"
+          semver_pattern='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-((0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*))?$'
+
+          if [[ "$version" == "$TAG_NAME" || ! "$version" =~ $semver_pattern ]]; then
+            echo "::error title=Invalid release tag::Expected v<semver>, received '$TAG_NAME'."
+            exit 1
+          fi
+
+          echo "value=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Restore
         run: dotnet restore BufferQueue.slnx
 
       - name: Build
-        run: dotnet build BufferQueue.slnx --configuration Release --no-restore
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+        run: >-
+          dotnet build BufferQueue.slnx
+          --configuration Release
+          --no-restore
+          -p:Version="$VERSION"
+          -p:ContinuousIntegrationBuild=true
+
+      - name: Test
+        run: >-
+          dotnet test BufferQueue.slnx
+          --configuration Release
+          --no-build
+          --no-restore
 
       - name: Pack BufferQueue
-        run: |
-          dotnet pack src/BufferQueue --configuration Release --no-build --output ./output \
-            /p:PackageVersion=${{ env.VERSION }} \
-            /p:Authors="Event Horizon" \
-            /p:RepositoryUrl="https://github.com/eventhorizon-cli/BufferQueue" \
-            /p:RepositoryType=git \
-            /p:PackageLicenseUrl=https://raw.githubusercontent.com/eventhorizon-cli/BufferQueue/main/LICENSE
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+        run: >-
+          dotnet pack "$CORE_PROJECT"
+          --configuration Release
+          --no-build
+          --no-restore
+          --output artifacts/packages
+          -p:PackageVersion="$VERSION"
+          -p:Authors="$PACKAGE_AUTHORS"
+          -p:RepositoryUrl="$REPOSITORY_URL"
+          -p:RepositoryType="$REPOSITORY_TYPE"
+          -p:PackageLicenseUrl="$PACKAGE_LICENSE_URL"
+          -p:ContinuousIntegrationBuild=true
 
       - name: Pack BufferQueue.MemoryMappedFile
-        run: |
-          dotnet pack src/BufferQueue.MemoryMappedFile --configuration Release --no-build --output ./output \
-            /p:PackageVersion=${{ env.VERSION }} \
-            /p:Authors="Event Horizon" \
-            /p:RepositoryUrl="https://github.com/eventhorizon-cli/BufferQueue" \
-            /p:RepositoryType=git \
-            /p:PackageLicenseUrl=https://raw.githubusercontent.com/eventhorizon-cli/BufferQueue/main/LICENSE
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+        run: >-
+          dotnet pack "$MMF_PROJECT"
+          --configuration Release
+          --no-build
+          --no-restore
+          --output artifacts/packages
+          -p:PackageVersion="$VERSION"
+          -p:Authors="$PACKAGE_AUTHORS"
+          -p:RepositoryUrl="$REPOSITORY_URL"
+          -p:RepositoryType="$REPOSITORY_TYPE"
+          -p:PackageLicenseUrl="$PACKAGE_LICENSE_URL"
+          -p:ContinuousIntegrationBuild=true
 
-      - name: Publish to NuGet
+      - name: Upload NuGet packages
+        uses: actions/upload-artifact@v7
+        with:
+          name: bufferqueue-nuget-${{ steps.version.outputs.value }}
+          path: artifacts/packages/*.nupkg
+          if-no-files-found: error
+
+      - name: Publish BufferQueue
         env:
           NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+          VERSION: ${{ steps.version.outputs.value }}
         run: |
-          dotnet nuget push ./output/BufferQueue.${{ env.VERSION }}.nupkg --api-key $NUGET_API_KEY --source https://api.nuget.org/v3/index.json
-          dotnet nuget push ./output/BufferQueue.MemoryMappedFile.${{ env.VERSION }}.nupkg --api-key $NUGET_API_KEY --source https://api.nuget.org/v3/index.json
+          package="artifacts/packages/BufferQueue.$VERSION.nupkg"
+
+          if [[ ! -f "$package" ]]; then
+            echo "::error title=Missing BufferQueue package::Expected '$package'."
+            exit 1
+          fi
+
+          dotnet nuget push "$package" --api-key "$NUGET_API_KEY" --source "$NUGET_SOURCE"
+
+      - name: Publish BufferQueue.MemoryMappedFile
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+          VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          package="artifacts/packages/BufferQueue.MemoryMappedFile.$VERSION.nupkg"
+
+          if [[ ! -f "$package" ]]; then
+            echo "::error title=Missing BufferQueue.MemoryMappedFile package::Expected '$package'."
+            exit 1
+          fi
+
+          dotnet nuget push "$package" --api-key "$NUGET_API_KEY" --source "$NUGET_SOURCE"

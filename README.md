@@ -2,11 +2,13 @@ BufferQueue
 ===========
 
 [![codecov](https://codecov.io/gh/eventhorizon-cli/BufferQueue/graph/badge.svg?token=GYTOIKCXD5)](https://codecov.io/gh/eventhorizon-cli/BufferQueue)
-[![Nuget](https://img.shields.io/nuget/v/BufferQueue)](https://www.nuget.org/packages/BufferQueue/)
+[![Build](https://github.com/eventhorizon-cli/BufferQueue/actions/workflows/dotnet-build.yml/badge.svg?branch=main)](https://github.com/eventhorizon-cli/BufferQueue/actions/workflows/dotnet-build.yml)
+[![NuGet BufferQueue](https://img.shields.io/nuget/v/BufferQueue)](https://www.nuget.org/packages/BufferQueue/)
+[![NuGet BufferQueue.MemoryMappedFile](https://img.shields.io/nuget/v/BufferQueue.MemoryMappedFile)](https://www.nuget.org/packages/BufferQueue.MemoryMappedFile/)
 
 English | [简体中文](./README.zh-CN.md)
 
-Design docs: [English](./docs/design.md) | [简体中文](./docs/design.zh-CN.md)
+Design docs: [English](./docs/README.md) | [简体中文](./docs/README.zh-CN.md)
 
 BufferQueue is a high-performance buffer queue implementation written in .NET, which supports multi-threaded concurrent operations.
 The packages target .NET 8 and .NET 10.
@@ -26,25 +28,28 @@ Use MemoryMappedFile mode when produced data and committed consumer offsets need
 
 ## Comparison with Common In-Memory Queues
 
-**BufferQueue keeps memory-mode writes close to `Channel<T>`, while its core advantage is high-performance batch consumption.**
+**BufferQueue keeps memory-mode writes close to `Channel<T>` and provides high-performance batch production and consumption.**
 
 The project includes BenchmarkDotNet benchmarks that compare BufferQueue in Memory mode with `Channel<T>` and `BlockingCollection<T>` for concurrent producing and consuming. The tables below summarize the `Channel<T>` comparison results.
 
 Summary:
 
-- Producing: BufferQueue in Memory mode is close to `Channel<T>` under the recorded parameters. Its elapsed time is about `17%` higher in Unbounded mode and `21%` higher in Bounded mode, and both queues complete the 8,192-item concurrent write within the same sub-millisecond range.
+- Producing one item at a time: BufferQueue in Memory mode is close to `Channel<T>` under the recorded parameters. Its elapsed time is about `16%` higher in Unbounded mode and `22%` higher in Bounded mode.
+- Producing `ReadOnlyMemory<T>` batches: Memory mode is about `3.17x` faster than its single-item path in Unbounded mode and `3.43x` faster in Bounded mode. This narrow workload is also about `2.73x` and `2.82x` faster than `Channel<T>`, respectively.
 - Consuming: BufferQueue is optimized for batch consumption. It is faster than `Channel<T>` from `BatchSize = 1` through `1000` in this benchmark set, with a clearer advantage at larger batches and a maximum of about `103x` under the recorded parameters.
 - Memory allocation: BufferQueue allocates less in producing scenarios; `Channel<T>` allocates less in consuming scenarios.
 
-Representative results from the recorded benchmark runs are retained below. The in-memory queue comparisons use
+The producing rows below are from the latest recorded benchmark run. The consuming rows are retained from their
+separate recorded run, which was not rerun for the batch-producer change. The in-memory queue comparisons use
 `MessageSize = 8192`. The producing rows run both capacity modes in the same `Fixed` job with `LaunchCount = 1`,
 `WarmupCount = 6`, and `IterationCount = 15`. The consuming benchmarks use the default job and, because they use
 `IterationSetup`, run with `InvocationCount = 1` and `UnrollFactor = 1`. Both benchmark groups run on .NET 10.
 
 Both producing and consuming benchmarks use `int` messages: the 8,192 integers from `0` through `8191`.
 `MessageSize = 8192` means the number of messages, not the byte size of each message. The producing benchmark splits
-this sequence across `12` concurrent tasks; the consuming benchmarks prefill the queues with the same sequence before
-measurement begins.
+this sequence across `12` concurrent tasks. The single-item path loops over each task's chunk; the batch path passes
+that chunk once through `producer.ProduceAsync(chunk.AsMemory())`. The consuming benchmarks prefill the queues with
+the same sequence before measurement begins.
 
 `IterationSetup` is outside the measured operation, which only drains the queues concurrently. Channel calls
 `TryRead` for each item, while BufferQueue returns up to `BatchSize` items at a time with
@@ -64,10 +69,10 @@ results. Producing uses `12` tasks sharing one `Channel<T>` writer or one Buffer
 
 Producing:
 
-| Mode | `MessageSize` | `Producers` | `Channel<T>` Mean | BufferQueue (Memory) Mean | Result |
-| --- | ---: | ---: | ---: | ---: | --- |
-| Unbounded | 8192 | 12 | `287.0 μs` | `335.0 μs` | Close; `Channel<T>` is about `1.17x` faster |
-| Bounded | 8192 | 12 | `300.8 μs` | `364.1 μs` | Close; `Channel<T>` is about `1.21x` faster |
+| Mode | `MessageSize` | `Producers` | `Channel<T>` Mean | BufferQueue single-item Mean | BufferQueue `ReadOnlyMemory<T>` batch Mean | Result |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| Unbounded | 8192 | 12 | `288.6 μs` | `335.7 μs` | `105.9 μs` | Batch is `3.17x` faster than single-item and `2.73x` faster than `Channel<T>` |
+| Bounded | 8192 | 12 | `298.7 μs` | `363.4 μs` | `105.9 μs` | Batch is `3.43x` faster than single-item and `2.82x` faster than `Channel<T>` |
 
 Consuming:
 
@@ -80,12 +85,12 @@ Consuming:
 | Unbounded | 8192 | 1000 | 12 | `3,485.82 μs` | `33.97 μs` | BufferQueue is about `102.61x` faster under these parameters |
 | Bounded | 8192 | 1000 | 12 | `2,115.11 μs` | `35.68 μs` | BufferQueue is about `59.28x` faster under these parameters |
 
-Benchmark platform:
+Benchmark platform for the latest producing run:
 
 | Item | Value |
 | --- | --- |
 | CPU | Apple M2 Max, `12` logical / `12` physical cores |
-| OS | macOS `15.7.7` (`24G720`) |
+| OS | macOS `15.7.8` (`24G824`) |
 | RID | `osx-arm64` |
 | .NET SDK | `10.0.100` |
 | .NET runtime | `10.0.0`, `arm64` |
@@ -113,7 +118,7 @@ dotnet run -c Release --project tests/BufferQueue.Benchmarks/BufferQueue.Benchma
 
 3. Supports creating multiple consumers for the same consumer group to consume data in a load-balanced manner.
 
-4. Supports batch consumption of data, allowing multiple pieces of data to be obtained at once.
+4. Supports batch production and consumption of data, allowing multiple pieces of data to be written or obtained at once.
 
 5. Supports two consumption modes: pull mode and push mode.
 
@@ -473,11 +478,7 @@ public class BarPushConsumer(ILogger<BarPushConsumer> logger) : IBufferManualCom
             logger.LogInformation("BarPushConsumer.ConsumeAsync: {Bar}", bar);
         }
 
-        var commitTask = committer.CommitAsync();
-        if (!commitTask.IsCompletedSuccessfully)
-        {
-            await commitTask.AsTask();
-        }
+        await committer.CommitAsync();
     }
 }
 ```
@@ -490,7 +491,7 @@ There are two ways to obtain a Producer:
   `[FromKeyedServices("topic-name")]`.
 - If the topic is selected at runtime, inject `IBufferQueue` and call `GetProducer<T>(topicName)`.
 
-In Memory mode, if bounded capacity is set, when the buffer is full, the ProduceAsync method will discard the data and throw a MemoryBufferQueueFullException.
+In Memory mode, if bounded capacity is set, when the buffer is full, the ProduceAsync method will discard the data and throw a BufferQueueFullException.
 You can use the TryProduceAsync method to check if the data was successfully sent.
 
 ```csharp
@@ -528,6 +529,29 @@ public class TestController(
     }
 }
 ```
+
+### Batch production
+
+`IBufferProducer<T>` exposes `TryProduceAsync` for a single item and a pre-buffered
+`ReadOnlyMemory<T>` batch. `BufferProducerExtensions` supplies the same-name `ProduceAsync` forms and the
+`IEnumerable<T>` convenience overloads. A non-array sequence is materialized before it invokes the core batch method.
+
+```csharp
+Order[] orders = GetOrders();
+
+await producer.ProduceAsync(orders.AsMemory());
+await producer.ProduceAsync(orders.Where(order => order.Total > 0));
+
+if (!await producer.TryProduceAsync(orders.AsMemory()))
+{
+    // The bounded Memory topic could not admit the complete batch.
+}
+```
+
+Routing remains per item. A round-robin batch advances once for every item, and a partition-key batch applies its
+selector to every item, so one batch can write to multiple partitions. On a bounded Memory topic, when the available
+capacity cannot admit the complete batch, `TryProduceAsync` returns `false` and `ProduceAsync` throws before any item
+from that batch is appended.
 
 ## Samples
 

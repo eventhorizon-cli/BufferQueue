@@ -1,3 +1,4 @@
+using System;
 using System.Threading.Tasks;
 
 namespace BufferQueue.MemoryMappedFile;
@@ -11,15 +12,19 @@ internal sealed class MemoryMappedFileBufferProducer<T>(
 {
     public string TopicName { get; } = options.TopicName!;
 
-    public ValueTask ProduceAsync(T item)
-    {
-        Enqueue(item);
-        return ValueTask.CompletedTask;
-    }
-
     public ValueTask<bool> TryProduceAsync(T item)
     {
         Enqueue(item);
+        return new(true);
+    }
+
+    public ValueTask<bool> TryProduceAsync(ReadOnlyMemory<T> items)
+    {
+        foreach (var item in items.Span)
+        {
+            Enqueue(item);
+        }
+
         return new(true);
     }
 
