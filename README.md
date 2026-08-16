@@ -34,13 +34,13 @@ The project includes BenchmarkDotNet benchmarks that compare BufferQueue in Memo
 
 Summary:
 
-- Producing one item at a time: BufferQueue in Memory mode is close to `Channel<T>` under the recorded parameters. Its elapsed time is about `16%` higher in Unbounded mode and `19%` higher in Bounded mode.
-- Producing `ReadOnlyMemory<T>` batches: Memory mode is about `3.22x` faster than its single-item path in Unbounded mode and `3.52x` faster in Bounded mode. This narrow workload is also about `2.78x` and `2.95x` faster than `Channel<T>`, respectively.
+- Producing one item at a time: BufferQueue in Memory mode is close to `Channel<T>` under the recorded parameters. Its elapsed time is about `11%` higher in Unbounded mode and `22%` higher in Bounded mode.
+- Producing `ReadOnlyMemory<T>` batches: the Memory path is about `8.50x` faster than its single-item path in Unbounded mode and `9.28x` faster in Bounded mode. This narrow workload is also about `7.66x` and `7.63x` faster than `Channel<T>`, respectively.
 - Consuming: BufferQueue is optimized for batch consumption. It is faster than `Channel<T>` from `BatchSize = 1` through `1000` in this benchmark set, with a clearer advantage at larger batches and a maximum of about `103x` under the recorded parameters.
 - Memory allocation: BufferQueue allocates less in producing scenarios; `Channel<T>` allocates less in consuming scenarios.
 
-The producing rows below are from the latest recorded benchmark run. The consuming rows are retained from their
-separate recorded run, which was not rerun for the batch-producer change. The in-memory queue comparisons use
+The producing rows below are from the latest recorded benchmark measurements. The consuming rows are retained from
+their separate recorded run and were not rerun with the current producing measurements. The in-memory queue comparisons use
 `MessageSize = 8192`. The producing rows run both capacity modes in the same `Fixed` job with `LaunchCount = 1`,
 `WarmupCount = 6`, and `IterationCount = 15`. The consuming benchmarks use the default job and, because they use
 `IterationSetup`, run with `InvocationCount = 1` and `UnrollFactor = 1`. Both benchmark groups run on .NET 10.
@@ -75,8 +75,14 @@ Producing:
 
 | Mode | `MessageSize` | `Producers` | `Channel<T>` Mean | BufferQueue single-item Mean | BufferQueue `ReadOnlyMemory<T>` batch Mean | Result |
 | --- | ---: | ---: | ---: | ---: | ---: | --- |
-| Unbounded | 8192 | 12 | `284.6 μs` | `328.8 μs` | `102.2 μs` | Batch is `3.22x` faster than single-item and `2.78x` faster than `Channel<T>` |
-| Bounded | 8192 | 12 | `302.4 μs` | `359.8 μs` | `102.4 μs` | Batch is `3.52x` faster than single-item and `2.95x` faster than `Channel<T>` |
+| Unbounded | 8192 | 12 | `301.7 μs` | `334.5 μs` | `39.4 μs` | Batch is `8.50x` faster than single-item and `7.66x` faster than `Channel<T>` |
+| Bounded | 8192 | 12 | `300.4 μs` | `365.3 μs` | `39.4 μs` | Batch is `9.28x` faster than single-item and `7.63x` faster than `Channel<T>` |
+
+### Round-Robin Batch Writes
+
+The default Memory round-robin batch path now reserves one contiguous selection range, then appends each
+partition's strided slice under that partition's lock. The input is still routed once per item and does not receive a
+global order across partitions.
 
 Consuming:
 
@@ -498,13 +504,14 @@ There are two ways to obtain a Producer:
   `[FromKeyedServices("topic-name")]`.
 - If the topic is selected at runtime, inject `IBufferQueue` and call `GetProducer<T>(topicName)`.
 
-In Memory mode, `FullMode` defaults to `Wait` for bounded topics: `ProduceAsync` asynchronously
-waits until capacity becomes available. Pass a `CancellationToken` so that backpressure can be
-canceled. Set `FullMode` to `Fail` when immediate rejection is required; `ProduceAsync` then throws
-`BufferQueueFullException`. `TryProduceAsync` never waits for bounded capacity and returns `false`
-immediately when the item or complete batch cannot be admitted. Batch admission is all-or-nothing;
-in `Wait` mode, the producer waits for the entire batch, and a batch larger than the configured
-capacity is invalid.
+In Memory mode, `FullMode` defaults to `Wait` for bounded topics. Both `ProduceAsync` and
+`TryProduceAsync` then asynchronously wait until capacity becomes available; `TryProduceAsync`
+returns `true` after the complete input is accepted. Pass a `CancellationToken` so that backpressure
+can be canceled. Set `FullMode` to `Fail` when immediate rejection is required; `ProduceAsync` then
+throws `BufferQueueFullException`, while `TryProduceAsync` returns `false`. A batch no larger than
+the configured capacity is admitted as a whole. A larger `Wait` batch is split into consecutive
+capacity-sized slices; each slice is admitted as a whole, and cancellation can leave prior completed
+slices visible. `Fail` rejects an oversized batch as a whole.
 
 ```csharp
 using Microsoft.Extensions.DependencyInjection;
@@ -563,17 +570,16 @@ await producer.ProduceAsync(orders.Where(order => order.Total > 0));
 
 if (!await producer.TryProduceAsync(orders.AsMemory()))
 {
-    // The bounded Memory topic could not admit the complete batch.
+    // A bounded Memory topic configured with FullMode.Fail could not admit the batch.
 }
 ```
 
 Routing remains per item. A round-robin batch advances once for every item, and a partition-key batch applies its
-selector to every item, so one batch can write to multiple partitions. On a bounded Memory topic, when the available
-capacity cannot admit the complete batch, `TryProduceAsync` returns `false` without waiting and `ProduceAsync` either
-throws in `Fail` mode or waits for the entire batch in `Wait` mode before appending any item. The capacity limit is
-shared by all partitions. Each partition returns capacity as the minimum committed position across all known consumer
-groups advances, including within a segment. A consumer group created later starts at the current logical earliest
-position and cannot read records whose capacity has already been released.
+selector to every item, so one batch can write to multiple partitions. The same routing continues across the
+capacity-sized slices used by an oversized `Wait` batch; equal keys retain input order within their selected
+partition. The capacity limit is shared by all partitions. Each partition returns capacity as the minimum committed
+position across all known consumer groups advances, including within a segment. A consumer group created later starts
+at the current logical earliest position and cannot read records whose capacity has already been released.
 
 ## Samples
 

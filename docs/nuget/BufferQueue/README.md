@@ -65,6 +65,11 @@ batch runs its selector for every item and preserves equal-key input order in
 the selected partition. Ordering remains per partition rather than global
 across the batch.
 
+In Memory storage, a default round-robin batch reserves its complete selection
+range before appending the input slices for each selected partition. This keeps
+per-item routing unchanged while allowing those slices to append under their
+own partition locks.
+
 ## Produce
 
 A fixed topic can be injected as a keyed `IBufferProducer<T>`:
@@ -114,17 +119,18 @@ materialization required by a non-array `IEnumerable<T>`. The `IEnumerable<T>` f
 convenient but materializes a non-array input before batch submission. The single-item and
 `ReadOnlyMemory<T>` `ProduceAsync` methods are core interface methods, not extensions.
 
-On a bounded Memory topic, `FullMode` defaults to `Wait`: `ProduceAsync` asynchronously
-waits until capacity is available. Supply a cancellation token so that the backpressure
-wait can be canceled. Set `FullMode` to `Fail` when immediate rejection is required;
-`ProduceAsync` then throws `BufferQueueFullException`. `TryProduceAsync` never waits and
-returns `false` immediately when the item or complete batch cannot be admitted. Batch admission
-is all-or-nothing. In `Wait` mode, the producer waits for the entire batch and a batch larger than
-the configured capacity is invalid. The capacity limit is shared by every partition. Each partition returns
-capacity as the minimum committed position across all known consumer groups advances, including
-within a segment, so a slow group can hold capacity after another group commits. A group created
-later starts at the current logical earliest position and cannot read records whose capacity has
-already been released.
+On a bounded Memory topic, `FullMode` defaults to `Wait`: both `ProduceAsync` and
+`TryProduceAsync` asynchronously wait until capacity is available, and `TryProduceAsync`
+returns `true` after the complete input is accepted. Supply a cancellation token so that the
+backpressure wait can be canceled. Set `FullMode` to `Fail` when immediate rejection is required;
+`ProduceAsync` then throws `BufferQueueFullException`, while `TryProduceAsync` returns `false`.
+A batch no larger than the configured capacity is admitted as a whole. A larger `Wait` batch is
+split into consecutive capacity-sized slices; each slice is admitted as a whole, and cancellation
+can leave prior completed slices visible. `Fail` rejects an oversized batch as a whole. The capacity
+limit is shared by every partition. Each partition returns capacity as the minimum committed position
+across all known consumer groups advances, including within a segment, so a slow group can hold
+capacity after another group commits. A group created later starts at the current logical earliest
+position and cannot read records whose capacity has already been released.
 
 ## Consume in batches
 

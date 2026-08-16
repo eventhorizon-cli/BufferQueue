@@ -64,18 +64,23 @@ A batch is not assigned to one partition:
 Items routed to different partitions do not gain a global batch order. The queue continues to
 preserve order per partition only.
 
+For a bounded Memory topic in `Wait` mode, an input batch larger than the configured capacity is
+processed as consecutive capacity-sized slices. Each slice applies the same per-item routing, so
+round-robin selection continues across slice boundaries and equal partition keys retain input order
+within their selected partition.
+
 ## In-Process Concurrency
 
 The queue is designed for concurrent production and consumption within one process:
 
 - Producers select a partition through round-robin counters by default, or through the configured
   partition-key selector. Selector implementations must be safe for concurrent calls.
-- In Memory mode, default round-robin routing uses one append lock for partition selection and
-  append. Immediate single-item capacity admission also occurs inside that lock, while batch
-  reservations and writes resumed after a `Wait` reserve their complete capacity before taking the
-  append lock. Partition-key routing selects a partition first, then uses that partition's append
-  lock, allowing appends to different partitions to proceed in parallel. Appends to one partition
-  remain serialized.
+- In Memory mode, default round-robin selection and batch-range reservation use a short topic-level
+  coordinator. Each admitted batch or batch slice obtains its complete capacity before it reserves
+  the range, then appends each partition slice under that partition's append lock. A single
+  round-robin append uses its target partition lock while a batch append is active; consumer state
+  changes use the same coordinator. Partition-key routing selects a partition first, then uses that
+  partition's append lock. Appends to one partition remain serialized.
 - A Memory partition publishes its readable segment cursor only after it stores the item. Consumers
   never observe an unwritten slot and do not take the append lock while reading.
 - Consumer-group creation is guarded by a queue-level lock.

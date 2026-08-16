@@ -29,15 +29,17 @@ internal sealed class MemoryBufferQueue<T> : BufferQueue<T>
 
     private static MemoryBufferPartition<T>[] CreatePartitions(
         MemoryBufferQueueOptions options,
-        bool useIndependentAppendLocks)
+        bool supportsConcurrentSelection)
     {
         var partitions = new MemoryBufferPartition<T>[options.PartitionNumber];
-        var appendLock = useIndependentAppendLocks ? null : new object();
+        var appendCoordinator = supportsConcurrentSelection ? null : new object();
         for (var i = 0; i < partitions.Length; i++)
         {
-            partitions[i] = appendLock == null
-                ? new MemoryBufferPartition<T>(i, options.SegmentSize)
-                : new MemoryBufferPartition<T>(i, options.SegmentSize, appendLock);
+            partitions[i] = new MemoryBufferPartition<T>(
+                i,
+                options.SegmentSize,
+                new object(),
+                appendCoordinator);
         }
 
         return partitions;

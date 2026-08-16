@@ -11,7 +11,12 @@ internal interface IPartitioner<in TItem>
     int SelectPartition(TItem item, int partitionCount);
 }
 
-internal sealed class RoundRobinPartitioner<TItem> : IPartitioner<TItem>
+internal interface IRoundRobinBatchPartitioner
+{
+    int ReserveBatch(int itemCount, int partitionCount);
+}
+
+internal sealed class RoundRobinPartitioner<TItem> : IPartitioner<TItem>, IRoundRobinBatchPartitioner
 {
     private int _partitionIndex;
 
@@ -25,15 +30,35 @@ internal sealed class RoundRobinPartitioner<TItem> : IPartitioner<TItem>
                 "Partition count must be greater than zero.");
         }
 
-        var index = _partitionIndex;
-        _partitionIndex = index + 1 == partitionCount ? 0 : index + 1;
-        return index;
+        var partitionIndex = _partitionIndex;
+        _partitionIndex = partitionIndex + 1 == partitionCount ? 0 : partitionIndex + 1;
+        return partitionIndex;
+    }
+
+    public int ReserveBatch(int itemCount, int partitionCount)
+    {
+        if (itemCount <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(itemCount),
+                "Item count must be greater than zero.");
+        }
+
+        if (partitionCount <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(partitionCount),
+                "Partition count must be greater than zero.");
+        }
+
+        var firstPartitionIndex = _partitionIndex;
+        _partitionIndex = (firstPartitionIndex + itemCount % partitionCount) % partitionCount;
+        return firstPartitionIndex;
     }
 }
 
-internal sealed class ConcurrentRoundRobinPartitioner<TItem> : IPartitioner<TItem>
+internal sealed class ConcurrentRoundRobinPartitioner<TItem>
+    : IPartitioner<TItem>, IRoundRobinBatchPartitioner
 {
-    private int _partitionIndex = -1;
+    private int _partitionSequence = -1;
 
     public bool SupportsConcurrentSelection => true;
 
@@ -45,8 +70,27 @@ internal sealed class ConcurrentRoundRobinPartitioner<TItem> : IPartitioner<TIte
                 "Partition count must be greater than zero.");
         }
 
-        var index = (uint)Interlocked.Increment(ref _partitionIndex);
-        return (int)(index % (uint)partitionCount);
+        var sequence = (uint)Interlocked.Increment(ref _partitionSequence);
+        return (int)(sequence % (uint)partitionCount);
+    }
+
+    public int ReserveBatch(int itemCount, int partitionCount)
+    {
+        if (itemCount <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(itemCount),
+                "Item count must be greater than zero.");
+        }
+
+        if (partitionCount <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(partitionCount),
+                "Partition count must be greater than zero.");
+        }
+
+        var sequenceEnd = Interlocked.Add(ref _partitionSequence, itemCount);
+        var sequenceStart = unchecked(sequenceEnd - itemCount + 1);
+        return (int)((uint)sequenceStart % (uint)partitionCount);
     }
 }
 

@@ -33,11 +33,14 @@ every item and retains equal-key input order within that partition.
 The partition appends to its tail segment. When the tail is full, it creates a new segment or
 recycles an old segment that every consumer group has fully consumed.
 
-For default round-robin routing, the Memory producer and its partitions share one append lock. The
-lock serializes partition selection and append; immediate single-item capacity admission also runs
-under this lock. Batch admission and a resumed `Wait` write reserve capacity before taking the
-append lock. Partition-key routing selects a partition before taking that partition's append lock,
-so concurrent producers can append to different partitions in parallel. Appends within one
+For default round-robin routing, a short topic-level coordinator serializes partition selection and
+batch-range reservation. After its complete bounded-capacity admission succeeds, a batch reserves
+one contiguous selection range, visits each partition's strided slice, and appends that slice under
+the partition's own append lock. This avoids materializing a `List<T>` for every partition. A
+single round-robin write remains on the coordinator-only path when no round-robin batch is
+appending; while a batch is appending, it also takes its target partition lock. Consumer state
+changes use the same coordinator, so they cannot overlap an unsynchronized append. Partition-key
+routing selects a partition before taking that partition's append lock. Appends within one
 partition remain serialized.
 
 After storing the item, the selected partition publishes its new readable cursor with a release
@@ -68,23 +71,28 @@ has read it.
 Memory mode supports optional topic-wide bounded capacity through
 `MemoryBufferQueueOptions.BoundedCapacity`. The limit is shared by every partition in the topic.
 
-`MemoryBufferQueueOptions.FullMode` controls `ProduceAsync` when capacity is
+`MemoryBufferQueueOptions.FullMode` controls both producer methods when capacity is
 unavailable. Its default is `BufferQueueFullMode.Wait`:
 
-- `Wait` asynchronously waits for capacity and can be canceled through the
-  method's `CancellationToken`.
-- `Fail` throws `BufferQueueFullException` immediately.
+- `Wait` makes both `ProduceAsync` and `TryProduceAsync` asynchronously wait for
+  capacity. `TryProduceAsync` returns `true` after the complete input is accepted.
+  Either call can be canceled through its `CancellationToken`.
+- `Fail` makes `ProduceAsync` throw `BufferQueueFullException` immediately and
+  makes `TryProduceAsync` return `false`.
 
-`TryProduceAsync` never waits for bounded capacity. It returns `false`
-immediately when the item or complete batch cannot be admitted.
+For a batch no larger than the configured capacity, admission reserves the complete
+item count before any item is appended. In `Fail` mode, insufficient capacity therefore
+rejects the complete batch without appending a partial batch. In `Wait` mode, both
+methods wait for the complete batch capacity and then append it as one admission.
 
-For a batch, bounded-capacity admission reserves the complete item count before any item is
-appended. If the remaining capacity is insufficient, `TryProduceAsync` returns `false` without
-appending a partial batch. In `Wait` mode, `ProduceAsync` waits for the entire batch to fit and then
-appends it as one admission; callers should pass a cancellation token so that the backpressure wait
-can be stopped. In `Fail` mode, `ProduceAsync` throws. A batch larger than the configured capacity
-is invalid in `Wait` mode and throws `ArgumentOutOfRangeException` rather than waiting forever.
-These rules apply to both batch input forms after an `IEnumerable<T>` has been materialized.
+In `Wait` mode, a batch larger than the configured capacity is split into consecutive
+input slices of at most `BoundedCapacity` items. Each slice waits for and reserves its
+complete capacity before it appends, then the next slice begins. This rule applies to
+both `ProduceAsync` and `TryProduceAsync`; `TryProduceAsync` does not return `false`
+because a `Wait` queue is full. Cancellation can interrupt the operation only between
+slices, so previously completed slices remain visible while no admitted slice is only
+partially appended. In `Fail` mode, an oversized batch is rejected as a whole. These
+rules apply to both batch input forms after an `IEnumerable<T>` has been materialized.
 
 Each partition returns capacity to the topic-wide gate only when the minimum committed position
 across all known consumer groups advances. The release can cover only part of a segment; a group
