@@ -33,12 +33,12 @@ BufferQueue 当前提供两种存储模式：
 
 结果摘要：
 
-- 单条写入：在本次测试配置下，BufferQueue Memory 模式的写入性能接近 `Channel<T>`。Unbounded 和 Bounded 模式的耗时分别高约 `16%` 和 `19%`。
-- `ReadOnlyMemory<T>` 批量写入：Memory 模式在 Unbounded 下比单条路径快约 `3.22x`，在 Bounded 下快约 `3.52x`；在本次测试配置下，也分别比 `Channel<T>` 快约 `2.78x` 和 `2.95x`。
+- 单条写入：在本次测试配置下，BufferQueue Memory 模式的写入性能接近 `Channel<T>`。Unbounded 和 Bounded 模式的耗时分别高约 `11%` 和 `22%`。
+- `ReadOnlyMemory<T>` 批量写入：Memory 路径在 Unbounded 下比单条路径快约 `8.50x`，在 Bounded 下快约 `9.28x`；在本次测试配置下，也分别比 `Channel<T>` 快约 `7.66x` 和 `7.63x`。
 - 消费：BufferQueue 的主要优势在批量消费；本组测试从 `BatchSize = 1` 到 `1000` 均快于 `Channel<T>`，批量越大优势越明显，该次记录参数下最高约快 `103x`。
 - 内存分配：生产场景 BufferQueue 分配较少；消费场景 `Channel<T>` 分配较少。
 
-下列写入数据来自最近一次基准测试。消费数据保留自独立的历史测试，本次加入批量写入后没有重新测量。
+下列写入数据来自最近记录的基准测量。消费数据保留自独立的历史测试，未与当前写入测试同时重新测量。
 纯内存 queue 对比使用 `MessageSize = 8192`。生产数据的 Bounded 和 Unbounded 模式使用同一个 `Fixed` job，
 配置为 `LaunchCount = 1`、`WarmupCount = 6`、`IterationCount = 15`。消费 benchmark 使用默认 job，并因
 `IterationSetup` 使用 `InvocationCount = 1`、`UnrollFactor = 1`。两组 benchmark 均运行于 .NET 10。
@@ -69,8 +69,13 @@ MemoryMappedFile queue 对比使用 `MessageSize = 1024` 和 short-run job，
 
 | 模式 | `MessageSize` | `Producers` | `Channel<T>` Mean | BufferQueue 单条 Mean | BufferQueue `ReadOnlyMemory<T>` 批量 Mean | 结论 |
 | --- | ---: | ---: | ---: | ---: | ---: | --- |
-| Unbounded | 8192 | 12 | `284.6 μs` | `328.8 μs` | `102.2 μs` | 批量比单条快 `3.22x`，比 `Channel<T>` 快 `2.78x` |
-| Bounded | 8192 | 12 | `302.4 μs` | `359.8 μs` | `102.4 μs` | 批量比单条快 `3.52x`，比 `Channel<T>` 快 `2.95x` |
+| Unbounded | 8192 | 12 | `301.7 μs` | `334.5 μs` | `39.4 μs` | 批量比单条快 `8.50x`，比 `Channel<T>` 快 `7.66x` |
+| Bounded | 8192 | 12 | `300.4 μs` | `365.3 μs` | `39.4 μs` | 批量比单条快 `9.28x`，比 `Channel<T>` 快 `7.63x` |
+
+### Round-robin 批量写入
+
+默认的 Memory round-robin 批量路径会先保留一段连续的分区选择范围，再按 partition 拆分出步长切片，
+并在各自的 partition 锁内追加。路由规则仍然是每条数据轮转一次；跨 partition 不提供全局顺序。
 
 消费性能：
 
@@ -480,11 +485,12 @@ Producer 示例：
 - 在声明依赖时 topic 已固定：使用 `[FromKeyedServices("topic-name")]` 注入 `IBufferProducer<T>`。
 - topic 需要在运行时确定：注入 `IBufferQueue`，再调用 `GetProducer<T>(topicName)` 获取 Producer。
 
-在 Memory 模式下，有界 topic 的 `FullMode` 默认为 `Wait`：容量不足时，`ProduceAsync` 会异步等待，直到
-容量可用。生产代码应传入 `CancellationToken`，以便取消背压等待。需要立即拒绝写入时，可将 `FullMode`
-设为 `Fail`；此时 `ProduceAsync` 会抛出 `BufferQueueFullException`。`TryProduceAsync` 永远不会等待有界容量，
-单条数据或整个批次无法接纳时会立即返回 `false`。批量接纳必须整批完成；在 `Wait` 模式下，Producer 会等待
-整个批次，且大于配置容量的批次属于无效参数。
+在 Memory 模式下，有界 topic 的 `FullMode` 默认为 `Wait`。此时 `ProduceAsync` 和 `TryProduceAsync` 都会
+异步等待容量可用；输入完整接纳后，`TryProduceAsync` 返回 `true`。生产代码应传入 `CancellationToken`，以便
+取消背压等待。需要立即拒绝写入时，可将 `FullMode` 设为 `Fail`：`ProduceAsync` 会抛出
+`BufferQueueFullException`，`TryProduceAsync` 返回 `false`。大小不超过配置容量的批次会整批接纳；超过容量的
+`Wait` 批次会按输入顺序切成容量大小的连续切片，每个切片整批接纳，取消时此前完成的切片可能已经可见。`Fail`
+模式会整批拒绝超过容量的批次。
 
 ```csharp
 using Microsoft.Extensions.DependencyInjection;
@@ -543,16 +549,15 @@ await producer.ProduceAsync(orders.Where(order => order.Total > 0));
 
 if (!await producer.TryProduceAsync(orders.AsMemory()))
 {
-    // 有界容量的 Memory 队列无法接纳整个批次。
+    // 配置为 FullMode.Fail 的有界 Memory 队列无法接纳该批次。
 }
 ```
 
 路由仍以单条数据为单位：Round-robin 每写入一条数据都会向前轮转一次；PartitionKey 会为批次中的每条数据
-调用 selector。因此，一个批次可以写入多个 partition。对于有界容量的 Memory 队列，剩余容量不足以容纳整个批次时，
-`TryProduceAsync` 不等待并返回 `false`；`ProduceAsync` 在 `Fail` 模式下抛出异常，在 `Wait` 模式下等待整个批次，
-然后才写入数据。两者都不会写入部分批次。容量上限由 topic 下的所有 partition 共享；每个 partition 会在所有
-已知 consumer group 的最小 committed position 向前推进时归还容量，包括只推进到 segment 中间位置的情况。
-较晚创建的 consumer group 会从当前逻辑上的最早位置开始消费，无法读取容量已经释放的数据。
+调用 selector。因此，一个批次可以写入多个 partition。超过容量的 `Wait` 批次按容量切片后，仍会沿用同样的
+逐条路由规则；相同 PartitionKey 在选定 partition 内保持输入顺序。容量上限由 topic 下的所有 partition 共享；
+每个 partition 会在所有已知 consumer group 的最小 committed position 向前推进时归还容量，包括只推进到
+segment 中间位置的情况。较晚创建的 consumer group 会从当前逻辑上的最早位置开始消费，无法读取容量已经释放的数据。
 
 ## 示例项目
 

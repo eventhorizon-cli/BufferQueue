@@ -102,8 +102,9 @@ a non-array input before dispatching the batch. The core `ProduceAsync` methods 
 they define the normal write behavior for each storage mode.
 
 Cancellation is checked before a write starts and while a Memory `Wait` write is waiting for
-capacity. Once a batch has been admitted and append begins, the token is not polled between items;
-cancellation therefore cannot stop the batch halfway through.
+capacity. Once an admitted batch or batch slice begins appending, the token is not polled between
+items. A `Wait` batch larger than the configured capacity is split into capacity-sized slices, so
+cancellation can stop the overall write between slices while already completed slices remain visible.
 
 Batch production is a core producer capability. Storage-specific batch admission, routing, and
 persistence behavior is described in the related design notes.

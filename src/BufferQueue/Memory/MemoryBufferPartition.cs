@@ -23,15 +23,25 @@ internal sealed class MemoryBufferPartition<T>
     private readonly HashSet<IBufferPartitionConsumer<T>> _consumers;
 
     private readonly object _appendLock;
+    private readonly object? _appendCoordinator;
     private MemoryBufferPartitionOffset _releasedCapacityPosition;
     private Action<ulong>? _releaseCapacity;
 
     public MemoryBufferPartition(int id, int segmentSize)
-        : this(id, segmentSize, new())
+        : this(id, segmentSize, new(), null)
     {
     }
 
     internal MemoryBufferPartition(int id, int segmentSize, object appendLock)
+        : this(id, segmentSize, appendLock, null)
+    {
+    }
+
+    internal MemoryBufferPartition(
+        int id,
+        int segmentSize,
+        object appendLock,
+        object? appendCoordinator)
     {
         ArgumentNullException.ThrowIfNull(appendLock);
 
@@ -42,12 +52,15 @@ internal sealed class MemoryBufferPartition<T>
         _consumers = [];
 
         _appendLock = appendLock;
+        _appendCoordinator = appendCoordinator;
         _releasedCapacityPosition = _head.StartOffset;
     }
 
     public int PartitionId { get; }
 
     internal object AppendLock => _appendLock;
+
+    internal object? AppendCoordinator => _appendCoordinator;
 
     public ulong Capacity => (ulong)(_tail.EndOffset - _head.StartOffset + 1);
 
@@ -62,21 +75,31 @@ internal sealed class MemoryBufferPartition<T>
 
     public void RegisterConsumer(IBufferPartitionConsumer<T> consumer)
     {
-        lock (_appendLock)
+        EnterAppendLock();
+        try
         {
             _consumers.Add(consumer);
             _consumerReaders.TryAdd(consumer.GroupName, CreateReader());
+        }
+        finally
+        {
+            ExitAppendLock();
         }
     }
 
     public void UnregisterConsumer(IBufferPartitionConsumer<T> consumer)
     {
         ulong releasedCount;
-        lock (_appendLock)
+        EnterAppendLock();
+        try
         {
             _consumers.Remove(consumer);
             _consumerReaders.TryRemove(consumer.GroupName, out _);
             releasedCount = ReleaseCommittedCapacity();
+        }
+        finally
+        {
+            ExitAppendLock();
         }
 
         _releaseCapacity?.Invoke(releasedCount);
@@ -84,9 +107,14 @@ internal sealed class MemoryBufferPartition<T>
 
     public void Enqueue(T item)
     {
-        lock (_appendLock)
+        EnterAppendLock();
+        try
         {
             AppendSingleWriter(item);
+        }
+        finally
+        {
+            ExitAppendLock();
         }
 
         NotifyConsumers();
@@ -98,7 +126,8 @@ internal sealed class MemoryBufferPartition<T>
     {
         ArgumentNullException.ThrowIfNull(releaseCapacity);
 
-        lock (_appendLock)
+        EnterAppendLock();
+        try
         {
             if (_releaseCapacity != null)
             {
@@ -106,6 +135,10 @@ internal sealed class MemoryBufferPartition<T>
             }
 
             _releaseCapacity = releaseCapacity;
+        }
+        finally
+        {
+            ExitAppendLock();
         }
     }
 
@@ -149,9 +182,14 @@ internal sealed class MemoryBufferPartition<T>
     {
         if (!_consumerReaders.TryGetValue(groupName, out var reader))
         {
-            lock (_appendLock)
+            EnterAppendLock();
+            try
             {
                 reader = _consumerReaders.GetOrAdd(groupName, _ => CreateReader());
+            }
+            finally
+            {
+                ExitAppendLock();
             }
         }
 
@@ -161,7 +199,8 @@ internal sealed class MemoryBufferPartition<T>
     public void Commit(string groupName)
     {
         ulong releasedCount;
-        lock (_appendLock)
+        EnterAppendLock();
+        try
         {
             if (!_consumerReaders.TryGetValue(groupName, out var reader))
             {
@@ -171,8 +210,31 @@ internal sealed class MemoryBufferPartition<T>
             reader.MoveNext();
             releasedCount = ReleaseCommittedCapacity();
         }
+        finally
+        {
+            ExitAppendLock();
+        }
 
         _releaseCapacity?.Invoke(releasedCount);
+    }
+
+    private void EnterAppendLock()
+    {
+        if (_appendCoordinator is { } appendCoordinator)
+        {
+            System.Threading.Monitor.Enter(appendCoordinator);
+        }
+
+        System.Threading.Monitor.Enter(_appendLock);
+    }
+
+    private void ExitAppendLock()
+    {
+        System.Threading.Monitor.Exit(_appendLock);
+        if (_appendCoordinator is { } appendCoordinator)
+        {
+            System.Threading.Monitor.Exit(appendCoordinator);
+        }
     }
 
     private bool TryRecycleSegment(

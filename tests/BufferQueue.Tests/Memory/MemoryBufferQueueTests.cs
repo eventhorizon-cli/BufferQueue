@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Reflection;
 using BufferQueue.Memory;
 
@@ -429,6 +430,77 @@ public class MemoryBufferQueueTests
         countDownEvent.Wait();
     }
 
+    [Fact]
+    public async Task Concurrent_RoundRobin_Single_And_Batch_Production_With_Consumer()
+    {
+        const int singleItemCount = 512;
+        const int batchItemCount = 512;
+        const int batchSize = 17;
+        var queue = new MemoryBufferQueue<int>(new MemoryBufferQueueOptions
+        {
+            TopicName = "test",
+            PartitionNumber = 4,
+            SegmentSize = 8
+        });
+        var producer = queue.GetProducer();
+        var consumer = queue.CreateConsumer(new BufferPullConsumerOptions
+        {
+            TopicName = "test",
+            GroupName = "TestGroup",
+            AutoCommit = true,
+            BatchSize = 32
+        });
+        var consumedItems = new ConcurrentBag<int>();
+        var consumedCount = 0;
+        var expectedItemCount = singleItemCount + batchItemCount;
+        var consumerTask = Task.Run(async () =>
+        {
+            await foreach (var items in consumer.ConsumeAsync())
+            {
+                var itemCount = 0;
+                foreach (var item in items)
+                {
+                    consumedItems.Add(item);
+                    itemCount++;
+                }
+
+                if (Interlocked.Add(ref consumedCount, itemCount) == expectedItemCount)
+                {
+                    break;
+                }
+            }
+        });
+        var start = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var ready = new CountdownEvent(2);
+
+        var singleProducerTask = Task.Run(async () =>
+        {
+            ready.Signal();
+            await start.Task;
+            for (var item = 0; item < singleItemCount; item++)
+            {
+                await producer.ProduceAsync(item);
+            }
+        });
+        var batchProducerTask = Task.Run(async () =>
+        {
+            ready.Signal();
+            await start.Task;
+            for (var item = singleItemCount; item < expectedItemCount; item += batchSize)
+            {
+                var count = Math.Min(batchSize, expectedItemCount - item);
+                await producer.ProduceAsync(Enumerable.Range(item, count).ToArray().AsMemory());
+            }
+        });
+
+        Assert.True(ready.Wait(TimeSpan.FromSeconds(10)));
+        start.SetResult();
+        await Task.WhenAll(singleProducerTask, batchProducerTask).WaitAsync(TimeSpan.FromSeconds(10));
+        await consumerTask.WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.Equal(Enumerable.Range(0, expectedItemCount), consumedItems.Order());
+    }
+
     [Theory]
     [InlineData(1, 1)]
     [InlineData(1, 10)]
@@ -573,7 +645,8 @@ public class MemoryBufferQueueTests
             TopicName = "test",
             PartitionNumber = 3,
             SegmentSize = 2,
-            BoundedCapacity = 10
+            BoundedCapacity = 10,
+            FullMode = BufferQueueFullMode.Fail
         });
 
         var producer = queue.GetProducer();

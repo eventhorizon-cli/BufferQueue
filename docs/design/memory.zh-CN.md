@@ -32,10 +32,12 @@ Memory 数据和 consumer offset 只在当前进程生命周期内存在。进�
 Partition 会向 tail segment 追加数据。Tail 已满时，它会创建新 segment，或者复用一个已被所有 consumer
 group 完全消费的旧 segment。
 
-默认 round-robin 路由时，Memory producer 和 partition 共享一个 append lock，用于串行执行 partition 选择和
-append；单条数据能够立即写入时，也会在这把锁内预留容量。批量写入以及从 `Wait` 恢复的写入会先预留容量，
-再获取 append lock。PartitionKey 路由会先选择 partition，再获取对应的 append lock，因此并发 producer
-可以同时写入不同 partition；同一 partition 内仍然串行 append。
+默认 round-robin 路由使用一个短时的 topic 级协调锁，串行执行 partition 选择和批量选择范围的预留。整批容量
+接纳成功后，批量会保留一段连续的选择范围，按步长访问每个 partition 对应的数据切片，并在该 partition 自己的
+append lock 内追加，因此无需为每个 partition 物化一个 `List<T>`。没有活跃的 round-robin 批量 append 时，
+单条写入仍只使用协调锁；与批量 append 交错时，还会取得目标 partition 的锁。Consumer 的状态变更也使用
+同一个协调锁，避免与未同步的 append 重叠。PartitionKey 路由会先选择 partition，再获取对应的 append lock。
+同一 partition 内的 append 仍然串行。
 
 选中的 partition 写入 item 后，使用 release write 发布新的可读 cursor。Consumer 读取已发布区间时不获取
 append lock，因此不会读到尚未写入的 slot。Enqueue 成功后，partition 会通知所有已注册 consumer。
@@ -61,20 +63,21 @@ Memory 模式可以复用旧 segment。只有当所有 consumer group 都已经�
 Memory 模式可以通过 `MemoryBufferQueueOptions.BoundedCapacity` 限制整个 topic 的容量。该上限由 topic 下的
 所有 partition 共享。
 
-容量不可用时，`MemoryBufferQueueOptions.FullMode` 控制 `ProduceAsync` 的行为，默认值为
+容量不可用时，`MemoryBufferQueueOptions.FullMode` 控制两种 Producer 方法的行为，默认值为
 `BufferQueueFullMode.Wait`：
 
-- `Wait` 异步等待容量，并可通过方法的 `CancellationToken` 取消等待。
-- `Fail` 立即抛出 `BufferQueueFullException`。
+- `Wait` 下，`ProduceAsync` 和 `TryProduceAsync` 都会异步等待容量。输入完整接纳后，
+  `TryProduceAsync` 返回 `true`；两种调用都可通过 `CancellationToken` 取消。
+- `Fail` 下，`ProduceAsync` 立即抛出 `BufferQueueFullException`，`TryProduceAsync` 返回 `false`。
 
-`TryProduceAsync` 永远不会等待有界容量。当单条数据或整个批次无法接纳时，它会立即返回
-`false`。
+批次大小不超过配置容量时，会在 append 前一次性预留整批所需容量。`Fail` 模式下，剩余容量不足会整批
+拒绝，且不会写入部分数据；`Wait` 模式下，两种方法都会等待整批容量，再作为一次接纳写入。
 
-批量写入会在 append 前一次性预留整批数据所需的容量。剩余容量不足时，`TryProduceAsync` 返回 `false`，
-且不会写入部分数据；`ProduceAsync` 在 `Wait` 模式下等待整批所需的容量，调用方应传入取消令牌，以便
-终止背压等待。在 `Fail` 模式下，`ProduceAsync` 会抛出异常。如果批次大小超过配置的总容量，`Wait` 模式
-会抛出 `ArgumentOutOfRangeException`，避免请求永远无法满足。两种批量输入形式都遵循这一规则；非数组的
-`IEnumerable<T>` 会先物化为数组。
+`Wait` 模式下，超过配置容量的批次会按输入顺序切成不超过 `BoundedCapacity` 条的连续切片。每个切片都先
+等待并一次性预留完整容量，再追加，然后处理下一个切片。`ProduceAsync` 和 `TryProduceAsync` 都遵循此规则；
+队列写满时，`TryProduceAsync` 不会返回 `false`。取消只能发生在两个切片之间，因此已经完成的切片会保留，
+但已接纳的单个切片不会只写入一部分。`Fail` 模式下，超过容量的批次会整批拒绝。两种批量输入形式都遵循
+这些规则；非数组的 `IEnumerable<T>` 会先物化为数组。
 
 每个 partition 只有在所有已知 consumer group 的最小 committed position 向前推进后，才会把对应容量归还给
 topic 共享的容量门。释放范围可以只覆盖 segment 的一部分；尚未提交到同一位置的慢速 group 会继续占用这部分

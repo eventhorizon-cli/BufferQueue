@@ -58,6 +58,9 @@ round-robin 路由。Selector 必须是确定性的，并且能安全地被并�
 partition。按 key 路由时，会为批次中的每条数据调用 selector；相同 key 的数据在选定 partition 内保持
 输入顺序。顺序保证只在 partition 内成立，不提供跨 partition 的批次全局顺序。
 
+在 Memory 存储中，默认 round-robin 批量会先保留完整的选择范围，再向每个选中的 partition 追加对应的数据
+切片。这样不改变逐条路由规则，同时让各切片可以在自己的 partition 锁内追加。
+
 ## 写入数据
 
 topic 在依赖注入时已确定，可以通过 keyed `IBufferProducer<T>` 注入：
@@ -102,13 +105,15 @@ await producer.ProduceAsync(ordersFromAnEnumerable, cancellationToken);
 能避免非数组 `IEnumerable<T>` 在提交前产生的物化。`IEnumerable<T>` 重载用于方便调用；当输入不是数组时，
 会先物化为数组，再提交整个批次。单条和 `ReadOnlyMemory<T>` 的 `ProduceAsync` 都是核心接口方法，不是扩展方法。
 
-对于配置了有界容量的 Memory topic，`FullMode` 默认为 `Wait`：容量不足时，`ProduceAsync` 会异步等待，直到
-容量可用。生产代码应传入 `CancellationToken`，以便取消背压等待。需要立即拒绝写入时，可将 `FullMode` 设为
-`Fail`；此时 `ProduceAsync` 会抛出 `BufferQueueFullException`。`TryProduceAsync` 永远不会等待，单条数据或整个
-批次无法接纳时会立即返回 `false`。批量接纳必须整批完成；在 `Wait` 模式下，Producer 会等待整个批次，且大于
-配置容量的批次属于无效参数。容量上限由 topic 下的所有 partition 共享。每个 partition 会在所有已知 consumer group 的最小 committed position 向前推进时
-归还容量；即使只推进到 segment 中间，也会归还相应部分，因此较慢的 group 仍可能在其他 group 提交后继续占用
-容量。较晚创建的 consumer group 会从当前逻辑上的最早位置开始消费，无法读取容量已经释放的数据。
+对于配置了有界容量的 Memory topic，`FullMode` 默认为 `Wait`：`ProduceAsync` 和 `TryProduceAsync` 都会异步
+等待容量可用；输入完整接纳后，`TryProduceAsync` 返回 `true`。生产代码应传入 `CancellationToken`，以便取消
+背压等待。需要立即拒绝写入时，可将 `FullMode` 设为 `Fail`：`ProduceAsync` 会抛出
+`BufferQueueFullException`，`TryProduceAsync` 返回 `false`。大小不超过配置容量的批次会整批接纳；超过容量的
+`Wait` 批次会按输入顺序切成容量大小的连续切片，每个切片整批接纳，取消时此前完成的切片可能已经可见。`Fail`
+模式会整批拒绝超过容量的批次。容量上限由 topic 下的所有 partition 共享。每个 partition 会在所有已知
+consumer group 的最小 committed position 向前推进时归还容量；即使只推进到 segment 中间，也会归还相应部分，
+因此较慢的 group 仍可能在其他 group 提交后继续占用容量。较晚创建的 consumer group 会从当前逻辑上的最早位置
+开始消费，无法读取容量已经释放的数据。
 
 ## 批量消费
 

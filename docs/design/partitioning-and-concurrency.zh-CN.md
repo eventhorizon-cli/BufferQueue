@@ -56,16 +56,20 @@ Round-robin 路由将追加操作分散到不同 partition。启用 PartitionKey
 
 同一批次中被路由到不同 partition 的数据不具备全局顺序保证。Queue 仍然只保证每个 partition 内的顺序。
 
+有界 Memory topic 处于 `Wait` 模式时，超过配置容量的输入批次会被切成连续的容量大小切片。每个切片仍按
+单条数据路由，因此 round-robin 会跨切片继续轮转；相同 PartitionKey 在其选定 partition 内仍保持输入顺序。
+
 ## 单进程并发
 
 Queue 的设计目标是在一个进程内并发生产和消费：
 
 - Producer 默认通过 round-robin counter 选择 partition，或通过配置的 PartitionKey selector 选择。
   Selector 实现必须能安全地被并发调用。
-- Memory 模式中，默认 round-robin 路由使用一个 append lock 串行执行 partition 选择和 append。单条数据在
-  容量可用时，也会在这把锁内完成容量接纳；批量预留以及从 `Wait` 恢复的写入，则会先一次性取得所需容量，
-  再获取 append lock。PartitionKey 路由先选择 partition，再获取该 partition 的 append lock，因此不同
-  partition 的 append 可以并行进行；同一 partition 的 append 仍然串行。
+- Memory 模式中，默认 round-robin 的 partition 选择和批量范围预留使用短时的 topic 级协调锁。每个已接纳
+  的批量或批量切片都会先一次性取得完整容量，再保留选择范围，并在每个 partition 的 append lock 内追加
+  对应切片。存在活跃批量 append 时，单条 round-robin 写入也会取得目标 partition 的锁；Consumer 的状态
+  变更使用同一个协调锁。PartitionKey 路由先选择 partition，再获取该 partition 的 append lock。同一
+  partition 的 append 仍然串行。
 - Memory partition 只会在写入 item 后发布可读 segment cursor，因此 consumer 不会读到未写入 slot，
   读取时也不需要获取 append lock。
 - Consumer group 的创建受 queue-level lock 保护。

@@ -96,8 +96,9 @@ await producer.ProduceAsync(itemsFromAnEnumerable, cancellationToken);
 可以避免非数组 `IEnumerable<T>` 在提交前所需的物化。`IEnumerable<T>` 重载用于方便调用；当输入不是数组时，
 会先物化为数组，再提交整个批次。核心 `ProduceAsync` 方法不是扩展方法；它们定义各存储模式的正常写入行为。
 
-写入开始前会检查取消；Memory 写入因 `Wait` 等待容量时，也可以通过 token 取消。整批数据完成接纳并开始 append
-后，不会在每条数据之间反复检查 token，因此取消不会让一个批次只写入一部分。
+写入开始前会检查取消；Memory 写入因 `Wait` 等待容量时，也可以通过 token 取消。已接纳的批次或切片开始
+append 后，不会在每条数据之间反复检查 token。超过配置容量的 `Wait` 批次会按容量切片，因此取消可以发生在
+切片之间，已完成的切片会保留。
 
 批量写入是 Producer 的核心能力。不同存储模式下的容量检查、路由和持久化行为，参见对应的设计文档。
 
