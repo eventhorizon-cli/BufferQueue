@@ -49,10 +49,14 @@ public sealed record Order(long Id, decimal Total);
 
 `UsePartitionKey` 必须传入 selector 委托。数值 selector 支持内置的 `INumber<TNumber>` 类型，但其返回值
 必须是有限整数。分区索引按 `(key - 1)` 对 `PartitionNumber` 的归一化数学取模计算，因此 `0` 和负数也可作为
-key。字符串 selector 只取前四个 UTF-16 字符来选择 partition。相同 key 会路由到同一个 partition，并保持
+key。字符串 selector 对完整 UTF-16 key 执行确定性哈希来选择 partition。相同 key 会路由到同一个 partition，并保持
 该 partition 内的写入顺序；不同 key 也可能落在同一个 partition。省略 `UsePartitionKey` 则继续使用默认的
 round-robin 路由。Selector 必须是确定性的，并且能安全地被并发调用。在 Memory 模式下，并发 Producer 可以
 同时向不同 key 所在的 partition 写入；写入同一 partition 时仍会串行执行。
+
+字符串路由现在会使用后缀，不提供旧映射模式。空字符串合法，null key 会被拒绝。
+路由按码元处理，不执行 Unicode 规范化，也不分配临时字节数组。已有 MMF 数据仍可读取，
+但从前缀路由升级后，同 key 的新消息可能进入其他 partition，因此不保证跨升级的顺序。
 
 批量写入同样按单条数据路由。round-robin 会为批次中的每条数据轮转一次，不会把整个批次固定写入一个
 partition。按 key 路由时，会为批次中的每条数据调用 selector；相同 key 的数据在选定 partition 内保持

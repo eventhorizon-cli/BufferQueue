@@ -62,9 +62,13 @@ public sealed record OrderEvent(long Id, decimal Total);
 
 Producer 默认按 round-robin 方式选择 partition。`UsePartitionKey` 必须传入 selector 委托。数值 selector
 支持内置的 `INumber<TNumber>` 类型，但其返回值必须是有限整数。分区索引按 `(key - 1)` 对
-`PartitionNumber` 的归一化数学取模计算，因此 `0` 和负数也可作为 key。字符串 selector 只取前四个 UTF-16
-字符来选择 partition。相同 key 会路由到同一个 partition；不同 key 也可能落在同一个 partition。Selector
+`PartitionNumber` 的归一化数学取模计算，因此 `0` 和负数也可作为 key。字符串 selector 对完整 UTF-16
+key 执行确定性哈希来选择 partition。相同 key 会路由到同一个 partition；不同 key 也可能落在同一个 partition。Selector
 应当是确定性的，并且能安全地被并发调用。
+
+字符串路由现在会使用后缀，不提供旧映射模式。空字符串合法，null key 会被拒绝。
+路由按码元处理，不执行 Unicode 规范化，也不分配临时字节数组。已有 MMF 数据仍可读取，
+但从前缀路由升级后，同 key 的新消息可能进入其他 partition，因此不保证跨升级的顺序。
 
 只要历史记录还需要保持按 key 的顺序，selector 与 `PartitionNumber` 就不能修改。数值和字符串的路由规则在
 进程重启后仍保持确定性；字符串路由不使用 `string.GetHashCode()`。

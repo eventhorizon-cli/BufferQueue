@@ -53,11 +53,16 @@ have multiple partitions. Producer calls use round-robin routing by default.
 built-in `INumber<TNumber>` types when their result is a finite integer; they
 route with the normalized mathematical modulo of `(key - 1)` and
 `PartitionNumber`, so zero and negative keys are accepted. String selectors use
-only the first four UTF-16 characters to choose a partition. Equal keys are
+the complete UTF-16 key with a deterministic hash to choose a partition. Equal keys are
 routed to the same partition and retain their per-partition order; different
 keys can share a partition. Omit the call to retain round-robin routing. The selector must be deterministic
 and safe for concurrent calls. In Memory mode, concurrent producers can append to different key-selected
 partitions in parallel; appends to the same partition remain serialized.
+
+String routing now includes suffixes, with no legacy mapping mode. Empty strings are accepted; null keys
+are rejected. Routing is ordinal, performs no Unicode normalization, and allocates no temporary byte
+array. Existing MMF data remains readable, but upgrading from prefix routing can move new messages
+for a key to another partition, so ordering across that upgrade is not preserved.
 
 Batch production applies the same routing to every item. A round-robin batch is
 not assigned to one partition: selection advances once per item. A key-routed

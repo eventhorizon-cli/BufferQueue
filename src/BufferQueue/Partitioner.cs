@@ -127,9 +127,6 @@ internal sealed class KeyPartitioner<TItem> : IPartitioner<TItem>
 
 internal static class PartitionKeyRouting
 {
-    private const int StringPrefixLength = 4;
-    private const int StringCharacterMultiplier = 31;
-
     public static Func<TItem, int, int> CreateNumericPartitionIndexSelector<TItem, TNumber>(
         Func<TItem, TNumber> partitionKeySelector)
         where TNumber : INumber<TNumber>
@@ -175,14 +172,40 @@ internal static class PartitionKeyRouting
         ArgumentNullException.ThrowIfNull(partitionKey);
         ValidatePartitionCount(partitionCount);
 
-        var characterCount = Math.Min(partitionKey.Length, StringPrefixLength);
-        var value = 0;
-        for (var index = 0; index < characterCount; index++)
+        if (partitionCount == 1)
         {
-            value = value * StringCharacterMultiplier + partitionKey[index];
+            return 0;
         }
 
-        return value % partitionCount;
+        unchecked
+        {
+            // MurmurHash3 x86_32, seed zero, over UTF-16LE without an encoded byte array.
+            // Explicit word assembly preserves the mapping on either native byte order.
+            const uint c1 = 0xcc9e2d51U;
+            const uint c2 = 0x1b873593U;
+            var hash = 0U;
+            var index = 0;
+            for (; index < partitionKey.Length - 1; index += 2)
+            {
+                var block = (uint)partitionKey[index] | (uint)partitionKey[index + 1] << 16;
+                block = BitOperations.RotateLeft(block * c1, 15) * c2;
+                hash = BitOperations.RotateLeft(hash ^ block, 13) * 5 + 0xe6546b64U;
+            }
+
+            if (index < partitionKey.Length)
+            {
+                hash ^= BitOperations.RotateLeft(partitionKey[index] * c1, 15) * c2;
+            }
+
+            // Finalize with the byte length, including both bytes of every UTF-16 code unit.
+            hash ^= (uint)partitionKey.Length * 2;
+            hash ^= hash >> 16;
+            hash *= 0x85ebca6bU;
+            hash ^= hash >> 13;
+            hash *= 0xc2b2ae35U;
+            hash ^= hash >> 16;
+            return (int)(hash % (uint)partitionCount);
+        }
     }
 
     private static int SelectNumericPartitionCore<TNumber>(TNumber partitionKey, int partitionCount)

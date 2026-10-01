@@ -15,6 +15,7 @@ var allBenchmarks = new[]
     typeof(UnboundedChannelVsMemoryBufferQueueConsumeBenchmark),
     typeof(BoundedChannelVsMemoryBufferQueueConsumeBenchmark),
     typeof(MemoryBufferPartitionerBenchmark),
+    typeof(StringPartitionRoutingBenchmark),
     typeof(MemoryVsMemoryMappedFileBufferQueueProduceBenchmark),
     typeof(MemoryVsMemoryMappedFileBufferQueueConsumeBenchmark),
     typeof(MemoryMappedFileSerializerSerializeBenchmark),

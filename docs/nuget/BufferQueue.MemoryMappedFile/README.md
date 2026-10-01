@@ -67,10 +67,15 @@ Producer calls use round-robin partitioning by default. `UsePartitionKey`
 requires a selector delegate. Numeric selectors support the built-in
 `INumber<TNumber>` types when their result is a finite integer; they route with
 the normalized mathematical modulo of `(key - 1)` and `PartitionNumber`, so
-zero and negative keys are accepted. String selectors use only the first
-four UTF-16 characters to choose a partition. Equal keys are routed to the
+zero and negative keys are accepted. String selectors use a deterministic hash of the complete
+UTF-16 key to choose a partition. Equal keys are routed to the
 same partition, while different keys can share a partition. The selector should
 be deterministic and safe for concurrent calls.
+
+String routing now includes suffixes, with no legacy mapping mode. Empty strings are accepted; null keys
+are rejected. Routing is ordinal, performs no Unicode normalization, and allocates no temporary byte
+array. Existing MMF data remains readable, but upgrading from prefix routing can move new messages
+for a key to another partition, so ordering across that upgrade is not preserved.
 
 Keep the selector and `PartitionNumber` unchanged while existing records must
 preserve per-key order. Numeric and string routing are deterministic across

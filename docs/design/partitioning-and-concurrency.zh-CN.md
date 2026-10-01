@@ -39,8 +39,17 @@ Round-robin 路由将追加操作分散到不同 partition。启用 PartitionKey
 
 - 数值 selector 的结果必须是有限整数，并使用 `(key - 1)` 对
   `PartitionNumber` 的归一化数学取模映射；零和负数也可以作为 key。
-- 字符串 selector 只使用前四个 UTF-16 字符计算 partition index，不使用
-  `string.GetHashCode()`。
+- 字符串 selector 对完整 key 使用种子为零的 MurmurHash3 x86_32，不使用 `string.GetHashCode()`。
+  每个 UTF-16 码元依次贡献低字节和高字节，包括代理码元及内嵌空字符；不执行规范化或大小写转换，
+  也不添加 BOM 或终止符。每两个码元组成一个小端 32 位块；末尾单个码元作为两字节尾部处理。
+  按标准算法混入字节长度并执行 fmix32，运算按模 2^32 回绕。无符号哈希对 `PartitionNumber`
+  取模得到 partition。空字符串合法，null 被拒绝；单 partition 在参数校验后始终选择零。
+
+字符串路由不分配内存，时间复杂度为 O(key 长度)。固定字节序和常量使映射不受进程哈希随机化、
+机器字节序或目标框架影响。实现遵循 [MurmurHash3 x86_32 参考实现](https://github.com/aappleby/smhasher/blob/master/src/MurmurHash3.cpp)，
+直接处理成对的 UTF-16 码元，不编码成临时字节数组。
+这将直接替换原来的四码元映射，不提供旧模式。升级会改变字符串 partition 分配；已有 MMF 日志仍可读取，
+但同 key 的新消息可能进入其他 partition，因此不保证跨升级的按 key 顺序。
 
 相同 key 因此能保持 partition 内顺序，不同 key 仍可能映射到同一个 partition。
 

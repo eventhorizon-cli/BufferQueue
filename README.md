@@ -224,25 +224,31 @@ builder.Services.AddHostedService<Foo1PullConsumerHostService>();
 `UsePartitionKey` requires a selector delegate. Numeric selectors support the built-in
 `INumber<TNumber>` types when their result is a finite integer; they route with
 the normalized mathematical modulo of `(key - 1)` and `PartitionNumber`. This also accepts
-zero and negative keys. String selectors use only the first four UTF-16 characters
+zero and negative keys. String selectors hash the complete UTF-16 key deterministically
 to choose a partition. Equal keys therefore keep their per-partition ordering, while
 different keys can share a partition. When `UsePartitionKey` is not called, production
 continues to use round-robin routing. The selector must be deterministic and safe for concurrent calls.
 In Memory mode, concurrent producers can append to different key-selected partitions in parallel; appends to the
 same partition remain serialized.
 
+String routing now includes suffixes, with no legacy mapping mode. Empty strings are accepted; null keys
+are rejected. Routing is ordinal, performs no Unicode normalization, and allocates no temporary byte
+array. Existing MMF data remains readable, but upgrading from prefix routing can move new messages
+for a key to another partition, so ordering across that upgrade is not preserved.
+
 ### Partition-Key Routing Benchmark
 
 The following Memory-mode producer benchmark uses `8` partitions, `8,192` messages repeated `832` times,
-`6` warmup iterations, and `15` measured iterations. Results are per produced item on an Apple M2 Max with
-.NET 10.0.0; no path allocated managed memory.
+`6` warmup iterations, and `15` measured iterations. Results are per produced item on macOS 27.0.1,
+ARM64, and .NET 10.0.0; no path allocated managed memory. String keys contain `7` UTF-16 code units;
+complete-key hashing takes more time as keys get longer.
 
 | Routing | Mean | Relative to round robin |
 | --- | ---: | ---: |
-| Round robin | `15.81 ns` | `1.00x` |
-| `int` key | `17.02 ns` | `1.08x` |
-| `string` key (first four UTF-16 characters) | `17.50 ns` | `1.11x` |
-| Custom message, numeric `CustomerId` key | `17.11 ns` | `1.08x` |
+| Round robin | `13.99 ns` | `1.00x` |
+| `int` key | `11.37 ns` | `0.81x` |
+| `string` key (complete UTF-16 key) | `16.00 ns` | `1.14x` |
+| Custom message, numeric `CustomerId` key | `11.49 ns` | `0.82x` |
 
 ### MemoryMappedFile Mode Registration
 

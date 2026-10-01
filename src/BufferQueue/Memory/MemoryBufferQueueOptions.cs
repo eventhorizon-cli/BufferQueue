@@ -84,10 +84,13 @@ public class MemoryBufferQueueOptions<T> : MemoryBufferQueueOptions
     }
 
     /// <summary>
-    /// Enables partition-key routing for a string key. The first four UTF-16 characters determine the partition.
+    /// Enables partition-key routing for a string key. The complete UTF-16 key is hashed deterministically to select the partition.
     /// </summary>
     /// <param name="partitionKeySelector">Selects the string partition key from an item.</param>
-    /// <remarks>The selector must be deterministic and safe for concurrent calls.</remarks>
+    /// <remarks>
+    /// Routing is ordinal and allocation-free. Empty strings are valid; null keys are rejected.
+    /// The selector must be deterministic and safe for concurrent calls.
+    /// </remarks>
     public void UsePartitionKey(Func<T, string> partitionKeySelector)
     {
         ArgumentNullException.ThrowIfNull(partitionKeySelector);

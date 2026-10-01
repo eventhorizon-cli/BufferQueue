@@ -212,21 +212,26 @@ builder.Services.AddHostedService<Foo1PullConsumerHostService>();
 
 `UsePartitionKey` 必须传入 selector 委托。数值 selector 支持内置的
 `INumber<TNumber>` 类型，但结果必须是有限的整数，路由使用 `(key - 1)` 对 `PartitionNumber`
-的归一化数学取模，因此零和负数也可作为 key。字符串 selector 只使用前四个 UTF-16 字符选择 partition。
+的归一化数学取模，因此零和负数也可作为 key。字符串 selector 对完整 UTF-16 key 执行确定性哈希来选择 partition。
 相同 key 因此能保持 partition 内顺序，不同 key 仍可能进入同一个 partition。未调用 `UsePartitionKey` 时，Producer 继续使用默认的轮询路由。Selector 必须保持确定性，
 并能安全地被并发调用。Memory 模式下，并发 Producer 可以并行写入不同 key 选中的 partition；写入同一个 partition 仍会串行执行。
+
+字符串路由现在会使用后缀，不提供旧映射模式。空字符串合法，null key 会被拒绝。
+路由按码元处理，不执行 Unicode 规范化，也不分配临时字节数组。已有 MMF 数据仍可读取，
+但从前缀路由升级后，同 key 的新消息可能进入其他 partition，因此不保证跨升级的顺序。
 
 ### PartitionKey 路由性能
 
 下面的 Memory 模式 producer 基准使用 `8` 个 partition、`8,192` 条消息重复 `832` 次、`6` 次预热和
-`15` 次测量迭代。结果为单条写入耗时，运行环境为 Apple M2 Max 和 .NET 10.0.0；所有路径均无托管内存分配。
+`15` 次测量迭代。结果为单条写入耗时，运行环境为 macOS 27.0.1、ARM64 和 .NET 10.0.0；
+所有路径均无托管内存分配。字符串 key 包含 `7` 个 UTF-16 码元；完整 key 哈希的耗时随 key 长度增加。
 
 | 路由方式 | Mean | 相对轮询 |
 | --- | ---: | ---: |
-| 轮询 | `15.81 ns` | `1.00x` |
-| `int` key | `17.02 ns` | `1.08x` |
-| `string` key（前四个 UTF-16 字符） | `17.50 ns` | `1.11x` |
-| 自定义消息，取数值 `CustomerId` key | `17.11 ns` | `1.08x` |
+| 轮询 | `13.99 ns` | `1.00x` |
+| `int` key | `11.37 ns` | `0.81x` |
+| `string` key（完整 UTF-16 key） | `16.00 ns` | `1.14x` |
+| 自定义消息，取数值 `CustomerId` key | `11.49 ns` | `0.82x` |
 
 ### MemoryMappedFile 模式注册
 

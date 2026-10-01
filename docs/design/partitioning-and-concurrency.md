@@ -46,8 +46,21 @@ Round-robin routing distributes appends across partitions. With partition-key ro
 - A numeric selector result must be a finite integer. It maps through the normalized mathematical
   modulo of `(key - 1)` and `PartitionNumber`; zero and negative keys are
   accepted.
-- A string selector folds only its first four UTF-16 characters into a partition index. It does not
-  use `string.GetHashCode()`.
+- A string selector hashes the complete key with MurmurHash3 x86_32 and seed zero. It does not
+  use `string.GetHashCode()`. Each UTF-16 code unit contributes its low byte then high byte, including
+  surrogate code units and embedded nulls; no normalization, case folding, BOM, or terminator is added.
+  Pairs of code units form little-endian 32-bit blocks; a final unpaired code unit forms a two-byte
+  tail. The standard byte length and fmix32 finalization are applied with arithmetic modulo 2^32.
+  The unsigned hash modulo `PartitionNumber` selects the partition. Empty strings are valid; null
+  strings are rejected. A single partition always selects zero after validation.
+
+String routing is allocation-free and takes O(key length) time. The fixed byte order and seed make
+mapping independent of process hash randomization, machine endianness, and target framework.
+The implementation follows the [MurmurHash3 x86_32 reference](https://github.com/aappleby/smhasher/blob/master/src/MurmurHash3.cpp),
+processing pairs of UTF-16 code units directly without encoding into a temporary byte array.
+This replaces the previous four-code-unit mapping without a legacy mode. Upgrading changes string
+partition assignments; existing MMF logs remain readable, but new writes for the same key may enter
+another partition. Per-key order across that upgrade is not preserved.
 
 Equal keys therefore retain their order in one partition, while distinct keys may still collide on
 the same partition.
