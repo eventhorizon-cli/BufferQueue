@@ -222,7 +222,8 @@ builder.Services.AddHostedService<Foo1PullConsumerHostService>();
 
 ### PartitionKey 路由性能
 
-下面的 Memory 模式 producer 基准使用 `8` 个 partition、`8,192` 条消息重复 `832` 次、`6` 次预热和
+下面的 [`MemoryBufferPartitionerBenchmark`](tests/BufferQueue.Benchmarks/MemoryBufferPartitionerBenchmark.cs)
+测量完整的 Memory 模式 producer 路径，使用 `8` 个 partition、`8,192` 条消息重复 `832` 次、`6` 次预热和
 `15` 次测量迭代。结果为单条写入耗时，运行环境为 macOS 27.0.1、ARM64 和 .NET 10.0.0；
 所有路径均无托管内存分配。字符串 key 包含 `7` 个 UTF-16 码元；完整 key 哈希的耗时随 key 长度增加。
 
@@ -232,6 +233,22 @@ builder.Services.AddHostedService<Foo1PullConsumerHostService>();
 | `int` key | `11.37 ns` | `0.81x` |
 | `string` key（完整 UTF-16 key） | `16.00 ns` | `1.14x` |
 | 自定义消息，取数值 `CustomerId` key | `11.49 ns` | `0.82x` |
+
+通过以下命令运行该 producer 基准：
+
+```bash
+dotnet run -c Release --project tests/BufferQueue.Benchmarks/BufferQueue.Benchmarks.csproj -- --filter '*MemoryBufferPartitionerBenchmark*'
+```
+
+独立的 [`StringPartitionRoutingBenchmark`](tests/BufferQueue.Benchmarks/StringPartitionRoutingBenchmark.cs)
+仅测量字符串路由，使用预先构造的 `4`、`9`、`64`、`256` 个 UTF-16 码元的 key 和 `8` 个 partition。
+它使用一次启动、`6` 次预热和 `10` 次测量迭代，目标迭代时间为 `100 ms`。
+其结果为单次路由耗时，不包含队列写入；上表数据来自 producer 基准。
+通过以下命令运行 key 长度基准：
+
+```bash
+dotnet run -c Release --project tests/BufferQueue.Benchmarks/BufferQueue.Benchmarks.csproj -- --filter '*StringPartitionRoutingBenchmark*'
+```
 
 ### MemoryMappedFile 模式注册
 

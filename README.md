@@ -238,7 +238,8 @@ for a key to another partition, so ordering across that upgrade is not preserved
 
 ### Partition-Key Routing Benchmark
 
-The following Memory-mode producer benchmark uses `8` partitions, `8,192` messages repeated `832` times,
+The following [`MemoryBufferPartitionerBenchmark`](tests/BufferQueue.Benchmarks/MemoryBufferPartitionerBenchmark.cs)
+measures the complete Memory-mode producer path with `8` partitions and `8,192` messages repeated `832` times,
 `6` warmup iterations, and `15` measured iterations. Results are per produced item on macOS 27.0.1,
 ARM64, and .NET 10.0.0; no path allocated managed memory. String keys contain `7` UTF-16 code units;
 complete-key hashing takes more time as keys get longer.
@@ -249,6 +250,22 @@ complete-key hashing takes more time as keys get longer.
 | `int` key | `11.37 ns` | `0.81x` |
 | `string` key (complete UTF-16 key) | `16.00 ns` | `1.14x` |
 | Custom message, numeric `CustomerId` key | `11.49 ns` | `0.82x` |
+
+Run this producer benchmark with:
+
+```bash
+dotnet run -c Release --project tests/BufferQueue.Benchmarks/BufferQueue.Benchmarks.csproj -- --filter '*MemoryBufferPartitionerBenchmark*'
+```
+
+The separate [`StringPartitionRoutingBenchmark`](tests/BufferQueue.Benchmarks/StringPartitionRoutingBenchmark.cs)
+measures only string routing for prebuilt keys of `4`, `9`, `64`, and `256` UTF-16 code units across `8` partitions.
+It uses one launch, `6` warmup iterations, and `10` measured iterations with a target iteration time of `100 ms`.
+Its results are per routing call and exclude queue writes; the table above comes from the producer benchmark.
+Run the key-length benchmark with:
+
+```bash
+dotnet run -c Release --project tests/BufferQueue.Benchmarks/BufferQueue.Benchmarks.csproj -- --filter '*StringPartitionRoutingBenchmark*'
+```
 
 ### MemoryMappedFile Mode Registration
 
