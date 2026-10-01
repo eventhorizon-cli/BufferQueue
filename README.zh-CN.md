@@ -378,6 +378,10 @@ offsets/orders%2Fworker 1/consumer.offset
 
 ### Consumer Group
 
+Consumer 在已分配的可读 partition 之间轮转，每次从上一批数据所在 partition 之后开始。
+空 partition 不会使低编号 partition 获得更多机会。这均衡的是拉取机会，不是处理时间；
+partition 内顺序和手动提交的重放语义保持不变。
+
 在同一个 topic queue 实例内，同名 group 只能创建一次。`CreatePullConsumer<T>` 创建包含一个 consumer 的
 group；需要多个 consumer 时，使用 `CreatePullConsumers<T>(options, consumerNumber)` 一次创建整个 group。
 consumer 数量必须介于 1 和该 topic 的 partition 数量之间。创建后，该组的 consumer 数量和 partition 分配固定；

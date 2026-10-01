@@ -176,6 +176,10 @@ public sealed class OrderWorker(IBufferQueue queue) : BackgroundService
 
 ## Push consumer
 
+Consumer 在已分配的可读 partition 之间轮转，每次从上一批数据所在 partition 之后开始。
+空 partition 不会使低编号 partition 获得更多机会。这均衡的是拉取机会，不是处理时间；
+partition 内顺序和手动提交的重放语义保持不变。
+
 注册示例中的 `AddPushCustomers` 会扫描指定程序集，找到带有 `BufferPushCustomerAttribute` 的类型，并以 hosted
 service 的形式启动其消费循环。
 

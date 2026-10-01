@@ -17,6 +17,13 @@ not storage-specific. It:
 - commits manually consumed batches;
 - auto-commits when `AutoCommit` is enabled.
 
+The consumer scans assigned partitions in a ring. After a successful pull, the next scan starts
+after the partition that supplied the batch. Empty scans leave this cursor unchanged. Continuously
+readable partitions receive one pull opportunity per rotation, including when other partitions are
+empty. This is batch scheduling fairness, not equal processing time, per-key fairness, or global
+ordering. Manual commits still apply to the most recently delivered batch; an uncommitted partition
+can replay its batch when its next turn arrives. The cursor stays within the assigned array bounds.
+
 Consumption returns an asynchronous stream of batches:
 
 ~~~csharp
@@ -51,7 +58,7 @@ Consumers do not spin when no data is available. The common consumer waits throu
 5. The partition notifies registered consumers through
    `IBufferPartitionConsumer<TItem>`.
 6. The consumer increments its pending-data version and completes the pending value task.
-7. The consumer resumes and tries the partition that sent the notification.
+7. The consumer resumes the same ring scan; the notification is a wake-up hint, not a priority override.
 
 The pending-data version prevents a lost wake-up when data arrives between the final pull attempt
 and the transition into the waiting state.
