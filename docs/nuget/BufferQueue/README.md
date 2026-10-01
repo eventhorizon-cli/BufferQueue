@@ -134,6 +134,27 @@ position and cannot read records whose capacity has already been released.
 
 ## Consume in batches
 
+Create each named group once per topic queue instance. `CreatePullConsumer<T>` creates a group with one consumer;
+use `CreatePullConsumers<T>(options, consumerNumber)` to create the entire group with multiple consumers.
+The count must be between one and the topic's partition count. The group's consumer count and partition assignments
+are fixed after creation; creating the same group again throws `InvalidOperationException`.
+
+Each partition has one consumer within a group. Changing the consumer count at runtime would require reassigning
+partitions and coordinating the handoff with unfinished batches and uncommitted progress. Fixing the count at
+creation keeps each partition's reads and commits with the same consumer and avoids a runtime rebalance protocol.
+
+Because groups have independent partition assignments and consumption progress, creating a new group does not
+rebalance existing groups or add consumers to them.
+
+Creating a group assigns its partitions; consumption starts when its consumers' `ConsumeAsync` sequences are
+enumerated. Memory topics allow writing before creating a group, and group creation can run concurrently with
+production. A new group starts at each partition's earliest available position and cannot read records whose capacity
+has already been released or whose segments have been recycled. It is not guaranteed to receive the topic's complete
+history.
+
+For a bounded Memory topic in `Wait` mode, writes wait when capacity is unavailable. Start consumption and commit
+progress to release capacity instead of waiting for writes beyond the available capacity to finish first.
+
 This example uses manual commit, so progress advances only after the batch has
 been processed successfully:
 
@@ -172,10 +193,6 @@ public sealed class OrderWorker(IBufferQueue queue) : BackgroundService
     }
 }
 ```
-
-Use `CreatePullConsumers<T>(options, consumerNumber)` to distribute a consumer
-group's partitions across multiple consumers. The consumer count cannot exceed
-the topic's partition count.
 
 ## Push consumers
 

@@ -117,6 +117,25 @@ consumer group 的最小 committed position 向前推进时归还容量；即使
 
 ## 批量消费
 
+在同一个 topic queue 实例内，同名 group 只能创建一次。`CreatePullConsumer<T>` 创建包含一个 consumer 的
+group；需要多个 consumer 时，使用 `CreatePullConsumers<T>(options, consumerNumber)` 一次创建整个 group。
+consumer 数量必须介于 1 和该 topic 的 partition 数量之间。创建后，该组的 consumer 数量和 partition 分配固定；
+再次创建同名 group 会抛出 `InvalidOperationException`。
+
+同一个 group 内，每个 partition 由一个 consumer 负责。运行中改变 consumer 数量，需要重新分配 partition，
+并协调尚未处理完的批次、未提交的进度和 partition 交接。创建时固定 consumer 数量，使每个 partition 的读取
+和提交始终由同一个 consumer 负责，避免引入运行时 rebalance 流程。
+
+不同 group 拥有独立的 partition 分配和消费进度，因此创建新 group 不会触发已有 group 的重新分配，也不会
+向已有 group 添加 consumer。
+
+创建 group 时会完成 partition 分配；枚举各 consumer 的 `ConsumeAsync` 序列时才开始消费。Memory topic 允许
+先写入数据再创建 group，也支持 group 创建与生产并发进行。新 group 从各 partition 当前仍可读的最早位置开始，
+无法读取容量已经释放或 segment 已经回收的数据，因此不保证能读取该 topic 的完整历史。
+
+对于采用 `Wait` 模式的有界 Memory topic，容量不足时写入会等待。应启动消费并提交进度来释放容量，避免先等待
+超过可用容量的写入全部完成后才开始消费。
+
 下面的示例使用手动提交：只有整个批次处理成功后，消费进度才会推进。
 
 ```csharp
@@ -154,9 +173,6 @@ public sealed class OrderWorker(IBufferQueue queue) : BackgroundService
     }
 }
 ```
-
-使用 `CreatePullConsumers<T>(options, consumerNumber)` 可以将一个 consumer group 的 partition 分配给多个
-consumer。consumer 数量不能超过该 topic 的 partition 数量。
 
 ## Push consumer
 

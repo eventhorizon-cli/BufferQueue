@@ -30,6 +30,11 @@ Groups are independent. Two groups consuming the same topic retain separate prog
 count is fixed when a group is created, and duplicate group names in one queue instance are
 rejected.
 
+Memory consumer-group registration may run concurrently with production. Existing group assignments
+remain unchanged. A group created while production continues starts at each partition's earliest
+still-readable position; there is no topic-wide atomic registration time or guarantee that the group can
+read all historical records.
+
 Ordering is preserved within a partition, not globally across partitions. Multiple consumers in a
 group receive distinct partition assignments, so no group member competes with another member for
 the same partition.
@@ -84,6 +89,14 @@ The queue is designed for concurrent production and consumption within one proce
 - A Memory partition publishes its readable segment cursor only after it stores the item. Consumers
   never observe an unwritten slot and do not take the append lock while reading.
 - Consumer-group creation is guarded by a queue-level lock.
+- Memory consumer registration and unregistration are serialized by the existing partition append
+  lock. Registration builds a notification set copied from the current `HashSet`, initializes the
+  reader, and then publishes the set with a volatile write. Published sets are never modified.
+  Producers use a volatile read and enumerate the selected set outside the lock, so production does
+  not copy the set or take an additional notification lock for each item. An in-flight notification
+  may use an older set and notify a consumer that has just been unregistered; unregistration does not
+  wait for such notifications to finish. A new consumer reads available data before waiting, so
+  missing an older notification set does not by itself lose a wake-up.
 - Consumer wait and wake-up state is protected by `ReaderWriterLockSlim`.
 - MemoryMappedFile producer and consumer checkpoints use replace-or-move semantics, so readers do
   not observe partially written offset files.
