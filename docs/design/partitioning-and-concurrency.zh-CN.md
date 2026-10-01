@@ -27,6 +27,9 @@ consumer-1: partition-3, partition-4
 不同 group 相互独立。两个 group 消费同一个 topic 时各自维护进度。Group 创建后 consumer 数量固定；
 同一个 queue 实例中重复创建相同 group name 会被拒绝。
 
+Memory consumer group 可以与生产并发创建，已有 group 的分配保持不变。生产继续进行时创建的 group 从各
+partition 当前仍可读的最早位置开始；不存在 topic 全局原子的注册时刻，也不保证该 group 能读取全部历史记录。
+
 顺序只在单个 partition 内得到保证，不保证跨 partition 的全局顺序。同一 group 中不同 consumer 获得
 不同 partition 分配，因此不会有两个组成员竞争消费同一个 partition。
 
@@ -73,6 +76,11 @@ Queue 的设计目标是在一个进程内并发生产和消费：
 - Memory partition 只会在写入 item 后发布可读 segment cursor，因此 consumer 不会读到未写入 slot，
   读取时也不需要获取 append lock。
 - Consumer group 的创建受 queue-level lock 保护。
+- Memory consumer 的注册和注销由现有的 partition append lock 串行化。注册时先从当前 `HashSet` 构建通知集合，
+  初始化 reader 后，再通过 volatile 写入发布集合。已发布的集合不会再修改。Producer 通过 volatile 读取集合并
+  在锁外遍历，因此生产路径不会复制集合，也不会为每条数据新增通知锁。在途通知可能仍使用旧集合，并通知刚刚
+  注销的 consumer；注销不会等待这类通知完成。新 consumer 会先读取已有数据再进入等待，因此没有出现在旧通知
+  集合中本身不会导致丢失唤醒。
 - Consumer 等待和唤醒状态受 `ReaderWriterLockSlim` 保护。
 - MemoryMappedFile 的 producer 和 consumer checkpoint 使用 replace-or-move 语义，读取方不会看到
   部分写入的 offset 文件。

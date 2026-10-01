@@ -4,6 +4,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
+using System.Threading;
 
 namespace BufferQueue.Memory;
 
@@ -20,7 +21,9 @@ internal sealed class MemoryBufferPartition<T>
 
     // At most one consumer per group can consume the same partition at the same time,
     private readonly ConcurrentDictionary<string /* group name */, Reader> _consumerReaders;
-    private readonly HashSet<IBufferPartitionConsumer<T>> _consumers;
+    // The append lock serializes replacements. Published sets are never mutated, so notifications
+    // can enumerate an older set without locking or copying it.
+    private HashSet<IBufferPartitionConsumer<T>> _consumers;
 
     private readonly object _appendLock;
     private readonly object? _appendCoordinator;
@@ -78,8 +81,15 @@ internal sealed class MemoryBufferPartition<T>
         EnterAppendLock();
         try
         {
-            _consumers.Add(consumer);
+            var consumers = _consumers;
+            if (!consumers.Contains(consumer))
+            {
+                consumers = new(consumers) { consumer };
+            }
+
+            // Initialize the reader before making the consumer visible to notifications.
             _consumerReaders.TryAdd(consumer.GroupName, CreateReader());
+            Volatile.Write(ref _consumers, consumers);
         }
         finally
         {
@@ -93,8 +103,16 @@ internal sealed class MemoryBufferPartition<T>
         EnterAppendLock();
         try
         {
-            _consumers.Remove(consumer);
+            var consumers = _consumers;
+            if (consumers.Contains(consumer))
+            {
+                consumers = new(consumers);
+                consumers.Remove(consumer);
+            }
+
             _consumerReaders.TryRemove(consumer.GroupName, out _);
+            // Notifications already using the old set may still call this consumer.
+            Volatile.Write(ref _consumers, consumers);
             releasedCount = ReleaseCommittedCapacity();
         }
         finally
@@ -144,7 +162,8 @@ internal sealed class MemoryBufferPartition<T>
 
     internal void NotifyConsumers()
     {
-        foreach (var consumer in _consumers)
+        // A consumer missing from this snapshot checks existing data before it starts waiting.
+        foreach (var consumer in Volatile.Read(ref _consumers))
         {
             consumer.NotifyNewDataAvailable(this);
         }
@@ -493,7 +512,7 @@ internal sealed class MemoryBufferPartition<T>
 
         public ulong Count => partition.Count;
 
-        public HashSet<IBufferPartitionConsumer<T>> Consumers => partition._consumers;
+        public HashSet<IBufferPartitionConsumer<T>> Consumers => Volatile.Read(ref partition._consumers);
 
         public ConcurrentDictionary<string, Reader> ConsumerReaders => partition._consumerReaders;
 

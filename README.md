@@ -393,6 +393,29 @@ During recovery, a missing `producer.offset` is scanned forward from `earliest.o
 
 When recovering an existing MemoryMappedFile topic, do not reduce `PartitionNumber`. Historical records stored in removed partitions would no longer have a partition reader and could not be consumed, so startup fails fast with an `InvalidDataException` if existing partition directories exceed the configured partition count.
 
+### Consumer Groups
+
+Create each named group once per topic queue instance. `CreatePullConsumer<T>` creates a group with one consumer;
+use `CreatePullConsumers<T>(options, consumerNumber)` to create the entire group with multiple consumers.
+The count must be between one and the topic's partition count. The group's consumer count and partition assignments
+are fixed after creation; creating the same group again throws `InvalidOperationException`.
+
+Each partition has one consumer within a group. Changing the consumer count at runtime would require reassigning
+partitions and coordinating the handoff with unfinished batches and uncommitted progress. Fixing the count at
+creation keeps each partition's reads and commits with the same consumer and avoids a runtime rebalance protocol.
+
+Because groups have independent partition assignments and consumption progress, creating a new group does not
+rebalance existing groups or add consumers to them.
+
+Creating a group assigns its partitions; consumption starts when its consumers' `ConsumeAsync` sequences are
+enumerated. Memory topics allow writing before creating a group, and group creation can run concurrently with
+production. A new group starts at each partition's earliest available position and cannot read records whose capacity
+has already been released or whose segments have been recycled. It is not guaranteed to receive the topic's complete
+history.
+
+For a bounded Memory topic in `Wait` mode, writes wait when capacity is unavailable. Start consumption and commit
+progress to release capacity instead of waiting for writes beyond the available capacity to finish first.
+
 ### Pull Mode Consumer
 
 Pull mode consumer example:
