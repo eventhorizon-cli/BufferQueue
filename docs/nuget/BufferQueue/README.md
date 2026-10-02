@@ -59,10 +59,15 @@ keys can share a partition. Omit the call to retain round-robin routing. The sel
 and safe for concurrent calls. In Memory mode, concurrent producers can append to different key-selected
 partitions in parallel; appends to the same partition remain serialized.
 
-String routing now includes suffixes, with no legacy mapping mode. Empty strings are accepted; null keys
-are rejected. Routing is ordinal, performs no Unicode normalization, and allocates no temporary byte
-array. Existing MMF data remains readable, but upgrading from prefix routing can move new messages
-for a key to another partition, so ordering across that upgrade is not preserved.
+String routing uses XXH3-64 with seed zero over the complete key's canonical UTF-16LE bytes, then
+maps the unsigned 64-bit hash modulo `PartitionNumber`. Empty strings are accepted and use the
+non-zero XXH3 empty-input hash; null keys are rejected. Routing is ordinal: it performs no Unicode
+normalization or unpaired-surrogate replacement. A single partition still selects zero after validation.
+For ordinary little-endian keys, the implementation uses a direct span path without an encoding buffer
+or managed allocation. XXH3 uses SIMD for inputs longer than 240 bytes (more than 120 UTF-16 code units)
+when supported; shorter inputs use specialized scalar paths with the same result. The mapping is stable
+across hardware and target frameworks. Existing MMF data remains readable, but new writes for a key can
+move to another partition after this breaking mapping change; there is no legacy mode.
 
 Batch production applies the same routing to every item. A round-robin batch is
 not assigned to one partition: selection advances once per item. A key-routed

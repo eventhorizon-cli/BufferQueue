@@ -39,17 +39,27 @@ Round-robin 路由将追加操作分散到不同 partition。启用 PartitionKey
 
 - 数值 selector 的结果必须是有限整数，并使用 `(key - 1)` 对
   `PartitionNumber` 的归一化数学取模映射；零和负数也可以作为 key。
-- 字符串 selector 对完整 key 使用种子为零的 MurmurHash3 x86_32，不使用 `string.GetHashCode()`。
-  每个 UTF-16 码元依次贡献低字节和高字节，包括代理码元及内嵌空字符；不执行规范化或大小写转换，
-  也不添加 BOM 或终止符。每两个码元组成一个小端 32 位块；末尾单个码元作为两字节尾部处理。
-  按标准算法混入字节长度并执行 fmix32，运算按模 2^32 回绕。无符号哈希对 `PartitionNumber`
-  取模得到 partition。空字符串合法，null 被拒绝；单 partition 在参数校验后始终选择零。
+- 字符串 selector 对完整 key 使用种子为零的 XXH3-64，不使用 `string.GetHashCode()`。
+  规范输入是 UTF-16 码元序列按小端序列化的字节，包括代理码元及内嵌空字符；不执行 Unicode
+  规范化或大小写转换，也不添加 BOM、终止符，且不会替换未配对代理码元。无符号 64 位哈希对
+  `PartitionNumber` 取模得到 partition。空字符串合法，并使用非零的 XXH3 空输入哈希；null 被拒绝。
+  单 partition 在参数校验后始终选择零。
 
-字符串路由不分配内存，时间复杂度为 O(key 长度)。固定字节序和常量使映射不受进程哈希随机化、
-机器字节序或目标框架影响。实现遵循 [MurmurHash3 x86_32 参考实现](https://github.com/aappleby/smhasher/blob/master/src/MurmurHash3.cpp)，
-直接处理成对的 UTF-16 码元，不编码成临时字节数组。
-这将直接替换原来的四码元映射，不提供旧模式。升级会改变字符串 partition 分配；已有 MMF 日志仍可读取，
-但同 key 的新消息可能进入其他 partition，因此不保证跨升级的按 key 顺序。
+固定字节序和种子使映射不受进程哈希随机化、机器字节序、目标框架和硬件影响。在小端机器上，长度不超过
+`int.MaxValue / 2` 个 UTF-16 码元的 key 会通过覆盖 UTF-16 数据的 `MemoryMarshal` span 直接交给
+`System.IO.Hashing`，不需要编码缓冲区或托管内存分配。可移植的增量路径也能处理规范字节长度超过 span
+最大长度的 key。大端 fallback 使用有界栈缓冲区，将规范的小端字节增量传给 `XxHash3`，并分配哈希状态
+对象；它仍产生相同的规范结果，因此字符串路由并非在所有情况下都零分配。输入超过 240 字节（超过 120
+个 UTF-16 码元）且硬件支持时，XXH3 使用 SIMD；更短输入使用专用标量路径，标量 fallback 产生相同哈希。
+直接依赖为 `System.IO.Hashing` 10.0.9，提供 net8.0 和 net10.0 资产，且没有额外的生产传递依赖。实现采用成熟的
+`System.IO.Hashing` XXH3，避免在本仓库复制大型哈希实现。参见 [runtime 源码](https://github.com/dotnet/runtime/tree/v10.0.9/src/libraries/System.IO.Hashing)
+和 [xxHash 参考实现](https://github.com/Cyan4973/xxHash)。
+
+这将直接替换原来的四码元映射，不提供旧模式。升级会改变字符串 partition 分配；已有
+MMF 日志仍可读取，但同 key 的新消息可能进入其他 partition，因此不保证跨升级的按 key 顺序。
+
+该映射与 Kafka 不兼容。Kafka 的 Java key 分区器对序列化后的 key 字节使用 Murmur2，先与 `0x7fffffff`
+按位与，再对 `partitionCount` 取模；这是独立的映射规则，并非本 UTF-16LE XXH3-64 规则的 SIMD 替代方案。
 
 相同 key 因此能保持 partition 内顺序，不同 key 仍可能映射到同一个 partition。
 

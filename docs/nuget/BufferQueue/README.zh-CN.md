@@ -54,9 +54,12 @@ key。字符串 selector 对完整 UTF-16 key 执行确定性哈希来选择 par
 round-robin 路由。Selector 必须是确定性的，并且能安全地被并发调用。在 Memory 模式下，并发 Producer 可以
 同时向不同 key 所在的 partition 写入；写入同一 partition 时仍会串行执行。
 
-字符串路由现在会使用后缀，不提供旧映射模式。空字符串合法，null key 会被拒绝。
-路由按码元处理，不执行 Unicode 规范化，也不分配临时字节数组。已有 MMF 数据仍可读取，
-但从前缀路由升级后，同 key 的新消息可能进入其他 partition，因此不保证跨升级的顺序。
+字符串路由使用种子为零的 XXH3-64，对完整 key 的规范 UTF-16LE 字节计算哈希，再将无符号 64 位哈希
+对 `PartitionNumber` 取模。空字符串合法，并使用非零的 XXH3 空输入哈希；null key 会被拒绝。路由按码元
+处理，不执行 Unicode 规范化或未配对代理码元替换。单 partition 在参数校验后仍始终选择零。普通小端 key
+使用直接 span 路径，不需要编码缓冲区或托管内存分配。硬件支持时，XXH3 对超过 240 字节（超过 120 个
+UTF-16 码元）的输入使用 SIMD；更短输入使用结果相同的专用标量路径。映射在不同硬件和目标框架上保持稳定。
+已有 MMF 数据仍可读取，但这次破坏性映射变更后，同 key 的新消息可能进入其他 partition；不提供旧模式。
 
 批量写入同样按单条数据路由。round-robin 会为批次中的每条数据轮转一次，不会把整个批次固定写入一个
 partition。按 key 路由时，会为批次中的每条数据调用 selector；相同 key 的数据在选定 partition 内保持

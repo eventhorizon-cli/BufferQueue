@@ -66,9 +66,12 @@ Producer 默认按 round-robin 方式选择 partition。`UsePartitionKey` 必须
 key 执行确定性哈希来选择 partition。相同 key 会路由到同一个 partition；不同 key 也可能落在同一个 partition。Selector
 应当是确定性的，并且能安全地被并发调用。
 
-字符串路由现在会使用后缀，不提供旧映射模式。空字符串合法，null key 会被拒绝。
-路由按码元处理，不执行 Unicode 规范化，也不分配临时字节数组。已有 MMF 数据仍可读取，
-但从前缀路由升级后，同 key 的新消息可能进入其他 partition，因此不保证跨升级的顺序。
+字符串路由使用种子为零的 XXH3-64，对完整 key 的规范 UTF-16LE 字节计算哈希，再将无符号 64 位哈希
+对 `PartitionNumber` 取模。空字符串合法，并使用非零的 XXH3 空输入哈希；null key 会被拒绝。路由按码元
+处理，不执行 Unicode 规范化或未配对代理码元替换。单 partition 在参数校验后仍始终选择零。普通小端 key
+使用直接 span 路径，不需要编码缓冲区或托管内存分配。硬件支持时，XXH3 对超过 240 字节（超过 120 个
+UTF-16 码元）的输入使用 SIMD；更短输入使用结果相同的专用标量路径。映射在不同硬件和目标框架上保持稳定。
+已有 MMF 数据仍可读取，但这次破坏性映射变更后，同 key 的新消息可能进入其他 partition；不提供旧模式。
 
 只要历史记录还需要保持按 key 的顺序，selector 与 `PartitionNumber` 就不能修改。数值和字符串的路由规则在
 进程重启后仍保持确定性；字符串路由不使用 `string.GetHashCode()`。

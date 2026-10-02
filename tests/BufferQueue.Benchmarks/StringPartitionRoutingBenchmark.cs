@@ -10,7 +10,7 @@ public class StringPartitionRoutingBenchmark
 {
     private string[] _keys = null!;
 
-    [Params(4, 9, 64, 256)]
+    [Params(4, 9, 64, 120, 121, 256, 1024)]
     public int KeyLength { get; set; }
 
     [GlobalSetup]

@@ -231,10 +231,13 @@ continues to use round-robin routing. The selector must be deterministic and saf
 In Memory mode, concurrent producers can append to different key-selected partitions in parallel; appends to the
 same partition remain serialized.
 
-String routing now includes suffixes, with no legacy mapping mode. Empty strings are accepted; null keys
-are rejected. Routing is ordinal, performs no Unicode normalization, and allocates no temporary byte
-array. Existing MMF data remains readable, but upgrading from prefix routing can move new messages
-for a key to another partition, so ordering across that upgrade is not preserved.
+String routing uses XXH3-64 with seed zero over the complete UTF-16LE key, including suffixes, with
+no legacy mapping mode. Empty strings are accepted; null keys are rejected. Routing preserves code
+units without Unicode normalization. It hashes directly without managed allocations on little-endian
+machines when the key fits in a byte span. Long keys can use hardware SIMD; short keys use specialized
+scalar paths. All paths produce the same mapping. Existing MMF data remains readable, but upgrading
+from prefix routing can move new messages for a key to another partition, so ordering across that
+upgrade is not preserved.
 
 ### Partition-Key Routing Benchmark
 
@@ -246,10 +249,10 @@ complete-key hashing takes more time as keys get longer.
 
 | Routing | Mean | Relative to round robin |
 | --- | ---: | ---: |
-| Round robin | `13.99 ns` | `1.00x` |
-| `int` key | `11.37 ns` | `0.81x` |
-| `string` key (complete UTF-16 key) | `16.00 ns` | `1.14x` |
-| Custom message, numeric `CustomerId` key | `11.49 ns` | `0.82x` |
+| Round robin | `13.40 ns` | `1.00x` |
+| `int` key | `12.03 ns` | `0.90x` |
+| `string` key (XXH3-64, complete UTF-16 key) | `12.94 ns` | `0.97x` |
+| Custom message, numeric `CustomerId` key | `11.19 ns` | `0.83x` |
 
 Run this producer benchmark with:
 
@@ -258,7 +261,8 @@ dotnet run -c Release --project tests/BufferQueue.Benchmarks/BufferQueue.Benchma
 ```
 
 The separate [`StringPartitionRoutingBenchmark`](tests/BufferQueue.Benchmarks/StringPartitionRoutingBenchmark.cs)
-measures only string routing for prebuilt keys of `4`, `9`, `64`, and `256` UTF-16 code units across `8` partitions.
+measures only string routing for prebuilt keys of `4`, `9`, `64`, `120`, `121`, `256`, and `1024` UTF-16 code units across `8` partitions.
+The `120`/`121` cases straddle XXH3's long-input threshold of `240` bytes.
 It uses one launch, `6` warmup iterations, and `10` measured iterations with a target iteration time of `100 ms`.
 Its results are per routing call and exclude queue writes; the table above comes from the producer benchmark.
 Run the key-length benchmark with:

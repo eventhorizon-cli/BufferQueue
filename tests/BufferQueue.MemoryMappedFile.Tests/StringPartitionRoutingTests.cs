@@ -3,10 +3,16 @@ namespace BufferQueue.MemoryMappedFile.Tests;
 public class StringPartitionRoutingTests
 {
     [Theory]
-    [InlineData(0)]
-    [InlineData(1)]
-    [InlineData(2)]
-    public async Task Single_And_Batch_Production_Preserve_Key_Order_Across_Restart(int mode)
+    [InlineData(0, 9)]
+    [InlineData(1, 9)]
+    [InlineData(2, 9)]
+    [InlineData(0, 121)]
+    [InlineData(1, 121)]
+    [InlineData(2, 121)]
+    [InlineData(0, 256)]
+    [InlineData(1, 256)]
+    [InlineData(2, 256)]
+    public async Task Single_And_Batch_Production_Preserve_Key_Order_Across_Restart(int mode, int keyLength)
     {
         using var temporaryDirectory = new TemporaryDirectory();
         var options = new MemoryMappedFileBufferQueueOptions<string>
@@ -17,8 +23,9 @@ public class StringPartitionRoutingTests
             SegmentSizeInBytes = 1024
         };
         options.UsePartitionKey(static item => item.Split('|')[0]);
-        var before = Enumerable.Range(0, 64).Select(i => $"user:{i:D4}|first").ToArray();
-        var after = Enumerable.Range(0, 64).Select(i => $"user:{i:D4}|second").ToArray();
+        var prefix = new string('x', keyLength - 9);
+        var before = Enumerable.Range(0, 64).Select(i => $"{prefix}user:{i:D4}|first").ToArray();
+        var after = Enumerable.Range(0, 64).Select(i => $"{prefix}user:{i:D4}|second").ToArray();
         using (var initial = new MemoryMappedFileBufferQueue<string>(options))
         {
             await Produce(initial.GetProducer(), before, mode);

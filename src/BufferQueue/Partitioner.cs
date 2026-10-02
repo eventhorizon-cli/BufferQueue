@@ -1,5 +1,8 @@
 using System;
+using System.Buffers.Binary;
+using System.IO.Hashing;
 using System.Numerics;
+using System.Runtime.InteropServices;
 using System.Threading;
 
 namespace BufferQueue;
@@ -177,35 +180,31 @@ internal static class PartitionKeyRouting
             return 0;
         }
 
-        unchecked
+        // Hash UTF-16LE directly when the native string representation already has that byte order.
+        var hash = BitConverter.IsLittleEndian && partitionKey.Length <= int.MaxValue / sizeof(char)
+            ? XxHash3.HashToUInt64(MemoryMarshal.AsBytes(partitionKey.AsSpan()))
+            : HashStringKeyPortable(partitionKey.AsSpan());
+        return (int)(hash % (uint)partitionCount);
+    }
+
+    internal static ulong HashStringKeyPortable(ReadOnlySpan<char> key)
+    {
+        // Preserve code units, including unpaired surrogates, with bounded conversion storage.
+        var hash = new XxHash3();
+        Span<byte> buffer = stackalloc byte[256];
+        while (!key.IsEmpty)
         {
-            // MurmurHash3 x86_32, seed zero, over UTF-16LE without an encoded byte array.
-            // Explicit word assembly preserves the mapping on either native byte order.
-            const uint c1 = 0xcc9e2d51U;
-            const uint c2 = 0x1b873593U;
-            var hash = 0U;
-            var index = 0;
-            for (; index < partitionKey.Length - 1; index += 2)
+            var count = Math.Min(key.Length, buffer.Length / sizeof(char));
+            for (var index = 0; index < count; index++)
             {
-                var block = (uint)partitionKey[index] | (uint)partitionKey[index + 1] << 16;
-                block = BitOperations.RotateLeft(block * c1, 15) * c2;
-                hash = BitOperations.RotateLeft(hash ^ block, 13) * 5 + 0xe6546b64U;
+                BinaryPrimitives.WriteUInt16LittleEndian(buffer.Slice(index * sizeof(char), sizeof(char)), key[index]);
             }
 
-            if (index < partitionKey.Length)
-            {
-                hash ^= BitOperations.RotateLeft(partitionKey[index] * c1, 15) * c2;
-            }
-
-            // Finalize with the byte length, including both bytes of every UTF-16 code unit.
-            hash ^= (uint)partitionKey.Length * 2;
-            hash ^= hash >> 16;
-            hash *= 0x85ebca6bU;
-            hash ^= hash >> 13;
-            hash *= 0xc2b2ae35U;
-            hash ^= hash >> 16;
-            return (int)(hash % (uint)partitionCount);
+            hash.Append(buffer[..(count * sizeof(char))]);
+            key = key[count..];
         }
+
+        return hash.GetCurrentHashAsUInt64();
     }
 
     private static int SelectNumericPartitionCore<TNumber>(TNumber partitionKey, int partitionCount)

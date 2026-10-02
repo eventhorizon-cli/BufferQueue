@@ -5,10 +5,16 @@ namespace BufferQueue.Tests.Memory;
 public class StringPartitionProductionTests
 {
     [Theory]
-    [InlineData(0)]
-    [InlineData(1)]
-    [InlineData(2)]
-    public async Task Single_And_Batch_Production_Preserve_Key_Order(int mode)
+    [InlineData(0, 9)]
+    [InlineData(1, 9)]
+    [InlineData(2, 9)]
+    [InlineData(0, 121)]
+    [InlineData(1, 121)]
+    [InlineData(2, 121)]
+    [InlineData(0, 256)]
+    [InlineData(1, 256)]
+    [InlineData(2, 256)]
+    public async Task Single_And_Batch_Production_Preserve_Key_Order(int mode, int keyLength)
     {
         var options = new MemoryBufferQueueOptions<string>
         {
@@ -17,8 +23,9 @@ public class StringPartitionProductionTests
             SegmentSize = 128
         };
         options.UsePartitionKey(static item => item.Split('|')[0]);
-        var before = Enumerable.Range(0, 64).Select(i => $"user:{i:D4}|first").ToArray();
-        var after = Enumerable.Range(0, 64).Select(i => $"user:{i:D4}|second").ToArray();
+        var prefix = new string('x', keyLength - 9);
+        var before = Enumerable.Range(0, 64).Select(i => $"{prefix}user:{i:D4}|first").ToArray();
+        var after = Enumerable.Range(0, 64).Select(i => $"{prefix}user:{i:D4}|second").ToArray();
         var queue = new MemoryBufferQueue<string>(options);
         await Produce(queue.GetProducer(), before, mode);
         await Produce(queue.GetProducer(), after, mode);
