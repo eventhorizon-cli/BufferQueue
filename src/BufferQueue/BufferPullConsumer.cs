@@ -23,6 +23,7 @@ internal sealed class BufferPullConsumer<TItem>(BufferPullConsumerOptions option
 
     public void AssignPartitions(params IBufferPartition<TItem>[] partitions)
     {
+        _partitionIndex = 0;
         _assignedPartitions = partitions;
         var registeredPartitionCount = 0;
         try
@@ -66,38 +67,9 @@ internal sealed class BufferPullConsumer<TItem>(BufferPullConsumerOptions option
         while (!cancellationToken.IsCancellationRequested)
         {
             var pendingDataVersion = _pendingDataVersion;
-            var partition = SelectPartition();
-            var batchSize = options.BatchSize;
-
-            if (TryPull(partition, batchSize, out var items))
+            if (TryPullNext(out var items))
             {
                 yield return items;
-                continue;
-            }
-
-            IEnumerable<TItem> itemsFromOtherPartition = null!;
-            var hasItemFromOtherPartition = false;
-
-            foreach (var t in _assignedPartitions)
-            {
-                partition = t;
-
-                if (partition == _partitionBeingConsumed)
-                {
-                    continue;
-                }
-
-                if (TryPull(partition, batchSize, out items))
-                {
-                    itemsFromOtherPartition = items;
-                    hasItemFromOtherPartition = true;
-                    break;
-                }
-            }
-
-            if (hasItemFromOtherPartition)
-            {
-                yield return itemsFromOtherPartition;
                 continue;
             }
 
@@ -118,13 +90,14 @@ internal sealed class BufferPullConsumer<TItem>(BufferPullConsumerOptions option
             }
 
             var pendingDataTask = _pendingDataValueTaskSource.ValueTask;
-            var partitionWithNewData = pendingDataTask.IsCompletedSuccessfully
-                ? pendingDataTask.Result
-                : await pendingDataTask.AsTask().WaitAsync(cancellationToken);
-
-            if (TryPull(partitionWithNewData, batchSize, out items))
+            // Notifications only wake the reader; resume the ring without favoring the sender.
+            if (pendingDataTask.IsCompletedSuccessfully)
             {
-                yield return items;
+                _ = pendingDataTask.Result;
+            }
+            else
+            {
+                await pendingDataTask.AsTask().WaitAsync(cancellationToken);
             }
         }
     }
@@ -192,16 +165,28 @@ internal sealed class BufferPullConsumer<TItem>(BufferPullConsumerOptions option
         return dataAvailable;
     }
 
-    private IBufferPartition<TItem> SelectPartition()
+    private bool TryPullNext([NotNullWhen(true)] out IEnumerable<TItem>? items)
     {
         var partitions = _assignedPartitions;
-
         if (partitions.Length == 0)
         {
             throw new InvalidOperationException("No partition is assigned.");
         }
 
-        var index = _partitionIndex++ % partitions.Length;
-        return partitions[index];
+        var index = _partitionIndex;
+        for (var remaining = partitions.Length; remaining > 0; remaining--)
+        {
+            var partition = partitions[index];
+            // Keep the cursor bounded instead of allowing a monotonically increasing int to wrap.
+            index = index + 1 == partitions.Length ? 0 : index + 1;
+            if (TryPull(partition, options.BatchSize, out items))
+            {
+                _partitionIndex = index;
+                return true;
+            }
+        }
+
+        items = null;
+        return false;
     }
 }

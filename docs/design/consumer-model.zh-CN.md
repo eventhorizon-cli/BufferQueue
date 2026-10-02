@@ -16,6 +16,12 @@
 - 提交手动消费的 batch；
 - 在 `AutoCommit` 开启时自动提交。
 
+Consumer 按环形顺序扫描已分配的 partition。成功拉取后，下次扫描从实际提供 batch 的
+partition 之后开始；全空扫描不推进游标。持续可读的 partition 每轮各获得一次拉取机会，
+即使其余 partition 为空也如此。这是 batch 调度公平性，不保证处理时间相同、按 key 公平或全局顺序。
+手动提交仍作用于最近交付的 batch；未提交 partition 再次轮到时可以重放其 batch。
+游标始终保持在已分配数组的范围内。
+
 消费接口返回 batch 的异步流：
 
 ~~~csharp
@@ -48,7 +54,7 @@ Consumer 在无数据时不会自旋。通用 consumer 通过
 4. Producer 向某个 partition 追加数据。
 5. Partition 通过 `IBufferPartitionConsumer<TItem>` 通知已注册 consumer。
 6. Consumer 增加 pending-data version，并完成 pending value task。
-7. Consumer 被唤醒后，从触发通知的 partition 尝试拉取数据。
+7. Consumer 被唤醒后继续同一环形扫描；通知仅用于唤醒，不改变 partition 的优先级。
 
 pending-data version 用来避免 lost wake-up：如果数据在最后一次拉取尝试和进入等待状态之间到达，consumer
 可以检测版本变化并重新尝试消费。
