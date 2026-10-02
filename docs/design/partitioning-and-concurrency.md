@@ -54,19 +54,15 @@ Round-robin routing distributes appends across partitions. With partition-key ro
   XXH3 empty-input hash; null strings are rejected. A single partition always selects zero after
   validation.
 
-The fixed byte order and seed make mapping independent of process hash randomization, machine
-endianness, target framework, and hardware. On little-endian machines, keys up to
-`int.MaxValue / 2` UTF-16 code units are passed through a `MemoryMarshal` span directly to
-`System.IO.Hashing` without an encoding buffer or managed allocation. A portable streaming path also
-handles keys whose canonical byte length exceeds the maximum span length. The big-endian fallback
-feeds canonical little-endian bytes incrementally through `XxHash3`, using a bounded stack buffer and
-allocating the hash state object; it produces the same canonical result, so string routing is not
-universally allocation-free. XXH3 uses SIMD for inputs longer than 240 bytes (more than 120 UTF-16
-code units) when supported by the hardware; shorter inputs use specialized scalar paths, and the
-scalar fallback produces the same hash. The direct dependency is `System.IO.Hashing` 10.0.9, with
-assets for net8.0 and net10.0 and no additional transitive production dependencies. The implementation
-uses the mature `System.IO.Hashing` XXH3 implementation
-instead of copying a large hash implementation into this repository. See the [runtime source](https://github.com/dotnet/runtime/tree/v10.0.9/src/libraries/System.IO.Hashing)
+The UTF-16LE input contract and seed make mapping stable across supported little-endian .NET
+restarts. The implementation passes the string data directly to `System.IO.Hashing` through a
+`MemoryMarshal` span, so it does not allocate an encoding buffer. MMF topic data is not intended to
+move between platforms with different byte order. XXH3 uses SIMD for inputs longer than 240 bytes
+(more than 120 UTF-16 code units) when supported by the hardware; shorter inputs use specialized
+scalar paths, and the scalar fallback produces the same hash. The direct dependency is
+`System.IO.Hashing` 10.0.9, with assets for net8.0 and net10.0 and no additional transitive production
+dependencies. The implementation uses the mature `System.IO.Hashing` XXH3 implementation instead of
+copying a large hash implementation into this repository. See the [runtime source](https://github.com/dotnet/runtime/tree/v10.0.9/src/libraries/System.IO.Hashing)
 and [xxHash reference](https://github.com/Cyan4973/xxHash).
 
 This replaces the previous four-code-unit mapping without a legacy mode.

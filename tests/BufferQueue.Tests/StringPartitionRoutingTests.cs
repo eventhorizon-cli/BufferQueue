@@ -25,7 +25,6 @@ public class StringPartitionRoutingTests
     public void Mapping_Is_Deterministic_For_Complete_Ordinal_Strings(string key, int expected)
     {
         Assert.Equal(expected, PartitionKeyRouting.SelectStringPartition(key, int.MaxValue));
-        Assert.Equal(expected, (int)(PartitionKeyRouting.HashStringKeyPortable(key) % int.MaxValue));
         Assert.Equal(0, PartitionKeyRouting.SelectStringPartition(key, 1));
     }
 
@@ -37,7 +36,6 @@ public class StringPartitionRoutingTests
         // Construct after test discovery, whose string serialization replaces unpaired surrogates.
         var key = new string((char)codeUnit, 1);
         Assert.Equal(expected, PartitionKeyRouting.SelectStringPartition(key, int.MaxValue));
-        Assert.Equal(expected, (int)(PartitionKeyRouting.HashStringKeyPortable(key) % int.MaxValue));
     }
 
     [Theory]
@@ -78,7 +76,6 @@ public class StringPartitionRoutingTests
             .Select(index => (char)((index * 7919 + 0xd800) & 0xffff)).ToArray());
 
         Assert.Equal(expected, PartitionKeyRouting.SelectStringPartition(key, int.MaxValue));
-        Assert.Equal(expected, (int)(PartitionKeyRouting.HashStringKeyPortable(key) % int.MaxValue));
     }
 
     [Theory]

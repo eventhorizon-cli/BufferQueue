@@ -1,5 +1,4 @@
 using System;
-using System.Buffers.Binary;
 using System.IO.Hashing;
 using System.Numerics;
 using System.Runtime.InteropServices;
@@ -180,31 +179,9 @@ internal static class PartitionKeyRouting
             return 0;
         }
 
-        // Hash UTF-16LE directly when the native string representation already has that byte order.
-        var hash = BitConverter.IsLittleEndian && partitionKey.Length <= int.MaxValue / sizeof(char)
-            ? XxHash3.HashToUInt64(MemoryMarshal.AsBytes(partitionKey.AsSpan()))
-            : HashStringKeyPortable(partitionKey.AsSpan());
+        // MMF topics stay on the same supported little-endian platform across restarts.
+        var hash = XxHash3.HashToUInt64(MemoryMarshal.AsBytes(partitionKey.AsSpan()));
         return (int)(hash % (uint)partitionCount);
-    }
-
-    internal static ulong HashStringKeyPortable(ReadOnlySpan<char> key)
-    {
-        // Preserve code units, including unpaired surrogates, with bounded conversion storage.
-        var hash = new XxHash3();
-        Span<byte> buffer = stackalloc byte[256];
-        while (!key.IsEmpty)
-        {
-            var count = Math.Min(key.Length, buffer.Length / sizeof(char));
-            for (var index = 0; index < count; index++)
-            {
-                BinaryPrimitives.WriteUInt16LittleEndian(buffer.Slice(index * sizeof(char), sizeof(char)), key[index]);
-            }
-
-            hash.Append(buffer[..(count * sizeof(char))]);
-            key = key[count..];
-        }
-
-        return hash.GetCurrentHashAsUInt64();
     }
 
     private static int SelectNumericPartitionCore<TNumber>(TNumber partitionKey, int partitionCount)

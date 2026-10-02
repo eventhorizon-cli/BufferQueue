@@ -45,14 +45,12 @@ Round-robin 路由将追加操作分散到不同 partition。启用 PartitionKey
   `PartitionNumber` 取模得到 partition。空字符串合法，并使用非零的 XXH3 空输入哈希；null 被拒绝。
   单 partition 在参数校验后始终选择零。
 
-固定字节序和种子使映射不受进程哈希随机化、机器字节序、目标框架和硬件影响。在小端机器上，长度不超过
-`int.MaxValue / 2` 个 UTF-16 码元的 key 会通过覆盖 UTF-16 数据的 `MemoryMarshal` span 直接交给
-`System.IO.Hashing`，不需要编码缓冲区或托管内存分配。可移植的增量路径也能处理规范字节长度超过 span
-最大长度的 key。大端 fallback 使用有界栈缓冲区，将规范的小端字节增量传给 `XxHash3`，并分配哈希状态
-对象；它仍产生相同的规范结果，因此字符串路由并非在所有情况下都零分配。输入超过 240 字节（超过 120
-个 UTF-16 码元）且硬件支持时，XXH3 使用 SIMD；更短输入使用专用标量路径，标量 fallback 产生相同哈希。
-直接依赖为 `System.IO.Hashing` 10.0.9，提供 net8.0 和 net10.0 资产，且没有额外的生产传递依赖。实现采用成熟的
-`System.IO.Hashing` XXH3，避免在本仓库复制大型哈希实现。参见 [runtime 源码](https://github.com/dotnet/runtime/tree/v10.0.9/src/libraries/System.IO.Hashing)
+规范的 UTF-16LE 输入和固定种子使映射在受支持的小端 .NET 环境重启后保持稳定。实现通过
+`MemoryMarshal` span 将字符串数据直接交给 `System.IO.Hashing`，不分配编码缓冲区。MMF topic
+数据不计划在字节序不同的平台之间迁移。输入超过 240 字节（超过 120 个 UTF-16 码元）且硬件
+支持时，XXH3 使用 SIMD；更短输入使用专用标量路径，标量 fallback 产生相同哈希。直接依赖为
+`System.IO.Hashing` 10.0.9，提供 net8.0 和 net10.0 资产，且没有额外的生产传递依赖。实现采用
+成熟的 `System.IO.Hashing` XXH3，避免在本仓库复制大型哈希实现。参见 [runtime 源码](https://github.com/dotnet/runtime/tree/v10.0.9/src/libraries/System.IO.Hashing)
 和 [xxHash 参考实现](https://github.com/Cyan4973/xxHash)。
 
 这将直接替换原来的四码元映射，不提供旧模式。升级会改变字符串 partition 分配；已有

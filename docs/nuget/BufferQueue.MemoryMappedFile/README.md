@@ -76,10 +76,11 @@ String routing uses XXH3-64 with seed zero over the complete key's canonical UTF
 maps the unsigned 64-bit hash modulo `PartitionNumber`. Empty strings are accepted and use the
 non-zero XXH3 empty-input hash; null keys are rejected. Routing is ordinal: it performs no Unicode
 normalization or unpaired-surrogate replacement. A single partition still selects zero after validation.
-For ordinary little-endian keys, the implementation uses a direct span path without an encoding buffer
-or managed allocation. XXH3 uses SIMD for inputs longer than 240 bytes (more than 120 UTF-16 code units)
-when supported; shorter inputs use specialized scalar paths with the same result. The mapping is stable
-across hardware and target frameworks. Existing MMF data remains readable, but new writes for a key can
+On supported little-endian .NET targets, the implementation passes the UTF-16 data directly to
+`System.IO.Hashing` without an encoding buffer or managed allocation. MMF topic data is not intended
+to move between platforms with different byte order. XXH3 uses SIMD for inputs longer than 240 bytes
+(more than 120 UTF-16 code units) when supported; shorter inputs use specialized scalar paths with
+the same result. Existing MMF data remains readable, but new writes for a key can
 move to another partition after this breaking mapping change; there is no legacy mode.
 
 Keep the selector and `PartitionNumber` unchanged while existing records must
