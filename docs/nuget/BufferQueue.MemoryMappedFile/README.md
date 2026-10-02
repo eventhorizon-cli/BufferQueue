@@ -153,6 +153,10 @@ batch-level flush unit.
 
 ## Pull consumers
 
+Consumers rotate among readable assigned partitions, starting after the partition that supplied the
+previous batch. Empty partitions do not favor lower partition indices. This balances pull
+opportunities, not processing time; partition-local order and manual-commit replay are preserved.
+
 Register a hosted worker and create a purpose-named consumer group. This example
 commits only after the batch has been processed successfully:
 

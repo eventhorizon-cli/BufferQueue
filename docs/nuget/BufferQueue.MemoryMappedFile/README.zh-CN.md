@@ -133,6 +133,10 @@ MMF 会将批次中的每条数据视为一条普通记录：选择 partition、
 
 ## Pull consumer
 
+Consumer 在已分配的可读 partition 之间轮转，每次从上一批数据所在 partition 之后开始。
+空 partition 不会使低编号 partition 获得更多机会。这均衡的是拉取机会，不是处理时间；
+partition 内顺序和手动提交的重放语义保持不变。
+
 注册一个 hosted worker，并为 consumer group 取一个明确的名称。下面的示例只有在整个批次处理成功后才提交：
 
 ```csharp

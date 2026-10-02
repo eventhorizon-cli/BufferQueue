@@ -422,6 +422,10 @@ When recovering an existing MemoryMappedFile topic, do not reduce `PartitionNumb
 
 ### Consumer Groups
 
+Consumers rotate among readable assigned partitions, starting after the partition that supplied the
+previous batch. Empty partitions do not favor lower partition indices. This balances pull
+opportunities, not processing time; partition-local order and manual-commit replay are preserved.
+
 Create each named group once per topic queue instance. `CreatePullConsumer<T>` creates a group with one consumer;
 use `CreatePullConsumers<T>(options, consumerNumber)` to create the entire group with multiple consumers.
 The count must be between one and the topic's partition count. The group's consumer count and partition assignments

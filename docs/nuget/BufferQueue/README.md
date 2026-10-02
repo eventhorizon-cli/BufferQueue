@@ -206,6 +206,10 @@ public sealed class OrderWorker(IBufferQueue queue) : BackgroundService
 
 ## Push consumers
 
+Consumers rotate among readable assigned partitions, starting after the partition that supplied the
+previous batch. Empty partitions do not favor lower partition indices. This balances pull
+opportunities, not processing time; partition-local order and manual-commit replay are preserved.
+
 `AddPushCustomers` in the registration example scans the specified assembly for
 classes marked with `BufferPushCustomerAttribute` and starts their consumption
 loops as hosted services.
