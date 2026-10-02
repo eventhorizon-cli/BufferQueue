@@ -46,8 +46,36 @@ Round-robin routing distributes appends across partitions. With partition-key ro
 - A numeric selector result must be a finite integer. It maps through the normalized mathematical
   modulo of `(key - 1)` and `PartitionNumber`; zero and negative keys are
   accepted.
-- A string selector folds only its first four UTF-16 characters into a partition index. It does not
-  use `string.GetHashCode()`.
+- A string selector hashes the complete key with XXH3-64 and seed zero. It does not use
+  `string.GetHashCode()`. The canonical input is the UTF-16 code-unit sequence serialized as
+  little-endian bytes, including surrogate code units and embedded nulls; no normalization, case
+  folding, BOM, terminator, or replacement of unpaired surrogates is performed. The unsigned 64-bit
+  hash modulo `PartitionNumber` selects the partition. Empty strings are valid and use the non-zero
+  XXH3 empty-input hash; null strings are rejected. A single partition always selects zero after
+  validation.
+
+The fixed byte order and seed make mapping independent of process hash randomization, machine
+endianness, target framework, and hardware. On little-endian machines, keys up to
+`int.MaxValue / 2` UTF-16 code units are passed through a `MemoryMarshal` span directly to
+`System.IO.Hashing` without an encoding buffer or managed allocation. A portable streaming path also
+handles keys whose canonical byte length exceeds the maximum span length. The big-endian fallback
+feeds canonical little-endian bytes incrementally through `XxHash3`, using a bounded stack buffer and
+allocating the hash state object; it produces the same canonical result, so string routing is not
+universally allocation-free. XXH3 uses SIMD for inputs longer than 240 bytes (more than 120 UTF-16
+code units) when supported by the hardware; shorter inputs use specialized scalar paths, and the
+scalar fallback produces the same hash. The direct dependency is `System.IO.Hashing` 10.0.9, with
+assets for net8.0 and net10.0 and no additional transitive production dependencies. The implementation
+uses the mature `System.IO.Hashing` XXH3 implementation
+instead of copying a large hash implementation into this repository. See the [runtime source](https://github.com/dotnet/runtime/tree/v10.0.9/src/libraries/System.IO.Hashing)
+and [xxHash reference](https://github.com/Cyan4973/xxHash).
+
+This replaces the previous four-code-unit mapping without a legacy mode.
+Upgrading changes string partition assignments; existing MMF logs remain readable, but new writes for
+the same key may enter another partition. Per-key order across that upgrade is not preserved.
+
+This mapping is not Kafka-compatible. Kafka's Java keyed partitioner hashes serialized key bytes with
+Murmur2, masks with `0x7fffffff`, and takes `% partitionCount`; that is a separate mapping, not a
+SIMD alternative to this UTF-16LE XXH3-64 contract.
 
 Equal keys therefore retain their order in one partition, while distinct keys may still collide on
 the same partition.

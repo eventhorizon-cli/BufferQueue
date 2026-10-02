@@ -224,25 +224,52 @@ builder.Services.AddHostedService<Foo1PullConsumerHostService>();
 `UsePartitionKey` requires a selector delegate. Numeric selectors support the built-in
 `INumber<TNumber>` types when their result is a finite integer; they route with
 the normalized mathematical modulo of `(key - 1)` and `PartitionNumber`. This also accepts
-zero and negative keys. String selectors use only the first four UTF-16 characters
+zero and negative keys. String selectors hash the complete UTF-16 key deterministically
 to choose a partition. Equal keys therefore keep their per-partition ordering, while
 different keys can share a partition. When `UsePartitionKey` is not called, production
 continues to use round-robin routing. The selector must be deterministic and safe for concurrent calls.
 In Memory mode, concurrent producers can append to different key-selected partitions in parallel; appends to the
 same partition remain serialized.
 
+String routing uses XXH3-64 with seed zero over the complete UTF-16LE key, including suffixes, with
+no legacy mapping mode. Empty strings are accepted; null keys are rejected. Routing preserves code
+units without Unicode normalization. It hashes directly without managed allocations on little-endian
+machines when the key fits in a byte span. Long keys can use hardware SIMD; short keys use specialized
+scalar paths. All paths produce the same mapping. Existing MMF data remains readable, but upgrading
+from prefix routing can move new messages for a key to another partition, so ordering across that
+upgrade is not preserved.
+
 ### Partition-Key Routing Benchmark
 
-The following Memory-mode producer benchmark uses `8` partitions, `8,192` messages repeated `832` times,
-`6` warmup iterations, and `15` measured iterations. Results are per produced item on an Apple M2 Max with
-.NET 10.0.0; no path allocated managed memory.
+The following [`MemoryBufferPartitionerBenchmark`](tests/BufferQueue.Benchmarks/MemoryBufferPartitionerBenchmark.cs)
+measures the complete Memory-mode producer path with `8` partitions and `8,192` messages repeated `832` times,
+`6` warmup iterations, and `15` measured iterations. Results are per produced item on macOS 27.0.1,
+ARM64, and .NET 10.0.0; no path allocated managed memory. String keys contain `7` UTF-16 code units;
+complete-key hashing takes more time as keys get longer.
 
 | Routing | Mean | Relative to round robin |
 | --- | ---: | ---: |
-| Round robin | `15.81 ns` | `1.00x` |
-| `int` key | `17.02 ns` | `1.08x` |
-| `string` key (first four UTF-16 characters) | `17.50 ns` | `1.11x` |
-| Custom message, numeric `CustomerId` key | `17.11 ns` | `1.08x` |
+| Round robin | `13.40 ns` | `1.00x` |
+| `int` key | `12.03 ns` | `0.90x` |
+| `string` key (XXH3-64, complete UTF-16 key) | `12.94 ns` | `0.97x` |
+| Custom message, numeric `CustomerId` key | `11.19 ns` | `0.83x` |
+
+Run this producer benchmark with:
+
+```bash
+dotnet run -c Release --project tests/BufferQueue.Benchmarks/BufferQueue.Benchmarks.csproj -- --filter '*MemoryBufferPartitionerBenchmark*'
+```
+
+The separate [`StringPartitionRoutingBenchmark`](tests/BufferQueue.Benchmarks/StringPartitionRoutingBenchmark.cs)
+measures only string routing for prebuilt keys of `4`, `9`, `64`, `120`, `121`, `256`, and `1024` UTF-16 code units across `8` partitions.
+The `120`/`121` cases straddle XXH3's long-input threshold of `240` bytes.
+It uses one launch, `6` warmup iterations, and `10` measured iterations with a target iteration time of `100 ms`.
+Its results are per routing call and exclude queue writes; the table above comes from the producer benchmark.
+Run the key-length benchmark with:
+
+```bash
+dotnet run -c Release --project tests/BufferQueue.Benchmarks/BufferQueue.Benchmarks.csproj -- --filter '*StringPartitionRoutingBenchmark*'
+```
 
 ### MemoryMappedFile Mode Registration
 

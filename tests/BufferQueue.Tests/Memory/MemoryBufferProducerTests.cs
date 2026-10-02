@@ -973,24 +973,6 @@ public class MemoryBufferProducerTests
     }
 
     [Fact]
-    public void String_Partition_Keys_Use_Only_The_First_Four_Characters()
-    {
-        var options = new MemoryBufferQueueOptions<string>
-        {
-            TopicName = "test",
-            PartitionNumber = 16
-        };
-        options.UsePartitionKey(static item => item);
-
-        var partitioner = new KeyPartitioner<string>(options.PartitionIndexSelector!);
-
-        Assert.Equal(
-            partitioner.SelectPartition("cust-0001", options.PartitionNumber),
-            partitioner.SelectPartition("cust-9999", options.PartitionNumber));
-        Assert.Equal(0, partitioner.SelectPartition(string.Empty, options.PartitionNumber));
-    }
-
-    [Fact]
     public async Task Producer_And_Direct_Partition_Enqueue_Share_Append_Serialization()
     {
         const int workerCount = 8;

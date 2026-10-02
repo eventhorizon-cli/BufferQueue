@@ -212,21 +212,46 @@ builder.Services.AddHostedService<Foo1PullConsumerHostService>();
 
 `UsePartitionKey` 必须传入 selector 委托。数值 selector 支持内置的
 `INumber<TNumber>` 类型，但结果必须是有限的整数，路由使用 `(key - 1)` 对 `PartitionNumber`
-的归一化数学取模，因此零和负数也可作为 key。字符串 selector 只使用前四个 UTF-16 字符选择 partition。
+的归一化数学取模，因此零和负数也可作为 key。字符串 selector 对完整 UTF-16 key 执行确定性哈希来选择 partition。
 相同 key 因此能保持 partition 内顺序，不同 key 仍可能进入同一个 partition。未调用 `UsePartitionKey` 时，Producer 继续使用默认的轮询路由。Selector 必须保持确定性，
 并能安全地被并发调用。Memory 模式下，并发 Producer 可以并行写入不同 key 选中的 partition；写入同一个 partition 仍会串行执行。
 
+字符串路由使用种子为零的 XXH3-64，对包含后缀的完整 UTF-16LE key 计算哈希，不提供旧映射模式。
+空字符串合法，null key 会被拒绝。路由保留原始码元，不执行 Unicode 规范化。小端机器上，
+能够放入字节 span 的 key 直接参与哈希，不产生托管内存分配。长 key 可使用硬件 SIMD，
+短 key 使用专用标量路径；所有路径产生相同映射。已有 MMF 数据仍可读取，
+但从前缀路由升级后，同 key 的新消息可能进入其他 partition，因此不保证跨升级的顺序。
+
 ### PartitionKey 路由性能
 
-下面的 Memory 模式 producer 基准使用 `8` 个 partition、`8,192` 条消息重复 `832` 次、`6` 次预热和
-`15` 次测量迭代。结果为单条写入耗时，运行环境为 Apple M2 Max 和 .NET 10.0.0；所有路径均无托管内存分配。
+下面的 [`MemoryBufferPartitionerBenchmark`](tests/BufferQueue.Benchmarks/MemoryBufferPartitionerBenchmark.cs)
+测量完整的 Memory 模式 producer 路径，使用 `8` 个 partition、`8,192` 条消息重复 `832` 次、`6` 次预热和
+`15` 次测量迭代。结果为单条写入耗时，运行环境为 macOS 27.0.1、ARM64 和 .NET 10.0.0；
+所有路径均无托管内存分配。字符串 key 包含 `7` 个 UTF-16 码元；完整 key 哈希的耗时随 key 长度增加。
 
 | 路由方式 | Mean | 相对轮询 |
 | --- | ---: | ---: |
-| 轮询 | `15.81 ns` | `1.00x` |
-| `int` key | `17.02 ns` | `1.08x` |
-| `string` key（前四个 UTF-16 字符） | `17.50 ns` | `1.11x` |
-| 自定义消息，取数值 `CustomerId` key | `17.11 ns` | `1.08x` |
+| 轮询 | `13.40 ns` | `1.00x` |
+| `int` key | `12.03 ns` | `0.90x` |
+| `string` key（XXH3-64，完整 UTF-16 key） | `12.94 ns` | `0.97x` |
+| 自定义消息，取数值 `CustomerId` key | `11.19 ns` | `0.83x` |
+
+通过以下命令运行该 producer 基准：
+
+```bash
+dotnet run -c Release --project tests/BufferQueue.Benchmarks/BufferQueue.Benchmarks.csproj -- --filter '*MemoryBufferPartitionerBenchmark*'
+```
+
+独立的 [`StringPartitionRoutingBenchmark`](tests/BufferQueue.Benchmarks/StringPartitionRoutingBenchmark.cs)
+仅测量字符串路由，使用预先构造的 `4`、`9`、`64`、`120`、`121`、`256`、`1024` 个 UTF-16 码元的 key 和 `8` 个 partition。
+`120`/`121` 两组覆盖 XXH3 的 `240` 字节长输入阈值两侧。
+它使用一次启动、`6` 次预热和 `10` 次测量迭代，目标迭代时间为 `100 ms`。
+其结果为单次路由耗时，不包含队列写入；上表数据来自 producer 基准。
+通过以下命令运行 key 长度基准：
+
+```bash
+dotnet run -c Release --project tests/BufferQueue.Benchmarks/BufferQueue.Benchmarks.csproj -- --filter '*StringPartitionRoutingBenchmark*'
+```
 
 ### MemoryMappedFile 模式注册
 

@@ -62,9 +62,16 @@ public sealed record OrderEvent(long Id, decimal Total);
 
 Producer 默认按 round-robin 方式选择 partition。`UsePartitionKey` 必须传入 selector 委托。数值 selector
 支持内置的 `INumber<TNumber>` 类型，但其返回值必须是有限整数。分区索引按 `(key - 1)` 对
-`PartitionNumber` 的归一化数学取模计算，因此 `0` 和负数也可作为 key。字符串 selector 只取前四个 UTF-16
-字符来选择 partition。相同 key 会路由到同一个 partition；不同 key 也可能落在同一个 partition。Selector
+`PartitionNumber` 的归一化数学取模计算，因此 `0` 和负数也可作为 key。字符串 selector 对完整 UTF-16
+key 执行确定性哈希来选择 partition。相同 key 会路由到同一个 partition；不同 key 也可能落在同一个 partition。Selector
 应当是确定性的，并且能安全地被并发调用。
+
+字符串路由使用种子为零的 XXH3-64，对完整 key 的规范 UTF-16LE 字节计算哈希，再将无符号 64 位哈希
+对 `PartitionNumber` 取模。空字符串合法，并使用非零的 XXH3 空输入哈希；null key 会被拒绝。路由按码元
+处理，不执行 Unicode 规范化或未配对代理码元替换。单 partition 在参数校验后仍始终选择零。普通小端 key
+使用直接 span 路径，不需要编码缓冲区或托管内存分配。硬件支持时，XXH3 对超过 240 字节（超过 120 个
+UTF-16 码元）的输入使用 SIMD；更短输入使用结果相同的专用标量路径。映射在不同硬件和目标框架上保持稳定。
+已有 MMF 数据仍可读取，但这次破坏性映射变更后，同 key 的新消息可能进入其他 partition；不提供旧模式。
 
 只要历史记录还需要保持按 key 的顺序，selector 与 `PartitionNumber` 就不能修改。数值和字符串的路由规则在
 进程重启后仍保持确定性；字符串路由不使用 `string.GetHashCode()`。

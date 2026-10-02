@@ -69,10 +69,12 @@ public class MemoryMappedFileBufferQueueOptions<T>
     }
 
     /// <summary>
-    /// Enables partition-key routing for a string key. The first four UTF-16 characters determine the partition.
+    /// Enables partition-key routing for a string key. The complete UTF-16 key is hashed deterministically to select the partition.
     /// </summary>
     /// <param name="partitionKeySelector">Selects the string partition key from an item.</param>
     /// <remarks>
+    /// Routing uses XXH3-64 over UTF-16LE without normalization. Empty strings are valid; null keys are rejected.
+    /// Little-endian keys that fit in a byte span are hashed without managed allocations.
     /// The selector should be deterministic and safe for concurrent calls. Keep the selector and partition count
     /// unchanged across process restarts to preserve routing.
     /// </remarks>

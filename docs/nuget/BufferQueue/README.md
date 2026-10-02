@@ -53,11 +53,21 @@ have multiple partitions. Producer calls use round-robin routing by default.
 built-in `INumber<TNumber>` types when their result is a finite integer; they
 route with the normalized mathematical modulo of `(key - 1)` and
 `PartitionNumber`, so zero and negative keys are accepted. String selectors use
-only the first four UTF-16 characters to choose a partition. Equal keys are
+the complete UTF-16 key with a deterministic hash to choose a partition. Equal keys are
 routed to the same partition and retain their per-partition order; different
 keys can share a partition. Omit the call to retain round-robin routing. The selector must be deterministic
 and safe for concurrent calls. In Memory mode, concurrent producers can append to different key-selected
 partitions in parallel; appends to the same partition remain serialized.
+
+String routing uses XXH3-64 with seed zero over the complete key's canonical UTF-16LE bytes, then
+maps the unsigned 64-bit hash modulo `PartitionNumber`. Empty strings are accepted and use the
+non-zero XXH3 empty-input hash; null keys are rejected. Routing is ordinal: it performs no Unicode
+normalization or unpaired-surrogate replacement. A single partition still selects zero after validation.
+For ordinary little-endian keys, the implementation uses a direct span path without an encoding buffer
+or managed allocation. XXH3 uses SIMD for inputs longer than 240 bytes (more than 120 UTF-16 code units)
+when supported; shorter inputs use specialized scalar paths with the same result. The mapping is stable
+across hardware and target frameworks. Existing MMF data remains readable, but new writes for a key can
+move to another partition after this breaking mapping change; there is no legacy mode.
 
 Batch production applies the same routing to every item. A round-robin batch is
 not assigned to one partition: selection advances once per item. A key-routed
