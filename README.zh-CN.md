@@ -217,9 +217,9 @@ builder.Services.AddHostedService<Foo1PullConsumerHostService>();
 并能安全地被并发调用。Memory 模式下，并发 Producer 可以并行写入不同 key 选中的 partition；写入同一个 partition 仍会串行执行。
 
 字符串路由使用种子为零的 XXH3-64，对包含后缀的完整 UTF-16LE key 计算哈希，不提供旧映射模式。
-空字符串合法，null key 会被拒绝。路由保留原始码元，不执行 Unicode 规范化。小端机器上，
-能够放入字节 span 的 key 直接参与哈希，不产生托管内存分配。长 key 可使用硬件 SIMD，
-短 key 使用专用标量路径；所有路径产生相同映射。已有 MMF 数据仍可读取，
+空字符串合法，null key 会被拒绝。路由保留原始码元，不执行 Unicode 规范化。受支持的小端 .NET
+环境直接哈希 UTF-16 数据，不需要编码缓冲区或托管内存分配。长 key 可使用硬件 SIMD，短 key
+使用专用标量路径。MMF topic 数据不计划在字节序不同的平台之间迁移。已有 MMF 数据仍可读取，
 但从前缀路由升级后，同 key 的新消息可能进入其他 partition，因此不保证跨升级的顺序。
 
 ### PartitionKey 路由性能

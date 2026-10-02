@@ -89,7 +89,7 @@ public class MemoryBufferQueueOptions<T> : MemoryBufferQueueOptions
     /// <param name="partitionKeySelector">Selects the string partition key from an item.</param>
     /// <remarks>
     /// Routing uses XXH3-64 over UTF-16LE without normalization. Empty strings are valid; null keys are rejected.
-    /// Little-endian keys that fit in a byte span are hashed without managed allocations.
+    /// Supported .NET targets use little-endian UTF-16 data, which is hashed without managed allocations.
     /// The selector must be deterministic and safe for concurrent calls.
     /// </remarks>
     public void UsePartitionKey(Func<T, string> partitionKeySelector)

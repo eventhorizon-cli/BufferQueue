@@ -74,7 +74,7 @@ public class MemoryMappedFileBufferQueueOptions<T>
     /// <param name="partitionKeySelector">Selects the string partition key from an item.</param>
     /// <remarks>
     /// Routing uses XXH3-64 over UTF-16LE without normalization. Empty strings are valid; null keys are rejected.
-    /// Little-endian keys that fit in a byte span are hashed without managed allocations.
+    /// Supported .NET targets use little-endian UTF-16 data, which is hashed without managed allocations.
     /// The selector should be deterministic and safe for concurrent calls. Keep the selector and partition count
     /// unchanged across process restarts to preserve routing.
     /// </remarks>
