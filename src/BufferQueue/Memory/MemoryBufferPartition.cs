@@ -217,16 +217,22 @@ internal sealed class MemoryBufferPartition<T>
 
     public void Commit(string groupName)
     {
+        if (!_consumerReaders.TryGetValue(groupName, out var reader))
+        {
+            throw new InvalidOperationException("Specified group name not found.");
+        }
+
+        reader.MoveNext();
+
+        if (_releaseCapacity is not { } releaseCapacity)
+        {
+            return;
+        }
+
         ulong releasedCount;
         EnterAppendLock();
         try
         {
-            if (!_consumerReaders.TryGetValue(groupName, out var reader))
-            {
-                throw new InvalidOperationException("Specified group name not found.");
-            }
-
-            reader.MoveNext();
             releasedCount = ReleaseCommittedCapacity();
         }
         finally
@@ -234,7 +240,7 @@ internal sealed class MemoryBufferPartition<T>
             ExitAppendLock();
         }
 
-        _releaseCapacity?.Invoke(releasedCount);
+        releaseCapacity(releasedCount);
     }
 
     private void EnterAppendLock()
@@ -347,8 +353,9 @@ internal sealed class MemoryBufferPartition<T>
         private MemoryBufferSegment<T> _currentSegment = currentSegment;
         private MemoryBufferPartitionOffset _readPosition = currentOffset;
         private int _lastReadCount;
+        private readonly MemoryBufferConsumerProgress _committedPosition = new(currentOffset);
 
-        public MemoryBufferPartitionOffset ReadPosition => _readPosition;
+        public MemoryBufferPartitionOffset ReadPosition => _committedPosition.Read();
 
         public bool TryRead(int batchSize, [NotNullWhen(true)] out IEnumerable<T>? items)
         {
@@ -433,6 +440,8 @@ internal sealed class MemoryBufferPartition<T>
             {
                 _currentSegment = _currentSegment.NextSegment!;
             }
+
+            _committedPosition.Publish(_readPosition);
         }
     }
 
