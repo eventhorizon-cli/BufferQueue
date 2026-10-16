@@ -33,12 +33,12 @@ BufferQueue 当前提供两种存储模式：
 
 结果摘要：
 
-- 单条写入：在本次测试配置下，BufferQueue Memory 模式的写入性能接近 `Channel<T>`。Unbounded 和 Bounded 模式的耗时分别高约 `11%` 和 `22%`。
-- `ReadOnlyMemory<T>` 批量写入：Memory 路径在 Unbounded 下比单条路径快约 `8.50x`，在 Bounded 下快约 `9.28x`；在本次测试配置下，也分别比 `Channel<T>` 快约 `7.66x` 和 `7.63x`。
-- 消费：BufferQueue 的主要优势在批量消费；本组测试从 `BatchSize = 1` 到 `1000` 均快于 `Channel<T>`，批量越大优势越明显，该次记录参数下最高约快 `103x`。
+- 单条写入：在本次测试配置下，BufferQueue Memory 模式的写入性能接近 `Channel<T>`。Unbounded 和 Bounded 模式的耗时分别高约 `16%` 和 `17%`。
+- `ReadOnlyMemory<T>` 批量写入：Memory 路径在 Unbounded 下比单条路径快约 `8.73x`，在 Bounded 下快约 `8.92x`；在本次测试配置下，也分别比 `Channel<T>` 快约 `7.49x` 和 `7.61x`。
+- 消费：BufferQueue 的主要优势在批量消费。Unbounded 模式在所有测试的 batch size 下都快于 `Channel<T>`，`BatchSize = 1000` 时约快 `109x`。Bounded 模式在 `BatchSize = 1` 时较慢，从 `BatchSize = 10` 到 `1000` 时更快，最大约快 `52x`。
 - 内存分配：生产场景 BufferQueue 分配较少；消费场景 `Channel<T>` 分配较少。
 
-下列写入数据来自最近记录的基准测量。消费数据保留自独立的历史测试，未与当前写入测试同时重新测量。
+下列生产和消费数据来自最近记录的基准测试。
 纯内存 queue 对比使用 `MessageSize = 8192`。生产数据的 Bounded 和 Unbounded 模式使用同一个 `Fixed` job，
 配置为 `LaunchCount = 1`、`WarmupCount = 6`、`IterationCount = 15`。消费 benchmark 使用默认 job，并因
 `IterationSetup` 使用 `InvocationCount = 1`、`UnrollFactor = 1`。两组 benchmark 均运行于 .NET 10。
@@ -54,8 +54,8 @@ Bounded 的 BufferQueue 生产测试使用默认的 `Wait` 模式，容量与 `M
 `IterationSetup` 不计入测量，测量范围只包含并发排空队列：Channel 使用 `TryRead` 逐条读取，
 BufferQueue 按 `BatchSize` 批量返回并启用 Auto Commit，不包含逐条业务处理。`BatchSize` 只作用于
 BufferQueue，并且表示每批上限；`MessageSize = 8192`、`Consumers = 12` 时，`BatchSize = 1000`
-通常意味着每个 consumer 用一批读完分配到的约 682 或 683 条数据。源码还包含 `BatchSize = 10`，
-下表展示 `1`、`100` 和 `1000` 三档。
+通常意味着每个 consumer 用一批读完分配到的约 682 或 683 条数据。下表展示源码中的 `1`、`10`、`100` 和
+`1000` 四档 batch size。
 
 消费用例的单次迭代较短，因此这些结果主要用于展示该组参数下的性能趋势，不代表端到端业务吞吐。
 MemoryMappedFile queue 对比使用 `MessageSize = 1024` 和 short-run job，
@@ -69,8 +69,8 @@ MemoryMappedFile queue 对比使用 `MessageSize = 1024` 和 short-run job，
 
 | 模式 | `MessageSize` | `Producers` | `Channel<T>` Mean | BufferQueue 单条 Mean | BufferQueue `ReadOnlyMemory<T>` 批量 Mean | 结论 |
 | --- | ---: | ---: | ---: | ---: | ---: | --- |
-| Unbounded | 8192 | 12 | `301.7 μs` | `334.5 μs` | `39.4 μs` | 批量比单条快 `8.50x`，比 `Channel<T>` 快 `7.66x` |
-| Bounded | 8192 | 12 | `300.4 μs` | `365.3 μs` | `39.4 μs` | 批量比单条快 `9.28x`，比 `Channel<T>` 快 `7.63x` |
+| Unbounded | 8192 | 12 | `287.34 μs` | `334.54 μs` | `38.34 μs` | 批量比单条快 `8.73x`，比 `Channel<T>` 快 `7.49x` |
+| Bounded | 8192 | 12 | `301.91 μs` | `354.03 μs` | `39.69 μs` | 批量比单条快 `8.92x`，比 `Channel<T>` 快 `7.61x` |
 
 ### Round-robin 批量写入
 
@@ -81,19 +81,21 @@ MemoryMappedFile queue 对比使用 `MessageSize = 1024` 和 short-run job，
 
 | 模式 | `MessageSize` | `BatchSize` | `Consumers` | `Channel<T>` Mean | BufferQueue（Memory）Mean | 结论 |
 | --- | ---: | ---: | ---: | ---: | ---: | --- |
-| Unbounded | 8192 | 1 | 12 | `3,146.52 μs` | `815.80 μs` | 该组参数下 BufferQueue 约快 `3.86x` |
-| Bounded | 8192 | 1 | 12 | `2,118.13 μs` | `750.73 μs` | 该组参数下 BufferQueue 约快 `2.82x` |
-| Unbounded | 8192 | 100 | 12 | `3,384.68 μs` | `49.25 μs` | 该组参数下 BufferQueue 约快 `68.72x` |
-| Bounded | 8192 | 100 | 12 | `2,158.57 μs` | `53.95 μs` | 该组参数下 BufferQueue 约快 `40.01x` |
-| Unbounded | 8192 | 1000 | 12 | `3,485.82 μs` | `33.97 μs` | 该组参数下 BufferQueue 约快 `102.61x` |
-| Bounded | 8192 | 1000 | 12 | `2,115.11 μs` | `35.68 μs` | 该组参数下 BufferQueue 约快 `59.28x` |
+| Unbounded | 8192 | 1 | 12 | `3,594.66 μs` | `2,337.00 μs` | 该组参数下 BufferQueue 约快 `1.54x` |
+| Bounded | 8192 | 1 | 12 | `2,119.80 μs` | `4,963.46 μs` | 该组参数下 `Channel<T>` 约快 `2.34x` |
+| Unbounded | 8192 | 10 | 12 | `3,663.01 μs` | `322.70 μs` | 该组参数下 BufferQueue 约快 `11.35x` |
+| Bounded | 8192 | 10 | 12 | `2,114.17 μs` | `586.42 μs` | 该组参数下 BufferQueue 约快 `3.60x` |
+| Unbounded | 8192 | 100 | 12 | `3,755.67 μs` | `52.65 μs` | 该组参数下 BufferQueue 约快 `71.33x` |
+| Bounded | 8192 | 100 | 12 | `2,105.76 μs` | `115.12 μs` | 该组参数下 BufferQueue 约快 `18.29x` |
+| Unbounded | 8192 | 1000 | 12 | `3,692.76 μs` | `33.80 μs` | 该组参数下 BufferQueue 约快 `109.25x` |
+| Bounded | 8192 | 1000 | 12 | `2,119.47 μs` | `40.70 μs` | 该组参数下 BufferQueue 约快 `52.08x` |
 
-最新生产 benchmark 的测试平台：
+最新 benchmark 的测试平台：
 
 | 项目 | 信息 |
 | --- | --- |
 | CPU | Apple M2 Max，`12` logical / `12` physical cores |
-| 操作系统 | macOS `15.7.8` (`24G824`) |
+| 操作系统 | macOS `27.0.1` (`26A434`) |
 | 运行时标识 | `osx-arm64` |
 | .NET SDK | `10.0.100` |
 | .NET runtime | `10.0.0`, `arm64` |

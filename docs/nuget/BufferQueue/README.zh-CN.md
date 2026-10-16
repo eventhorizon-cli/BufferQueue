@@ -186,6 +186,7 @@ partition 内顺序和手动提交的重放语义保持不变。
 
 注册示例中的 `AddPushCustomers` 会扫描指定程序集，找到带有 `BufferPushCustomerAttribute` 的类型，并以 hosted
 service 的形式启动其消费循环。
+扫描会忽略抽象类。
 
 自动提交的 Push Consumer 不需要自行处理提交操作：
 
@@ -258,6 +259,11 @@ public sealed class BillingConsumer : IBufferManualCommitPushConsumer<Order>
 
 Singleton Push Consumer 会在多个批次和并发消费循环之间复用，因此实现必须线程安全。Scoped 和 Transient
 Push Consumer 会为每个批次创建新的异步 DI scope，并在处理方法结束或抛出异常后释放。
+
+Host service 会跟踪每个 push consumer loop。停止时会取消共享 token，并等待所有 loop（包括正在处理
+batch 的 handler）完成后才返回 `StopAsync`。Handler 异常和 loop 级别异常会记录 topic 和 group，停止请求
+触发的取消按正常完成处理。Loop 退出时，其 pull consumer 会从已分配的 partition 注销，因此已停止的
+consumer 不会继续收到唤醒通知，也不会阻止 memory segment 回收。
 
 ## 语义
 

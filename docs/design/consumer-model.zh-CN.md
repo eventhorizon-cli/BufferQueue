@@ -75,6 +75,11 @@ batch 再次进入可重放状态。Manual-commit push consumer 会收到
   Handler 成功或抛出异常后，该 scope 及其捕获的服务会被异步释放；scoped dependency 不能逃逸出本次
   handler 调用。
 
+Host service 会跟踪每个 push consumer loop。停止时先取消共享 token，再等待所有 loop（包括正在处理
+batch 的 handler）完成后才返回 `StopAsync`。Handler 异常会记录 topic 和 group，loop 级别的异常会单独
+记录；停止请求触发的取消按正常完成处理。Loop 退出时，其 pull consumer 会从已分配的 partition 注销，
+因此已停止的 consumer 不会继续收到唤醒通知，也不会阻止 memory segment 回收。
+
 ## 投递语义
 
 手动提交提供 at-least-once 投递：
