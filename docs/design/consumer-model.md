@@ -82,6 +82,13 @@ The configured `ServiceLifetime` controls push-consumer resolution:
   scope for every delivered batch. The scope and captured services are asynchronously disposed
   after the handler completes or throws. Scoped dependencies must not escape that handler call.
 
+The hosted service tracks each push-consumer loop. During shutdown it cancels the shared token and
+waits for every loop, including any handler currently processing a batch, before `StopAsync` returns.
+Handler exceptions are logged with the topic and group, and loop-level exceptions are logged
+separately; cancellation requested by shutdown is treated as normal completion. When a loop exits,
+its pull consumer unregisters from its assigned partitions so a stopped consumer no longer receives
+wake-ups or prevents memory segments from being reclaimed.
+
 ## Delivery Semantics
 
 Manual commit provides at-least-once delivery:

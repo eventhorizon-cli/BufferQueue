@@ -182,6 +182,7 @@ consumer 数量不能超过该 topic 的 partition 数量。
 ## Push consumer
 
 注册示例中的 `AddPushCustomers` 会扫描指定程序集，并将找到的 Push Consumer 作为 hosted service 启动。
+扫描会忽略抽象类。
 
 自动提交的 Push Consumer 适用于应用代码尚未处理完批次时，消费进度也可以推进的场景：
 
@@ -259,6 +260,11 @@ public sealed class BillingConsumer : IBufferManualCommitPushConsumer<OrderEvent
 
 Singleton Push Consumer 会在多个批次和并发消费循环之间复用，因此实现必须线程安全。Scoped 和 Transient
 Push Consumer 会为每个批次创建新的异步 DI scope，并在处理方法结束或抛出异常后释放。
+
+Host service 会跟踪每个 push consumer loop。停止时会取消共享 token，并等待所有 loop（包括正在处理
+batch 的 handler）完成后才返回 `StopAsync`。Handler 异常和 loop 级别异常会记录 topic 和 group，停止请求
+触发的取消按正常完成处理。Loop 退出时，其 pull consumer 会从已分配的 partition 注销，因此已停止的
+consumer 不会继续收到唤醒通知，也不会在停止后保留注册。
 
 ## MessagePack
 
