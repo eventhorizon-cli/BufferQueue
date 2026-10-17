@@ -1,0 +1,52 @@
+---
+config:
+  flowchart:
+    htmlLabels: true
+    curve: linear
+  theme: base
+  themeVariables:
+    fontFamily: "Arial, Helvetica, sans-serif"
+    fontSize: 18px
+    primaryTextColor: "#233247"
+    lineColor: "#52657a"
+    clusterBkg: "#f8fafc"
+    clusterBorder: "#94a3b8"
+---
+flowchart LR
+    P[Producer<br/>ProduceAsync] --> A[Append item<br/>to selected partition]
+    A --> N[Notify assigned consumers<br/>wake-up hint]
+    N -.-> S[Consumer scans assigned partitions<br/>round-robin]
+
+    S --> D{Readable partition<br/>found?}
+    D -- Yes --> B[Pull up to BatchSize<br/>items already queued in one partition]
+    B --> C{AutoCommit enabled?}
+    C -- Yes --> AC[Commit progress<br/>after a successful pull]
+    C -- No --> H[Return batch<br/>to caller]
+    H --> MC[Caller processes batch<br/>then calls CommitAsync]
+    AC --> R[Continue scan]
+    MC --> R
+    R --> S
+
+    D -- No --> V{Notification version<br/>changed during the scan?}
+    V -- Yes --> R
+    V -- No --> W[Await pending-data<br/>notification]
+    W -.-> R
+
+    subgraph LEGEND[Legend]
+        LD1[Solid arrow = data or control path] --> LD2[Batching and commit flow]
+        LW1[Producer or queue] -. wake-up hint .-> LW2[Consumer wake-up]
+    end
+
+    classDef producer fill:#e8f5e9,stroke:#2e7d32,color:#1b4332,stroke-width:2px;
+    classDef queue fill:#e8eefc,stroke:#4669b2,color:#233247,stroke-width:2px;
+    classDef consumer fill:#f1f5f9,stroke:#52657a,color:#233247,stroke-width:2px;
+    classDef decision fill:#fff4ce,stroke:#a16207,color:#713f12,stroke-width:2px;
+    classDef wait fill:#f1ecff,stroke:#7654a6,color:#482878,stroke-width:2px;
+    classDef legend fill:#ffffff,stroke:#94a3b8,color:#233247,stroke-width:1px;
+
+    class P producer;
+    class A,N queue;
+    class S,B,AC,H,MC,R consumer;
+    class D,C,V decision;
+    class W wait;
+    class LD1,LD2,LW1,LW2 legend;
