@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2300" height="920" viewBox="0 0 2300 920" role="img" aria-labelledby="title desc">
+  <title>BufferQueue opportunistic batch consumption</title>
+  <desc>A producer appends an item and sends a wake-up hint; the consumer scans assigned partitions and pulls queued items up to BatchSize, waiting only when all partitions are empty.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M 0 0 L 12 6 L 0 12 z" fill="#52657a"/>
+    </marker>
+    <marker id="wake-arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M 0 0 L 12 6 L 0 12 z" fill="#7654a6"/>
+    </marker>
+    <style>
+      .node { stroke-width: 3; }
+      .text { font-family: Arial, Helvetica, sans-serif; fill: #233247; font-size: 22px; text-anchor: middle; dominant-baseline: middle; }
+      .left { text-anchor: start; }
+      .small { font-size: 19px; }
+      .edge { fill: none; stroke: #52657a; stroke-width: 4; marker-end: url(#arrow); }
+      .wake { fill: none; stroke: #7654a6; stroke-width: 4; stroke-dasharray: 12 9; marker-end: url(#wake-arrow); }
+      .edge-label { font-family: Arial, Helvetica, sans-serif; fill: #52657a; font-size: 19px; text-anchor: middle; }
+      .group-title { font-family: Arial, Helvetica, sans-serif; fill: #233247; font-size: 24px; font-weight: 700; }
+    </style>
+  </defs>
+  <rect width="2300" height="920" fill="#ffffff"/>
+  <rect x="50" y="90" width="180" height="90" rx="14" fill="#e8f5e9" stroke="#2e7d32" class="node"/>
+<text x="140.0" y="120.0" class="text">Producer</text>
+<text x="140.0" y="150.0" class="text">ProduceAsync</text>
+<rect x="280" y="90" width="220" height="90" rx="14" fill="#e8eefc" stroke="#4669b2" class="node"/>
+<text x="390.0" y="120.0" class="text">Append item</text>
+<text x="390.0" y="150.0" class="text">to selected partition</text>
+<rect x="560" y="90" width="250" height="90" rx="14" fill="#e8eefc" stroke="#4669b2" class="node"/>
+<text x="685.0" y="120.0" class="text">Notify assigned consumers</text>
+<text x="685.0" y="150.0" class="text">wake-up hint</text>
+<rect x="850" y="90" width="300" height="90" rx="14" fill="#f1f5f9" stroke="#52657a" class="node"/>
+<text x="1000.0" y="120.0" class="text">Consumer scans assigned partitions</text>
+<text x="1000.0" y="150.0" class="text">round-robin</text>
+<rect x="1240" y="90" width="220" height="90" rx="14" fill="#fff4ce" stroke="#a16207" class="node"/>
+<text x="1350.0" y="120.0" class="text">Readable partition</text>
+<text x="1350.0" y="150.0" class="text">found?</text>
+<rect x="1530" y="40" width="270" height="100" rx="14" fill="#f1f5f9" stroke="#52657a" class="node"/>
+<text x="1665.0" y="75.0" class="text">Pull up to BatchSize</text>
+<text x="1665.0" y="105.0" class="text">items already queued in one partition</text>
+<rect x="1530" y="230" width="270" height="90" rx="14" fill="#fff4ce" stroke="#a16207" class="node"/>
+<text x="1665.0" y="275.0" class="text">AutoCommit enabled?</text>
+<rect x="1820" y="100" width="250" height="90" rx="14" fill="#f1f5f9" stroke="#52657a" class="node"/>
+<text x="1945.0" y="130.0" class="text">Commit progress</text>
+<text x="1945.0" y="160.0" class="text">after a successful pull</text>
+<rect x="1820" y="260" width="250" height="90" rx="14" fill="#f1f5f9" stroke="#52657a" class="node"/>
+<text x="1945.0" y="290.0" class="text">Return batch</text>
+<text x="1945.0" y="320.0" class="text">to caller</text>
+<rect x="2110" y="260" width="150" height="90" rx="14" fill="#f1f5f9" stroke="#52657a" class="node"/>
+<text x="2185.0" y="290.0" class="text">Caller processes batch</text>
+<text x="2185.0" y="320.0" class="text">then calls CommitAsync</text>
+<rect x="900" y="320" width="220" height="80" rx="14" fill="#f1f5f9" stroke="#52657a" class="node"/>
+<text x="1010.0" y="360.0" class="text">Continue scan</text>
+<rect x="1240" y="480" width="220" height="90" rx="14" fill="#fff4ce" stroke="#a16207" class="node"/>
+<text x="1350.0" y="510.0" class="text">Notification version</text>
+<text x="1350.0" y="540.0" class="text">changed during the scan?</text>
+<rect x="1530" y="480" width="270" height="90" rx="14" fill="#f1ecff" stroke="#7654a6" class="node"/>
+<text x="1665.0" y="510.0" class="text">Await pending-data</text>
+<text x="1665.0" y="540.0" class="text">notification</text>
+<path d="M 230 135 L 280 135" class="edge"/>
+<path d="M 500 135 L 560 135" class="edge"/>
+<path d="M 810 135 L 850 135" class="wake"/>
+<path d="M 1150 135 L 1240 135" class="edge"/>
+<path d="M 1460 135 C 1490 135 1500 90 1530 90" class="edge"/><text x="1490" y="105" class="edge-label">Yes</text>
+<path d="M 1665 140 L 1665 230" class="edge"/>
+<path d="M 1800 275 C 1810 275 1810 145 1820 145" class="edge"/><text x="1810" y="205" class="edge-label">Yes</text>
+<path d="M 1800 275 L 1820 305" class="edge"/><text x="1810" y="265" class="edge-label">No</text>
+<path d="M 2070 305 L 2110 305" class="edge"/>
+<path d="M 1820 190 C 1720 410 1220 410 1010 400" class="edge"/>
+<path d="M 2260 350 C 2030 440 1220 440 1010 390" class="edge"/>
+<path d="M 1010 320 C 1010 250 1000 210 1000 180" class="edge"/>
+<path d="M 1240 180 C 1190 230 1180 480 1240 525" class="edge"/><text x="1200" y="355" class="edge-label">No</text>
+<path d="M 1460 525 L 1530 525" class="edge"/>
+<path d="M 1530 480 C 1400 430 1170 425 1010 385" class="wake"/>
+<rect x="50" y="680" width="1120" height="170" rx="16" fill="#f8fafc" stroke="#94a3b8" stroke-width="2"/>
+<text x="80" y="720" class="group-title">Legend</text>
+<path d="M 100 770 L 270 770" class="edge"/>
+<text x="300" y="770" class="text small left">Solid arrow = data or control path</text>
+<text x="300" y="805" class="text small left">Batching and commit flow</text>
+<path d="M 700 770 L 870 770" class="wake"/><text x="785" y="750" class="edge-label">Producer or queue</text>
+<text x="900" y="770" class="text small left">Consumer wake-up</text>
+</svg>
