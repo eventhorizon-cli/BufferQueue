@@ -1,27 +1,25 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="900" viewBox="0 0 1400 900" role="img" aria-labelledby="title description">
-<title id="title">BufferQueue architecture overview</title><desc id="description">BufferQueue owns typed topics, partitions, producers, consumer groups, and two storage modes.</desc>
-<defs>
-  <marker id="arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto" markerUnits="strokeWidth"><path d="M0 0 L9 4.5 L0 9 Z" fill="#596773"/></marker>
-  <marker id="blue-arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto" markerUnits="strokeWidth"><path d="M0 0 L9 4.5 L0 9 Z" fill="#3567a7"/></marker>
-  <marker id="green-arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto" markerUnits="strokeWidth"><path d="M0 0 L9 4.5 L0 9 Z" fill="#2f6f5e"/></marker>
-  <style>
-    text { font-family: Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; fill:#303b44; text-anchor:middle; font-size:22px; }
-    .node { stroke-width:2; }
-    .client { fill:#e9f6f1; stroke:#2f6f5e; }
-    .core { fill:#edf1f5; stroke:#596773; }
-    .router { fill:#eaf2ff; stroke:#3567a7; }
-    .partition { fill:#eef5ff; stroke:#3567a7; }
-    .handler { fill:#f4edfb; stroke:#75529b; }
-    .store { fill:#fff4d6; stroke:#8a6a1d; }
-    .wait { fill:#eaf2ff; stroke:#3567a7; }
-    .edge { fill:none; stroke:#596773; stroke-width:2.5; marker-end:url(#arrow); stroke-linejoin:round; }
-    .data { fill:none; stroke:#3567a7; stroke-width:2.8; marker-end:url(#blue-arrow); stroke-linejoin:round; }
-    .notify { fill:none; stroke:#75529b; stroke-width:2.5; stroke-dasharray:8 6; marker-end:url(#arrow); stroke-linejoin:round; }
-    .assign { fill:none; stroke:#2f6f5e; stroke-width:2.5; stroke-dasharray:8 6; marker-end:url(#green-arrow); stroke-linejoin:round; }
-    .label { font-size:21px; }
-    .note { font-size:21px; fill:#596773; }
-    .small { font-size:19px; }
-    .group-title { font-size:24px; font-weight:700; text-anchor:start; }
-  </style>
-</defs>
-<rect width="1400" height="900" fill="white"/><rect class="node client" x="45" y="300" width="270" height="120" rx="12"/><text x="180.0" y="360.0" class="">BufferQueue</text><rect class="node router" x="470" y="105" width="300" height="120" rx="8"/><text x="620.0" y="148.0" class="">Topics / item types</text><text x="620.0" y="182.0" class="">Topic + TItem</text><path class="edge" d="M315 360 C370 360 405 165 470 165"/><rect class="node handler" x="470" y="310" width="300" height="120" rx="8"/><text x="620.0" y="353.0" class="">Consumer groups</text><text x="620.0" y="387.0" class="">Pull / Push</text><path class="edge" d="M315 360 C370 360 405 370 470 370"/><rect class="node store" x="470" y="515" width="300" height="120" rx="8"/><text x="620.0" y="558.0" class="">Storage modes</text><text x="620.0" y="592.0" class="">Memory / MMF</text><path class="edge" d="M315 360 C370 360 405 575 470 575"/><rect class="node partition" x="900" y="70" width="430" height="105" rx="8"/><text x="1115.0" y="105.5" class="">Partitions</text><text x="1115.0" y="139.5" class="">round-robin or key routing</text><rect class="node core" x="900" y="205" width="430" height="105" rx="8"/><text x="1115.0" y="240.5" class="">Producer</text><text x="1115.0" y="274.5" class="">ProduceAsync / batch</text><rect class="node handler" x="900" y="355" width="430" height="105" rx="8"/><text x="1115.0" y="390.5" class="">Consumer assignment</text><text x="1115.0" y="424.5" class="">load-balanced within group</text><rect class="node handler" x="900" y="490" width="430" height="105" rx="8"/><text x="1115.0" y="525.5" class="">Pull consumer</text><text x="1115.0" y="559.5" class="">batch + commit</text><rect class="node store" x="900" y="625" width="430" height="105" rx="8"/><text x="1115.0" y="660.5" class="">Memory</text><text x="1115.0" y="694.5" class="">in-process segments</text><rect class="node store" x="900" y="760" width="430" height="105" rx="8"/><text x="1115.0" y="795.5" class="">MemoryMappedFile</text><text x="1115.0" y="829.5" class="">durable segment files</text><path class="edge" d="M770 165 H835 V122 H900"/><path class="edge" d="M770 165 H820 V257 H900"/><path class="edge" d="M770 370 H830 V407 H900"/><path class="edge" d="M770 370 H820 V542 H900"/><path class="edge" d="M770 575 H835 V677 H900"/><path class="edge" d="M770 575 H820 V812 H900"/><text x="45" y="42" class="note" text-anchor="start">Solid arrow = ownership or configuration</text></svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="924" height="562" viewBox="0 0 924 562" role="img" aria-labelledby="title description">
+<title id="title">BufferQueue topic map</title>
+<desc id="description">BufferQueue branches to topics and their related items.</desc>
+<style>
+  text { font-family: Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; fill:#20252b; font-size:30px; }
+  .root { fill:#5479c9; }
+  .root-text { fill:white; font-size:31px; font-weight:700; }
+  .branch { fill:none; stroke:#5479c9; stroke-width:4; stroke-linecap:round; stroke-linejoin:round; }
+</style>
+<rect width="924" height="562" fill="white"/>
+<rect class="root" x="48" y="282" width="273" height="96" rx="52"/>
+<text class="root-text" x="184.5" y="330" text-anchor="middle" dominant-baseline="middle">BufferQueue</text>
+<path class="branch" d="M326 330 C382 330 407 183 473 183"/>
+<path class="branch" d="M326 330 C382 330 415 379 473 379"/>
+<path class="branch" d="M326 330 C382 330 409 477 473 477"/>
+<path class="branch" d="M607 183 C664 183 704 84 754 84"/>
+<path class="branch" d="M607 183 H754"/>
+<path class="branch" d="M607 183 C664 183 704 281 754 281"/>
+<text x="496" y="184" dominant-baseline="middle">Topic1</text>
+<text x="496" y="380" dominant-baseline="middle">Topic2</text>
+<text x="496" y="478" dominant-baseline="middle">...</text>
+<text x="778" y="85" dominant-baseline="middle">Span</text>
+<text x="778" y="184" dominant-baseline="middle">Metric</text>
+<text x="778" y="282" dominant-baseline="middle">Log</text>
+</svg>

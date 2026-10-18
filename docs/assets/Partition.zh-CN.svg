@@ -1,27 +1,55 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1950" height="820" viewBox="0 0 1950 820" role="img" aria-labelledby="title description">
-<title id="title">BufferQueue 分区与 Consumer Group</title><desc id="description">Producer 将数据路由到分区，Consumer Group 在分区之间分配 Consumer；不同组拥有独立消费进度。</desc>
+<svg xmlns="http://www.w3.org/2000/svg" width="2198" height="968" viewBox="0 0 2198 968" role="img" aria-labelledby="title description">
+<title id="title">BufferQueue Partition 与 Consumer Group</title>
+<desc id="description">A producer writes to two partitions. Consumer groups receive partition assignments independently.</desc>
 <defs>
-  <marker id="arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto" markerUnits="strokeWidth"><path d="M0 0 L9 4.5 L0 9 Z" fill="#596773"/></marker>
-  <marker id="blue-arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto" markerUnits="strokeWidth"><path d="M0 0 L9 4.5 L0 9 Z" fill="#3567a7"/></marker>
-  <marker id="green-arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto" markerUnits="strokeWidth"><path d="M0 0 L9 4.5 L0 9 Z" fill="#2f6f5e"/></marker>
+  <marker id="arrow-black" markerWidth="11" markerHeight="11" refX="10" refY="5.5" orient="auto"><path d="M0 0 L11 5.5 L0 11 Z" fill="#111111"/></marker>
+  <marker id="arrow-blue" markerWidth="11" markerHeight="11" refX="10" refY="5.5" orient="auto"><path d="M0 0 L11 5.5 L0 11 Z" fill="#5479c9"/></marker>
+  <marker id="arrow-red" markerWidth="11" markerHeight="11" refX="10" refY="5.5" orient="auto"><path d="M0 0 L11 5.5 L0 11 Z" fill="#d65c5c"/></marker>
+  <marker id="arrow-green" markerWidth="11" markerHeight="11" refX="10" refY="5.5" orient="auto"><path d="M0 0 L11 5.5 L0 11 Z" fill="#55a369"/></marker>
   <style>
-    text { font-family: Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; fill:#303b44; text-anchor:middle; font-size:22px; }
-    .node { stroke-width:2; }
-    .client { fill:#e9f6f1; stroke:#2f6f5e; }
-    .core { fill:#edf1f5; stroke:#596773; }
-    .router { fill:#eaf2ff; stroke:#3567a7; }
-    .partition { fill:#eef5ff; stroke:#3567a7; }
-    .handler { fill:#f4edfb; stroke:#75529b; }
-    .store { fill:#fff4d6; stroke:#8a6a1d; }
-    .wait { fill:#eaf2ff; stroke:#3567a7; }
-    .edge { fill:none; stroke:#596773; stroke-width:2.5; marker-end:url(#arrow); stroke-linejoin:round; }
-    .data { fill:none; stroke:#3567a7; stroke-width:2.8; marker-end:url(#blue-arrow); stroke-linejoin:round; }
-    .notify { fill:none; stroke:#75529b; stroke-width:2.5; stroke-dasharray:8 6; marker-end:url(#arrow); stroke-linejoin:round; }
-    .assign { fill:none; stroke:#2f6f5e; stroke-width:2.5; stroke-dasharray:8 6; marker-end:url(#green-arrow); stroke-linejoin:round; }
-    .label { font-size:21px; }
-    .note { font-size:21px; fill:#596773; }
-    .small { font-size:19px; }
-    .group-title { font-size:24px; font-weight:700; text-anchor:start; }
+    text { font-family: Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; fill:#20252b; font-size:30px; text-anchor:middle; }
+    .producer { fill:#eef2fb; stroke:#111; stroke-width:4; }
+    .partition-blue { fill:#5479c9; stroke:#111; stroke-width:4; }
+    .partition-red { fill:#d65c5c; stroke:#111; stroke-width:4; }
+    .consumer-blue { fill:#5479c9; stroke:#111; stroke-width:4; }
+    .consumer-red { fill:#d65c5c; stroke:#111; stroke-width:4; }
+    .consumer-green { fill:#55a369; stroke:#111; stroke-width:4; }
+    .outer { fill:none; stroke:#5470b0; stroke-width:4; }
+    .group { fill:none; stroke:#111; stroke-width:4; stroke-dasharray:9 8; }
+    .flow-black { fill:none; stroke:#111; stroke-width:4; marker-end:url(#arrow-black); }
+    .flow-blue { fill:none; stroke:#5479c9; stroke-width:4; marker-end:url(#arrow-blue); stroke-linejoin:round; }
+    .flow-red { fill:none; stroke:#d65c5c; stroke-width:4; marker-end:url(#arrow-red); stroke-linejoin:round; }
+    .flow-green { fill:none; stroke:#55a369; stroke-width:4; marker-end:url(#arrow-green); stroke-linejoin:round; }
+    .flow-green-noarrow { fill:none; stroke:#55a369; stroke-width:4; stroke-linejoin:round; }
+    .white { fill:white; }
   </style>
 </defs>
-<rect width="1950" height="820" fill="white"/><rect class="node client" x="40" y="390" width="260" height="110" rx="8"/><text x="170.0" y="428.0" class="">Producer</text><text x="170.0" y="462.0" class="">ProduceAsync</text><rect x="430" y="120" width="800" height="650" rx="14" fill="#fbfcfe" stroke="#596773" stroke-width="2"/><text x="470" y="165" class="group-title">BufferQueue / Topic</text><rect class="node partition" x="540" y="250" width="560" height="125" rx="8"/><text x="820.0" y="295.5" class="">Partition 0</text><text x="820.0" y="329.5" class="">独立追加与消费进度</text><rect class="node partition" x="540" y="505" width="560" height="125" rx="8"/><text x="820.0" y="550.5" class="">Partition 1</text><text x="820.0" y="584.5" class="">独立追加与消费进度</text><path class="data" d="M300 445 H390 V312 H540"/><path class="data" d="M390 445 V567 H540"/><rect x="1400" y="145" width="470" height="285" rx="14" fill="#f8fbff" stroke="#596773" stroke-width="2" stroke-dasharray="8 6"/><text x="1435" y="185" class="group-title">Consumer Group 1</text><rect class="node handler" x="1460" y="220" width="300" height="80" rx="8"/><text x="1610.0" y="260.0" class="">Consumer 1</text><rect class="node handler" x="1460" y="335" width="300" height="80" rx="8"/><text x="1610.0" y="375.0" class="">Consumer 2</text><rect x="1400" y="525" width="470" height="190" rx="14" fill="#f8fbff" stroke="#596773" stroke-width="2" stroke-dasharray="8 6"/><text x="1435" y="565" class="group-title">Consumer Group 2</text><rect class="node handler" x="1460" y="605" width="300" height="80" rx="8"/><text x="1610.0" y="645.0" class="">Consumer 3</text><path class="assign" d="M1100 312 H1250 V260 H1460"/><path class="assign" d="M1100 567 H1280 V375 H1460"/><path class="assign" d="M1100 312 H1220 V645 H1460"/><path class="assign" d="M1100 567 H1260 V645 H1460"/><rect x="40" y="60" width="340" height="220" rx="12" fill="#f8fafc" stroke="#94a3b8" stroke-width="2"/><text x="70" y="100" class="group-title">图例</text><path class="data" d="M80 155 H220"/><text x="240" y="155" class="small" text-anchor="start">实线箭头 = 数据路径</text><path class="assign" d="M80 220 H220"/><text x="240" y="220" class="small" text-anchor="start">虚线箭头 = 分配或归属关系</text></svg>
+<rect width="2198" height="968" fill="white"/>
+<rect class="producer" x="45" y="494" width="223" height="148" rx="10"/>
+<text x="156.5" y="568" dominant-baseline="middle">Producer</text>
+<path class="flow-black" d="M268 568 H449"/>
+<!-- Buffer Queue boundary: the original rounded capsule is kept as a pair of curved ends and straight top/bottom edges. -->
+<path class="outer" d="M457 380 C440 380 440 754 457 754 H1328 C1350 754 1350 380 1328 380 Z"/>
+<text x="892" y="420" dominant-baseline="middle">Buffer Queue</text>
+<rect class="partition-blue" x="547" y="449" width="749" height="92" rx="10"/>
+<rect class="partition-red" x="547" y="594" width="749" height="92" rx="10"/>
+<text x="921.5" y="495" fill="white" dominant-baseline="middle">Partition1</text>
+<text x="921.5" y="640" fill="white" dominant-baseline="middle">Partition2</text>
+<!-- Consumer groups -->
+<rect class="group" x="1562" y="46" width="441" height="496" rx="8"/>
+<rect class="group" x="1562" y="594" width="441" height="262" rx="8"/>
+<text x="1782.5" y="78" dominant-baseline="middle">Consumer Group1</text>
+<text x="1782.5" y="626" dominant-baseline="middle">Consumer Group2</text>
+<rect class="consumer-blue" x="1672" y="124" width="220" height="147" rx="10"/>
+<rect class="consumer-red" x="1672" y="369" width="220" height="148" rx="10"/>
+<rect class="consumer-green" x="1672" y="657" width="220" height="147" rx="10"/>
+<text x="1782" y="197.5" fill="white" dominant-baseline="middle">Consumer1</text>
+<text x="1782" y="443" fill="white" dominant-baseline="middle">Consumer2</text>
+<text x="1782" y="730.5" fill="white" dominant-baseline="middle">Consumer3</text>
+<!-- Original routing lines, with orthogonal bends kept away from labels and boxes. -->
+<path class="flow-blue" d="M1296 495 H1495 V197 H1672"/>
+<path class="flow-red" d="M1296 640 H1425 V443 H1672"/>
+<path class="flow-green-noarrow" d="M1296 495 H1495 V730"/>
+<path class="flow-green-noarrow" d="M1296 640 H1425 V730 H1495"/>
+<path class="flow-green" d="M1495 730 H1672"/>
+</svg>
