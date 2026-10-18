@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="924" height="562" viewBox="0 0 924 562" role="img" aria-labelledby="title description">
+<title id="title">BufferQueue topic map</title>
+<desc id="description">BufferQueue branches to topics and their related items.</desc>
+<style>
+  text { font-family: Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; fill:#20252b; font-size:30px; }
+  .root { fill:#5479c9; }
+  .root-text { fill:white; font-size:31px; font-weight:700; }
+  .branch { fill:none; stroke:#5479c9; stroke-width:4; stroke-linecap:round; stroke-linejoin:round; }
+</style>
+<rect width="924" height="562" fill="white"/>
+<rect class="root" x="48" y="282" width="273" height="96" rx="52"/>
+<text class="root-text" x="184.5" y="330" text-anchor="middle" dominant-baseline="middle">BufferQueue</text>
+<path class="branch" d="M326 330 C382 330 407 183 473 183"/>
+<path class="branch" d="M326 330 C382 330 415 379 473 379"/>
+<path class="branch" d="M326 330 C382 330 409 477 473 477"/>
+<path class="branch" d="M607 183 C664 183 704 84 754 84"/>
+<path class="branch" d="M607 183 H754"/>
+<path class="branch" d="M607 183 C664 183 704 281 754 281"/>
+<text x="496" y="184" dominant-baseline="middle">Topic1</text>
+<text x="496" y="380" dominant-baseline="middle">Topic2</text>
+<text x="496" y="478" dominant-baseline="middle">...</text>
+<text x="778" y="85" dominant-baseline="middle">Span</text>
+<text x="778" y="184" dominant-baseline="middle">Metric</text>
+<text x="778" y="282" dominant-baseline="middle">Log</text>
+</svg>

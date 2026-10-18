@@ -1,0 +1,8 @@
+flowchart LR
+    P[Producer] --> Q[BufferQueue / Topic]
+    Q --> P0[Partition 0]
+    Q --> P1[Partition 1]
+    P0 -. assignment .-> C1[Consumer Group 1 / Consumer 1]
+    P1 -. assignment .-> C2[Consumer Group 1 / Consumer 2]
+    P0 -. assignment .-> C3[Consumer Group 2 / Consumer 3]
+    P1 -. assignment .-> C3
