@@ -205,6 +205,8 @@ Use `CreatePullConsumers<T>(options, consumerNumber)` to divide the group's
 partitions between multiple consumers. The consumer count cannot exceed the
 topic's partition count.
 
+New data arriving while a consumer becomes idle wakes consumption without requiring another write.
+
 ## Push consumers
 
 `AddPushCustomers` in the registration example scans the specified assembly and

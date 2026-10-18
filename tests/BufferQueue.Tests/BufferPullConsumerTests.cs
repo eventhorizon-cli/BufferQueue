@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Reflection;
 
 namespace BufferQueue.Tests;
 
@@ -45,6 +46,44 @@ public class BufferPullConsumerTests
         Assert.All(partitions, partition => Assert.Equal(1, partition.PullCount));
         await cancellation.CancelAsync();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => waiting);
+    }
+
+    [Fact]
+    public async Task Notification_During_Wait_Registration_Completes_New_Wait()
+    {
+        var consumer = new BufferPullConsumer<int>(new BufferPullConsumerOptions
+        {
+            TopicName = "test",
+            GroupName = "group",
+            BatchSize = 1
+        });
+        var partition = new TestPartition(0);
+        var pendingDataSource = (PendingDataValueTaskSource<IBufferPartition<int>>)typeof(BufferPullConsumer<int>)
+            .GetField("_pendingDataValueTaskSource", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .GetValue(consumer)!;
+        var pendingDataLock = (ReaderWriterLockSlim)typeof(BufferPullConsumer<int>)
+            .GetField("_pendingDataLock", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .GetValue(consumer)!;
+
+        pendingDataLock.EnterWriteLock();
+        Task notification;
+        try
+        {
+            notification = Task.Run(() => consumer.NotifyNewDataAvailable(partition));
+            Assert.True(
+                SpinWait.SpinUntil(
+                    () => notification.IsCompleted || pendingDataLock.WaitingUpgradeCount > 0,
+                    TimeSpan.FromSeconds(10)));
+            pendingDataSource.Reset();
+        }
+        finally
+        {
+            pendingDataLock.ExitWriteLock();
+        }
+
+        await notification.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.True(pendingDataSource.ValueTask.IsCompletedSuccessfully);
+        Assert.Same(partition, await pendingDataSource.ValueTask);
     }
 
     private sealed class TestPartition(int partitionId) : IBufferPartition<int>

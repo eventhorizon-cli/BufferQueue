@@ -179,6 +179,8 @@ public sealed class OrderProjectionWorker(IBufferQueue queue) : BackgroundServic
 使用 `CreatePullConsumers<T>(options, consumerNumber)` 可以将一个 group 的 partition 分配给多个 consumer。
 consumer 数量不能超过该 topic 的 partition 数量。
 
+Consumer 转入空闲等待期间到达的新数据会唤醒消费流程，无需再写入一条消息才能继续处理。
+
 ## Push consumer
 
 注册示例中的 `AddPushCustomers` 会扫描指定程序集，并将找到的 Push Consumer 作为 hosted service 启动。

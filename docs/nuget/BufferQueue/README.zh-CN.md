@@ -178,6 +178,8 @@ public sealed class OrderWorker(IBufferQueue queue) : BackgroundService
 }
 ```
 
+Consumer 转入空闲等待期间到达的新数据会唤醒消费流程，无需再写入一条消息才能继续处理。
+
 ## Push consumer
 
 Consumer 在已分配的可读 partition 之间轮转，每次从上一批数据所在 partition 之后开始。

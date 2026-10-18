@@ -12,6 +12,7 @@ Design docs: [English](./docs/README.md) | [简体中文](./docs/README.zh-CN.md
 
 BufferQueue is a high-performance buffer queue implementation written in .NET, which supports multi-threaded concurrent operations.
 The packages target .NET 8 and .NET 10.
+New data arriving while a consumer becomes idle wakes consumption without requiring another write.
 
 BufferQueue currently provides two storage modes:
 

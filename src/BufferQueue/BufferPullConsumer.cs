@@ -122,13 +122,7 @@ internal sealed class BufferPullConsumer<TItem>(BufferPullConsumerOptions option
     {
         Interlocked.Increment(ref _pendingDataVersion);
 
-        // The version increment preserves the scan-to-wait race check. Skip the lock when
-        // the consumer is processing a batch and no waiter can be completed.
-        if (!_pendingDataValueTaskSource.IsWaiting)
-        {
-            return;
-        }
-
+        // Share the registration lock so a notification after the version check reaches the new waiter.
         _pendingDataLock.EnterUpgradeableReadLock();
         try
         {

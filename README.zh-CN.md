@@ -12,6 +12,7 @@ BufferQueue
 
 BufferQueue 是一个用 .NET 编写的高性能的缓冲队列实现，支持多线程并发操作。
 包同时支持 .NET 8 和 .NET 10。
+Consumer 转入空闲等待期间到达的新数据会唤醒消费流程，无需再写入一条消息才能继续处理。
 
 BufferQueue 当前提供两种存储模式：
 
