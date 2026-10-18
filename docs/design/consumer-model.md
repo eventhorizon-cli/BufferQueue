@@ -61,12 +61,7 @@ Consumers do not spin when no data is available. The common consumer waits throu
 7. The consumer resumes the same ring scan; the notification is a wake-up hint, not a priority override.
 
 The pending-data version prevents a lost wake-up when data arrives between the final pull attempt
-and the transition into the waiting state. Checking that version and resetting the waiter are one
-write-locked operation. Notifications acquire the same lock before checking whether a waiter exists,
-so an arrival after the version check still completes the newly registered waiter. A check outside
-that lock must not skip notification merely because the consumer has not registered its waiter yet.
-A deterministic regression holds the registration lock while notification starts, then registers
-the waiter and verifies that this notification completes it without another write.
+and the transition into the waiting state.
 
 ## Push Consumers
 
@@ -86,13 +81,6 @@ The configured `ServiceLifetime` controls push-consumer resolution:
 - `Scoped` and `Transient` consumers are resolved in a new asynchronous DI
   scope for every delivered batch. The scope and captured services are asynchronously disposed
   after the handler completes or throws. Scoped dependencies must not escape that handler call.
-
-The hosted service tracks each push-consumer loop. During shutdown it cancels the shared token and
-waits for every loop, including any handler currently processing a batch, before `StopAsync` returns.
-Handler exceptions are logged with the topic and group, and loop-level exceptions are logged
-separately; cancellation requested by shutdown is treated as normal completion. When a loop exits,
-its pull consumer unregisters from its assigned partitions so a stopped consumer no longer receives
-wake-ups or prevents memory segments from being reclaimed.
 
 ## Delivery Semantics
 

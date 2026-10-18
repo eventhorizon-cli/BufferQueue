@@ -57,10 +57,7 @@ Consumer 在无数据时不会自旋。通用 consumer 通过
 7. Consumer 被唤醒后继续同一环形扫描；通知仅用于唤醒，不改变 partition 的优先级。
 
 pending-data version 用来避免 lost wake-up：如果数据在最后一次拉取尝试和进入等待状态之间到达，consumer
-可以检测版本变化并重新尝试消费。版本检查和重置等待源在同一个写锁内完成；通知流程也必须先取得
-同一把锁，再判断是否存在等待者。这样，在版本检查之后到达的通知仍会完成新注册的等待源，不能因为
-锁外观察到 consumer 尚未等待就直接跳过通知。
-确定性回归测试会持有等待注册锁、启动通知，再注册等待源，验证这次通知无需额外写入就能完成等待。
+可以检测版本变化并重新尝试消费。
 
 ## Push Consumer
 
@@ -77,11 +74,6 @@ batch 再次进入可重放状态。Manual-commit push consumer 会收到
 - `Scoped` 和 `Transient` consumer 会为每个交付 batch 创建新的异步 DI scope。
   Handler 成功或抛出异常后，该 scope 及其捕获的服务会被异步释放；scoped dependency 不能逃逸出本次
   handler 调用。
-
-Host service 会跟踪每个 push consumer loop。停止时先取消共享 token，再等待所有 loop（包括正在处理
-batch 的 handler）完成后才返回 `StopAsync`。Handler 异常会记录 topic 和 group，loop 级别的异常会单独
-记录；停止请求触发的取消按正常完成处理。Loop 退出时，其 pull consumer 会从已分配的 partition 注销，
-因此已停止的 consumer 不会继续收到唤醒通知，也不会阻止 memory segment 回收。
 
 ## 投递语义
 
