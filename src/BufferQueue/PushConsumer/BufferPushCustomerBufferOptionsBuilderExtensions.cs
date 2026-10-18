@@ -20,7 +20,7 @@ public static class BufferPushCustomerBufferOptionsBuilderExtensions
 
         foreach (var type in assembly.GetTypes())
         {
-            if (type.IsClass == false)
+            if (type.IsClass == false || type.IsAbstract)
             {
                 continue;
             }

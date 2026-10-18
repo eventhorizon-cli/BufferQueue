@@ -209,6 +209,7 @@ topic's partition count.
 
 `AddPushCustomers` in the registration example scans the specified assembly and
 starts the discovered Push Consumers as hosted services.
+Abstract classes are ignored during this scan.
 
 An auto-commit Push Consumer is suitable when progress may advance before the
 application finishes processing the batch:
@@ -292,6 +293,14 @@ A Singleton Push Consumer is reused across batches and concurrent consumer
 loops, so it must be thread-safe. Scoped and Transient Push Consumers are
 resolved in a new asynchronous DI scope for every batch and are disposed after
 the handler completes or throws.
+
+The hosted service tracks each push-consumer loop. During shutdown it cancels the
+shared token and waits for every loop, including any handler currently processing
+a batch, before `StopAsync` returns. Handler exceptions and loop-level exceptions
+are logged with the topic and group, while shutdown cancellation is treated as
+normal completion. When a loop exits, its pull consumer unregisters from assigned
+partitions so stopped consumers do not receive wake-ups or retain registrations
+after shutdown.
 
 ## MessagePack
 
