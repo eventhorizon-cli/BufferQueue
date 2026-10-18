@@ -60,12 +60,6 @@ Each consumer group has a reader for each partition. The reader keeps:
 moves only when `Commit` is called. An uncommitted batch can therefore be delivered
 again while the queue instance remains alive.
 
-The reader publishes each committed position through a consistent progress snapshot. Unbounded
-consumers publish progress without taking the partition append lock; producers use that snapshot
-when deciding whether a segment can be recycled. Bounded consumers additionally coordinate the
-minimum committed position with the topic capacity gate under the append lock before returning
-capacity. This keeps segment recycling safe while avoiding bounded-capacity work in unbounded mode.
-
 ## Segment Recycling
 
 Memory mode can recycle old segments. A segment is eligible only after every consumer group has

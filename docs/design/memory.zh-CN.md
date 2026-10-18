@@ -53,11 +53,6 @@ append lock，因此不会读到尚未写入的 slot。Enqueue 成功后，parti
 `TryPull` 最多返回 `BatchSize` 条数据。只有调用 `Commit` 后，reader 的
 已提交位置才会推进。因此在 queue 实例仍存活期间，未提交 batch 可能再次交付。
 
-Reader 会通过一致的 progress snapshot 发布每次提交后的位置。Unbounded consumer 发布进度时不获取 partition
-append lock；producer 在判断是否可以回收 segment 时读取这个 snapshot。Bounded consumer 还会在归还容量前，
-在 append lock 内协调所有 consumer 的最小提交位置与 topic 的容量门。这样既能保证 segment 回收安全，
-又不会让 Unbounded 路径承担 Bounded 容量处理。
-
 ## Segment 复用
 
 Memory 模式可以复用旧 segment。只有当所有 consumer group 都已经消费过某个 segment 的末尾后，该 segment
