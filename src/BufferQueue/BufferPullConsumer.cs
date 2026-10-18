@@ -122,6 +122,7 @@ internal sealed class BufferPullConsumer<TItem>(BufferPullConsumerOptions option
     {
         Interlocked.Increment(ref _pendingDataVersion);
 
+        // Share the registration lock so a notification after the version check reaches the new waiter.
         _pendingDataLock.EnterUpgradeableReadLock();
         try
         {
