@@ -205,6 +205,8 @@ public sealed class OrderWorker(IBufferQueue queue) : BackgroundService
 }
 ```
 
+New data arriving while a consumer becomes idle wakes consumption without requiring another write.
+
 ## Push consumers
 
 Consumers rotate among readable assigned partitions, starting after the partition that supplied the
