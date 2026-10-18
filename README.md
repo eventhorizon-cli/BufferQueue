@@ -123,6 +123,29 @@ Run only the System.Text.Json, MessagePack, and unmanaged MMF serializer compari
 dotnet run -c Release --project tests/BufferQueue.Benchmarks/BufferQueue.Benchmarks.csproj -- --filter '*MemoryMappedFileSerializer*'
 ```
 
+### Opportunistic Batching (机会式批量消费)
+
+BufferQueue forms batches from data that is already available when a consumer scans a partition. A pull returns up
+to `BatchSize` items from one readable partition. Items already queued in the same partition may be combined
+opportunistically into that batch; the consumer does not hold the first item for a fixed collection window. Low
+traffic can therefore produce a one-item batch, while a burst can produce a larger batch from the same partition.
+
+A producer appends an item and sends a wake-up hint to registered consumers. The shared consumer scans its assigned
+partitions in round-robin order. After a successful pull it returns the batch to the caller and resumes the scan when
+the caller continues enumeration. A push handler completes its current batch before the next pull. Only when every
+assigned partition is empty does the consumer wait for a pending-data notification. The notification version is checked across the scan-to-wait transition so data
+that arrives at that boundary causes another pull attempt instead of a missed wake-up.
+
+With `AutoCommit`, the consumer commits immediately after a successful pull. With manual commit, it returns the batch
+to the caller and advances only after `CommitAsync`; an uncommitted batch may be delivered again. Push consumers use
+the same pull and wake-up path underneath.
+
+![BufferQueue opportunistic batch consumption](docs/assets/bufferqueue-opportunistic-batching.svg)
+
+The diagram shows the normal pull loop and omits cancellation and shutdown branches. “Opportunistic” describes when
+items are collected into a batch; it is not a business-level merge or deduplication guarantee. Batch composition
+depends on enqueue timing, partition routing, `BatchSize`, and consumer scheduling.
+
 ## Functional Design
 
 1. Supports creating multiple topics, each of which can have multiple data types. Each pair of topics and data types corresponds to an independent buffer.
