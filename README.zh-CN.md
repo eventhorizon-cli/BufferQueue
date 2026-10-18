@@ -122,8 +122,8 @@ Partition 返回 `BatchSize` 条记录。同一 Partition 中已经排队的数�
 `BatchSize` 而等待固定时间窗口。因此低流量可能得到只有一条数据的 batch，突发流量则可能得到同一 Partition 中已经排队的更大 batch。
 
 Producer 追加数据后会向已注册的 Consumer 发出唤醒提示。通用 Consumer 按 round-robin 扫描已分配的 Partition。
-成功 pull 后会把 batch 返回给调用方，调用方继续异步枚举时才恢复扫描。Push Handler 处理完当前 batch 后才会 pull
-下一批。只有所有已分配 Partition 都为空时，Consumer 才会等待 pending-data 通知。扫描结束到进入等待之间会检查
+调用方处理完当前 batch 后，异步枚举才会继续并触发下一次 pull。Push Handler 也会先处理完当前 batch，
+再 pull 下一批。只有所有已分配 Partition 都为空时，Consumer 才会等待 pending-data 通知。扫描结束到进入等待之间会检查
 通知版本，确保这个边界到达的新数据会触发下一次拉取，不会因为时序竞争漏掉唤醒。
 
 开启 `AutoCommit` 时，Consumer 在成功 pull 后立即提交进度。手动提交时，batch 会先返回给调用方，只有调用
