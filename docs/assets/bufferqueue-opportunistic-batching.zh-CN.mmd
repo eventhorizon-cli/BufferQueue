@@ -13,40 +13,10 @@ config:
     clusterBorder: "#94a3b8"
 ---
 flowchart LR
-    P[Producer<br/>ProduceAsync] --> A[向选定 Partition<br/>追加数据]
-    A --> N[通知已分配的 Consumer<br/>唤醒提示]
-    N -.-> S[Consumer 按 round-robin<br/>扫描已分配 Partition]
-
-    S --> D{找到有数据的<br/>Partition？}
-    D -- 是 --> B[最多拉取 BatchSize 条<br/>同一 Partition 中已排队的数据]
-    B --> C{开启 AutoCommit？}
-    C -- 是 --> AC[成功 pull 后<br/>提交消费进度]
-    C -- 否 --> H[把 batch 返回给调用方]
-    H --> MC[调用方处理 batch<br/>然后调用 CommitAsync]
-    AC --> R[继续扫描]
-    MC --> R
-    R --> S
-
-    D -- 否 --> V{扫描期间通知版本<br/>是否发生变化？}
-    V -- 是 --> R
-    V -- 否 --> W[等待 pending-data<br/>通知]
-    W -.-> R
-
-    subgraph LEGEND[图例]
-        LD1[实线箭头 = 数据或控制路径] --> LD2[批量消费与提交流程]
-        LW1[Producer 或 Queue] -. 唤醒提示 .-> LW2[唤醒 Consumer]
-    end
-
-    classDef producer fill:#e8f5e9,stroke:#2e7d32,color:#1b4332,stroke-width:2px;
-    classDef queue fill:#e8eefc,stroke:#4669b2,color:#233247,stroke-width:2px;
-    classDef consumer fill:#f1f5f9,stroke:#52657a,color:#233247,stroke-width:2px;
-    classDef decision fill:#fff4ce,stroke:#a16207,color:#713f12,stroke-width:2px;
-    classDef wait fill:#f1ecff,stroke:#7654a6,color:#482878,stroke-width:2px;
-    classDef legend fill:#ffffff,stroke:#94a3b8,color:#233247,stroke-width:1px;
-
-    class P producer;
-    class A,N queue;
-    class S,B,AC,H,MC,R consumer;
-    class D,C,V decision;
-    class W wait;
-    class LD1,LD2,LW1,LW2 legend;
+    P[Producer 追加数据] --> Q[Partition 中已有排队数据]
+    Q -. 唤醒提示 .-> W[等待 pending-data 通知]
+    W -. 通知 .-> D{尝试拉取下一批<br/>有数据？}
+    S[扫描已分配 Partition<br/>round-robin] --> D
+    D -- 是 --> B[机会式批量消费<br/>最多 BatchSize 条已排队数据]
+    B --> S
+    D -- 否 --> W

@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1950" height="820" viewBox="0 0 1950 820" role="img" aria-labelledby="title description">
+<title id="title">BufferQueue partitions and consumer groups</title><desc id="description">A producer routes data to partitions. Each consumer group assigns consumers to partitions and keeps independent progress.</desc>
+<defs>
+  <marker id="arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto" markerUnits="strokeWidth"><path d="M0 0 L9 4.5 L0 9 Z" fill="#596773"/></marker>
+  <marker id="blue-arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto" markerUnits="strokeWidth"><path d="M0 0 L9 4.5 L0 9 Z" fill="#3567a7"/></marker>
+  <marker id="green-arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto" markerUnits="strokeWidth"><path d="M0 0 L9 4.5 L0 9 Z" fill="#2f6f5e"/></marker>
+  <style>
+    text { font-family: Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; fill:#303b44; text-anchor:middle; font-size:22px; }
+    .node { stroke-width:2; }
+    .client { fill:#e9f6f1; stroke:#2f6f5e; }
+    .core { fill:#edf1f5; stroke:#596773; }
+    .router { fill:#eaf2ff; stroke:#3567a7; }
+    .partition { fill:#eef5ff; stroke:#3567a7; }
+    .handler { fill:#f4edfb; stroke:#75529b; }
+    .store { fill:#fff4d6; stroke:#8a6a1d; }
+    .wait { fill:#eaf2ff; stroke:#3567a7; }
+    .edge { fill:none; stroke:#596773; stroke-width:2.5; marker-end:url(#arrow); stroke-linejoin:round; }
+    .data { fill:none; stroke:#3567a7; stroke-width:2.8; marker-end:url(#blue-arrow); stroke-linejoin:round; }
+    .notify { fill:none; stroke:#75529b; stroke-width:2.5; stroke-dasharray:8 6; marker-end:url(#arrow); stroke-linejoin:round; }
+    .assign { fill:none; stroke:#2f6f5e; stroke-width:2.5; stroke-dasharray:8 6; marker-end:url(#green-arrow); stroke-linejoin:round; }
+    .label { font-size:21px; }
+    .note { font-size:21px; fill:#596773; }
+    .small { font-size:19px; }
+    .group-title { font-size:24px; font-weight:700; text-anchor:start; }
+  </style>
+</defs>
+<rect width="1950" height="820" fill="white"/><rect class="node client" x="40" y="390" width="260" height="110" rx="8"/><text x="170.0" y="428.0" class="">Producer</text><text x="170.0" y="462.0" class="">ProduceAsync</text><rect x="430" y="120" width="800" height="650" rx="14" fill="#fbfcfe" stroke="#596773" stroke-width="2"/><text x="470" y="165" class="group-title">BufferQueue / Topic</text><rect class="node partition" x="540" y="250" width="560" height="125" rx="8"/><text x="820.0" y="295.5" class="">Partition 0</text><text x="820.0" y="329.5" class="">independent append and progress</text><rect class="node partition" x="540" y="505" width="560" height="125" rx="8"/><text x="820.0" y="550.5" class="">Partition 1</text><text x="820.0" y="584.5" class="">independent append and progress</text><path class="data" d="M300 445 H390 V312 H540"/><path class="data" d="M390 445 V567 H540"/><rect x="1400" y="145" width="470" height="285" rx="14" fill="#f8fbff" stroke="#596773" stroke-width="2" stroke-dasharray="8 6"/><text x="1435" y="185" class="group-title">Consumer Group 1</text><rect class="node handler" x="1460" y="220" width="300" height="80" rx="8"/><text x="1610.0" y="260.0" class="">Consumer 1</text><rect class="node handler" x="1460" y="335" width="300" height="80" rx="8"/><text x="1610.0" y="375.0" class="">Consumer 2</text><rect x="1400" y="525" width="470" height="190" rx="14" fill="#f8fbff" stroke="#596773" stroke-width="2" stroke-dasharray="8 6"/><text x="1435" y="565" class="group-title">Consumer Group 2</text><rect class="node handler" x="1460" y="605" width="300" height="80" rx="8"/><text x="1610.0" y="645.0" class="">Consumer 3</text><path class="assign" d="M1100 312 H1250 V260 H1460"/><path class="assign" d="M1100 567 H1280 V375 H1460"/><path class="assign" d="M1100 312 H1220 V645 H1460"/><path class="assign" d="M1100 567 H1260 V645 H1460"/><rect x="40" y="60" width="340" height="220" rx="12" fill="#f8fafc" stroke="#94a3b8" stroke-width="2"/><text x="70" y="100" class="group-title">Legend</text><path class="data" d="M80 155 H220"/><text x="240" y="155" class="small" text-anchor="start">Solid arrow = data path</text><path class="assign" d="M80 220 H220"/><text x="240" y="220" class="small" text-anchor="start">Dashed arrow = assignment or ownership</text></svg>

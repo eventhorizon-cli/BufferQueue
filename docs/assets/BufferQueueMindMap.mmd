@@ -1,0 +1,10 @@
+flowchart LR
+    Q[BufferQueue] --> T[Topics / item types]
+    Q --> G[Consumer groups]
+    Q --> S[Storage modes]
+    T --> P[Partitions]
+    T --> R[Producer and batch writes]
+    G --> C[Pull or push consumers]
+    G --> A[Load-balanced assignment]
+    S --> M[Memory segments]
+    S --> F[MemoryMappedFile segments]

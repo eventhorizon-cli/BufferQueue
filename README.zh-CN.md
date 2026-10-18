@@ -118,8 +118,8 @@ dotnet run -c Release --project tests/BufferQueue.Benchmarks/BufferQueue.Benchma
 ### 机会式批量消费（Opportunistic Batching）
 
 BufferQueue 会在 Consumer 扫描 Partition 时，把当时已经可读的数据组成 batch。一次 pull 最多从一个有数据的
-Partition 返回 `BatchSize` 条记录；它不会为了凑满 `BatchSize` 而等待固定时间窗口，也不会对业务数据做去重或
-语义上的合并。因此低流量可能得到只有一条数据的 batch，突发流量则可能得到同一 Partition 中已经排队的更大 batch。
+Partition 返回 `BatchSize` 条记录。同一 Partition 中已经排队的数据可能被机会式地合并到这个 batch 中；它不会为了凑满
+`BatchSize` 而等待固定时间窗口。因此低流量可能得到只有一条数据的 batch，突发流量则可能得到同一 Partition 中已经排队的更大 batch。
 
 Producer 追加数据后会向已注册的 Consumer 发出唤醒提示。通用 Consumer 按 round-robin 扫描已分配的 Partition。
 成功 pull 后会继续扫描；只要还有可用的消费机会，就可以继续获取下一批，不必等待上一批处理完成。只有所有已分配
@@ -149,7 +149,7 @@ Partition 都为空时，Consumer 才会等待 pending-data 通知。扫描结�
 
 7. 支持多种存储模式。Memory 模式把数据和 offset 保存在进程内存中。MemoryMappedFile 模式把记录写入内存映射分段文件，并把 producer offset 和已提交的 consumer offset 持久化到磁盘。
 
-![BufferQueue](docs/assets/BufferQueueMindMap.png)
+![BufferQueue 架构](docs/assets/BufferQueueMindMap.zh-CN.svg)
 
 ## 高性能设计
 ### Partition 并发设计
@@ -169,7 +169,7 @@ Producer 默认以轮询方式往每个 Partition 中写入数据。Topic 也可
 
 每个 Partition 上会记录不同消费组的消费进度，不同组之间的消费进度互不干扰。
 
-![BufferQueue](docs/assets/Partition.png)
+![BufferQueue Partition 与 Consumer Group](docs/assets/Partition.zh-CN.svg)
 
 ### 动态调整缓冲区大小
 支持动态调整缓冲区大小，以适应生产和消费速度不断变化的场景。

@@ -121,12 +121,12 @@ Run only the System.Text.Json, MessagePack, and unmanaged MMF serializer compari
 dotnet run -c Release --project tests/BufferQueue.Benchmarks/BufferQueue.Benchmarks.csproj -- --filter '*MemoryMappedFileSerializer*'
 ```
 
-### Opportunistic Batch Consumption (机会式合并)
+### Opportunistic Batching (机会式批量消费)
 
 BufferQueue forms batches from data that is already available when a consumer scans a partition. A pull returns up
-to `BatchSize` items from one readable partition; it does not hold the first item for a fixed collection window and
-it does not deduplicate or merge application payloads. Low traffic can therefore produce a one-item batch, while a
-burst can produce a larger batch from the same partition.
+to `BatchSize` items from one readable partition. Items already queued in the same partition may be combined
+opportunistically into that batch; the consumer does not hold the first item for a fixed collection window. Low
+traffic can therefore produce a one-item batch, while a burst can produce a larger batch from the same partition.
 
 A producer appends an item and sends a wake-up hint to registered consumers. The shared consumer scans its assigned
 partitions in round-robin order. After a successful pull it continues scanning, so an available slot can consume the
@@ -160,7 +160,7 @@ depends on enqueue timing, partition routing, `BatchSize`, and consumer scheduli
 
 7. Supports multiple storage modes. Memory mode keeps data and offsets in process memory. MemoryMappedFile mode stores records in memory-mapped segment files and persists producer and committed consumer offsets to disk.
 
-![BufferQueue](docs/assets/BufferQueueMindMap.png)
+![BufferQueue architecture](docs/assets/BufferQueueMindMap.svg)
 
 ## High-Performance Design
 
@@ -182,7 +182,7 @@ When a consumer is assigned multiple partitions, it consumes in a round-robin ma
 
 Different consumption groups' consumption progress is recorded on each partition, and the consumption progress of different groups does not interfere with each other.
 
-![BufferQueue](docs/assets/Partition.png)
+![BufferQueue partitions and consumer groups](docs/assets/Partition.svg)
 
 ### Dynamically Adjust Buffer Size
 
