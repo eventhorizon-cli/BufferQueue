@@ -33,14 +33,17 @@ Use MemoryMappedFile mode when produced data and committed consumer offsets need
 
 The project includes BenchmarkDotNet benchmarks that compare BufferQueue in Memory mode with `Channel<T>` and `BlockingCollection<T>` for concurrent producing and consuming. The tables below summarize the `Channel<T>` comparison results.
 
+The benchmark values in this section were recorded for BufferQueue v2.0.3 (commit `90c6208`), before the 2.0.4 runtime changes.
+
 Summary:
 
-- Producing one item at a time: BufferQueue in Memory mode is close to `Channel<T>` under the recorded parameters. Its elapsed time is about `16%` higher in Unbounded mode and `17%` higher in Bounded mode.
-- Producing `ReadOnlyMemory<T>` batches: the Memory path is about `8.73x` faster than its single-item path in Unbounded mode and `8.92x` faster in Bounded mode. This narrow workload is also about `7.49x` and `7.61x` faster than `Channel<T>`, respectively.
-- Consuming: BufferQueue is optimized for batch consumption. It is faster than `Channel<T>` at every tested batch size in Unbounded mode, reaching about `99x` at `BatchSize = 1000`. In Bounded mode it is slower at `BatchSize = 1`, then faster from `BatchSize = 10` through `1000`, reaching about `59x` at the largest batch.
+- Producing one item at a time: BufferQueue in Memory mode is close to `Channel<T>` under the recorded parameters. Its elapsed time is about `11%` higher in Unbounded mode and `22%` higher in Bounded mode.
+- Producing `ReadOnlyMemory<T>` batches: the Memory path is about `8.50x` faster than its single-item path in Unbounded mode and `9.28x` faster in Bounded mode. This narrow workload is also about `7.66x` and `7.63x` faster than `Channel<T>`, respectively.
+- Consuming: BufferQueue is optimized for batch consumption. It is faster than `Channel<T>` from `BatchSize = 1` through `1000` in this benchmark set, with a clearer advantage at larger batches and a maximum of about `103x` under the recorded parameters.
 - Memory allocation: BufferQueue allocates less in producing scenarios; `Channel<T>` allocates less in consuming scenarios.
 
-The producing and consuming rows below are from the latest recorded benchmark runs. The in-memory queue comparisons use
+The producing rows below were recorded for BufferQueue v2.0.3 (commit `90c6208`). The consuming rows are retained from
+the same v2.0.3 benchmark record and were not rerun with later runtime changes. The in-memory queue comparisons use
 `MessageSize = 8192`. The producing rows run both capacity modes in the same `Fixed` job with `LaunchCount = 1`,
 `WarmupCount = 6`, and `IterationCount = 15`. The consuming benchmarks use the default job and, because they use
 `IterationSetup`, run with `InvocationCount = 1` and `UnrollFactor = 1`. Both benchmark groups run on .NET 10.
@@ -59,8 +62,8 @@ cover Memory mode only; MemoryMappedFile production was not run for this compari
 `TryRead` for each item, while BufferQueue returns up to `BatchSize` items at a time with
 Auto Commit enabled; no per-item business processing is included. `BatchSize` only affects BufferQueue and is an
 upper bound. With `MessageSize = 8192` and `Consumers = 12`, `BatchSize = 1000` usually lets each consumer drain its
-approximately 682 or 683 assigned items in one batch. The table shows the source's `1`, `10`, `100`, and `1000`
-batch-size tiers.
+approximately 682 or 683 assigned items in one batch. The source also includes `BatchSize = 10`; the table shows
+the `1`, `100`, and `1000` tiers.
 
 The consuming iterations are short, so these results primarily show the trend for the recorded parameters rather
 than an end-to-end application throughput guarantee. The
@@ -75,8 +78,8 @@ Producing:
 
 | Mode | `MessageSize` | `Producers` | `Channel<T>` Mean | BufferQueue single-item Mean | BufferQueue `ReadOnlyMemory<T>` batch Mean | Result |
 | --- | ---: | ---: | ---: | ---: | ---: | --- |
-| Unbounded | 8192 | 12 | `287.34 μs` | `334.54 μs` | `38.34 μs` | Batch is `8.73x` faster than single-item and `7.49x` faster than `Channel<T>` |
-| Bounded | 8192 | 12 | `301.91 μs` | `354.03 μs` | `39.69 μs` | Batch is `8.92x` faster than single-item and `7.61x` faster than `Channel<T>` |
+| Unbounded | 8192 | 12 | `301.7 μs` | `334.5 μs` | `39.4 μs` | Batch is `8.50x` faster than single-item and `7.66x` faster than `Channel<T>` |
+| Bounded | 8192 | 12 | `300.4 μs` | `365.3 μs` | `39.4 μs` | Batch is `9.28x` faster than single-item and `7.63x` faster than `Channel<T>` |
 
 ### Round-Robin Batch Writes
 
@@ -88,21 +91,19 @@ Consuming:
 
 | Mode | `MessageSize` | `BatchSize` | `Consumers` | `Channel<T>` Mean | BufferQueue (Memory) Mean | Result |
 | --- | ---: | ---: | ---: | ---: | ---: | --- |
-| Unbounded | 8192 | 1 | 12 | `3,621.90 μs` | `727.21 μs` | BufferQueue is about `4.98x` faster under these parameters |
-| Bounded | 8192 | 1 | 12 | `2,213.62 μs` | `4,200.10 μs` | `Channel<T>` is about `1.90x` faster under these parameters |
-| Unbounded | 8192 | 10 | 12 | `3,686.78 μs` | `182.25 μs` | BufferQueue is about `20.24x` faster under these parameters |
-| Bounded | 8192 | 10 | 12 | `2,183.59 μs` | `528.29 μs` | BufferQueue is about `4.13x` faster under these parameters |
-| Unbounded | 8192 | 100 | 12 | `3,761.21 μs` | `53.70 μs` | BufferQueue is about `70.04x` faster under these parameters |
-| Bounded | 8192 | 100 | 12 | `2,115.15 μs` | `102.31 μs` | BufferQueue is about `20.67x` faster under these parameters |
-| Unbounded | 8192 | 1000 | 12 | `3,290.14 μs` | `33.28 μs` | BufferQueue is about `98.92x` faster under these parameters |
-| Bounded | 8192 | 1000 | 12 | `2,180.94 μs` | `37.02 μs` | BufferQueue is about `58.91x` faster under these parameters |
+| Unbounded | 8192 | 1 | 12 | `3,146.52 μs` | `815.80 μs` | BufferQueue is about `3.86x` faster under these parameters |
+| Bounded | 8192 | 1 | 12 | `2,118.13 μs` | `750.73 μs` | BufferQueue is about `2.82x` faster under these parameters |
+| Unbounded | 8192 | 100 | 12 | `3,384.68 μs` | `49.25 μs` | BufferQueue is about `68.72x` faster under these parameters |
+| Bounded | 8192 | 100 | 12 | `2,158.57 μs` | `53.95 μs` | BufferQueue is about `40.01x` faster under these parameters |
+| Unbounded | 8192 | 1000 | 12 | `3,485.82 μs` | `33.97 μs` | BufferQueue is about `102.61x` faster under these parameters |
+| Bounded | 8192 | 1000 | 12 | `2,115.11 μs` | `35.68 μs` | BufferQueue is about `59.28x` faster under these parameters |
 
-Benchmark platform for the latest benchmark runs:
+Benchmark platform for the v2.0.3 benchmark run:
 
 | Item | Value |
 | --- | --- |
 | CPU | Apple M2 Max, `12` logical / `12` physical cores |
-| OS | macOS `27.0.1` (`26A434`) |
+| OS | macOS `15.7.8` (`24G824`) |
 | RID | `osx-arm64` |
 | .NET SDK | `10.0.100` |
 | .NET runtime | `10.0.0`, `arm64` |
@@ -121,29 +122,6 @@ Run only the System.Text.Json, MessagePack, and unmanaged MMF serializer compari
 ```shell
 dotnet run -c Release --project tests/BufferQueue.Benchmarks/BufferQueue.Benchmarks.csproj -- --filter '*MemoryMappedFileSerializer*'
 ```
-
-### Opportunistic Batching (机会式批量消费)
-
-BufferQueue forms batches from data that is already available when a consumer scans a partition. A pull returns up
-to `BatchSize` items from one readable partition. Items already queued in the same partition may be combined
-opportunistically into that batch; the consumer does not hold the first item for a fixed collection window. Low
-traffic can therefore produce a one-item batch, while a burst can produce a larger batch from the same partition.
-
-A producer appends an item and sends a wake-up hint to registered consumers. The shared consumer scans its assigned
-partitions in round-robin order. The caller handles the current batch before enumeration resumes and the next pull starts. A push handler
-therefore completes the current batch before pulling the next one. Only when every
-assigned partition is empty does the consumer wait for a pending-data notification. The notification version is checked across the scan-to-wait transition so data
-that arrives at that boundary causes another pull attempt instead of a missed wake-up.
-
-With `AutoCommit`, the consumer commits immediately after a successful pull. With manual commit, it returns the batch
-to the caller and advances only after `CommitAsync`; an uncommitted batch may be delivered again. Push consumers use
-the same pull and wake-up path underneath.
-
-![BufferQueue opportunistic batch consumption](docs/assets/bufferqueue-opportunistic-batching.svg)
-
-The diagram shows the normal pull loop and omits cancellation and shutdown branches. “Opportunistic” describes when
-items are collected into a batch; it is not a business-level merge or deduplication guarantee. Batch composition
-depends on enqueue timing, partition routing, `BatchSize`, and consumer scheduling.
 
 ## Functional Design
 
