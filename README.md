@@ -129,9 +129,9 @@ opportunistically into that batch; the consumer does not hold the first item for
 traffic can therefore produce a one-item batch, while a burst can produce a larger batch from the same partition.
 
 A producer appends an item and sends a wake-up hint to registered consumers. The shared consumer scans its assigned
-partitions in round-robin order. After a successful pull it continues scanning, so an available slot can consume the
-next batch without waiting for the previous handler to finish. Only when every assigned partition is empty does it
-wait for a pending-data notification. The notification version is checked across the scan-to-wait transition so data
+partitions in round-robin order. After a successful pull it returns the batch to the caller and resumes the scan when
+the caller continues enumeration. A push handler completes its current batch before the next pull. Only when every
+assigned partition is empty does the consumer wait for a pending-data notification. The notification version is checked across the scan-to-wait transition so data
 that arrives at that boundary causes another pull attempt instead of a missed wake-up.
 
 With `AutoCommit`, the consumer commits immediately after a successful pull. With manual commit, it returns the batch
