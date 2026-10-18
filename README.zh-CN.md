@@ -35,7 +35,7 @@ BufferQueue 当前提供两种存储模式：
 
 - 单条写入：在本次测试配置下，BufferQueue Memory 模式的写入性能接近 `Channel<T>`。Unbounded 和 Bounded 模式的耗时分别高约 `16%` 和 `17%`。
 - `ReadOnlyMemory<T>` 批量写入：Memory 路径在 Unbounded 下比单条路径快约 `8.73x`，在 Bounded 下快约 `8.92x`；在本次测试配置下，也分别比 `Channel<T>` 快约 `7.49x` 和 `7.61x`。
-- 消费：BufferQueue 的主要优势在批量消费。Unbounded 模式在所有测试的 batch size 下都快于 `Channel<T>`，`BatchSize = 1000` 时约快 `109x`。Bounded 模式在 `BatchSize = 1` 时较慢，从 `BatchSize = 10` 到 `1000` 时更快，最大约快 `52x`。
+- 消费：BufferQueue 的主要优势在批量消费。Unbounded 模式在所有测试的 batch size 下都快于 `Channel<T>`，`BatchSize = 1000` 时约快 `99x`。Bounded 模式在 `BatchSize = 1` 时较慢，从 `BatchSize = 10` 到 `1000` 时更快，最大约快 `59x`。
 - 内存分配：生产场景 BufferQueue 分配较少；消费场景 `Channel<T>` 分配较少。
 
 下列生产和消费数据来自最近记录的基准测试。
@@ -81,14 +81,14 @@ MemoryMappedFile queue 对比使用 `MessageSize = 1024` 和 short-run job，
 
 | 模式 | `MessageSize` | `BatchSize` | `Consumers` | `Channel<T>` Mean | BufferQueue（Memory）Mean | 结论 |
 | --- | ---: | ---: | ---: | ---: | ---: | --- |
-| Unbounded | 8192 | 1 | 12 | `3,594.66 μs` | `2,337.00 μs` | 该组参数下 BufferQueue 约快 `1.54x` |
-| Bounded | 8192 | 1 | 12 | `2,119.80 μs` | `4,963.46 μs` | 该组参数下 `Channel<T>` 约快 `2.34x` |
-| Unbounded | 8192 | 10 | 12 | `3,663.01 μs` | `322.70 μs` | 该组参数下 BufferQueue 约快 `11.35x` |
-| Bounded | 8192 | 10 | 12 | `2,114.17 μs` | `586.42 μs` | 该组参数下 BufferQueue 约快 `3.60x` |
-| Unbounded | 8192 | 100 | 12 | `3,755.67 μs` | `52.65 μs` | 该组参数下 BufferQueue 约快 `71.33x` |
-| Bounded | 8192 | 100 | 12 | `2,105.76 μs` | `115.12 μs` | 该组参数下 BufferQueue 约快 `18.29x` |
-| Unbounded | 8192 | 1000 | 12 | `3,692.76 μs` | `33.80 μs` | 该组参数下 BufferQueue 约快 `109.25x` |
-| Bounded | 8192 | 1000 | 12 | `2,119.47 μs` | `40.70 μs` | 该组参数下 BufferQueue 约快 `52.08x` |
+| Unbounded | 8192 | 1 | 12 | `3,621.90 μs` | `727.21 μs` | 该组参数下 BufferQueue 约快 `4.98x` |
+| Bounded | 8192 | 1 | 12 | `2,213.62 μs` | `4,200.10 μs` | 该组参数下 `Channel<T>` 约快 `1.90x` |
+| Unbounded | 8192 | 10 | 12 | `3,686.78 μs` | `182.25 μs` | 该组参数下 BufferQueue 约快 `20.24x` |
+| Bounded | 8192 | 10 | 12 | `2,183.59 μs` | `528.29 μs` | 该组参数下 BufferQueue 约快 `4.13x` |
+| Unbounded | 8192 | 100 | 12 | `3,761.21 μs` | `53.70 μs` | 该组参数下 BufferQueue 约快 `70.04x` |
+| Bounded | 8192 | 100 | 12 | `2,115.15 μs` | `102.31 μs` | 该组参数下 BufferQueue 约快 `20.67x` |
+| Unbounded | 8192 | 1000 | 12 | `3,290.14 μs` | `33.28 μs` | 该组参数下 BufferQueue 约快 `98.92x` |
+| Bounded | 8192 | 1000 | 12 | `2,180.94 μs` | `37.02 μs` | 该组参数下 BufferQueue 约快 `58.91x` |
 
 最新 benchmark 的测试平台：
 
@@ -115,6 +115,25 @@ dotnet run -c Release --project tests/BufferQueue.Benchmarks/BufferQueue.Benchma
 dotnet run -c Release --project tests/BufferQueue.Benchmarks/BufferQueue.Benchmarks.csproj -- --filter '*MemoryMappedFileSerializer*'
 ```
 
+### 机会式批量消费（Opportunistic Batching）
+
+BufferQueue 会在 Consumer 扫描 Partition 时，把当时已经可读的数据组成 batch。一次 pull 最多从一个有数据的
+Partition 返回 `BatchSize` 条记录。同一 Partition 中已经排队的数据可能被机会式地合并到这个 batch 中；它不会为了凑满
+`BatchSize` 而等待固定时间窗口。因此低流量可能得到只有一条数据的 batch，突发流量则可能得到同一 Partition 中已经排队的更大 batch。
+
+Producer 追加数据后会向已注册的 Consumer 发出唤醒提示。通用 Consumer 按 round-robin 扫描已分配的 Partition。
+成功 pull 后会把 batch 返回给调用方，调用方继续异步枚举时才恢复扫描。Push Handler 处理完当前 batch 后才会 pull
+下一批。只有所有已分配 Partition 都为空时，Consumer 才会等待 pending-data 通知。扫描结束到进入等待之间会检查
+通知版本，确保这个边界到达的新数据会触发下一次拉取，不会因为时序竞争漏掉唤醒。
+
+开启 `AutoCommit` 时，Consumer 在成功 pull 后立即提交进度。手动提交时，batch 会先返回给调用方，只有调用
+`CommitAsync` 后才推进进度；未提交的 batch 可能再次交付。Push Consumer 底层复用同一套 pull 和唤醒流程。
+
+![BufferQueue 机会式批量消费](docs/assets/bufferqueue-opportunistic-batching.zh-CN.svg)
+
+图中展示正常的 pull 循环，省略取消和停止分支。“机会式”描述的是数据何时被收集进 batch，不代表业务层面的合并或去重
+保证。具体 batch 受入队时机、Partition 路由、`BatchSize` 和 Consumer 调度影响。
+
 ## 功能设计：
 1. 支持创建多个 Topic，每个 Topic 可以有多种数据类型。每一对 Topic 和数据类型对应一个独立的缓冲区。
 
@@ -130,7 +149,7 @@ dotnet run -c Release --project tests/BufferQueue.Benchmarks/BufferQueue.Benchma
 
 7. 支持多种存储模式。Memory 模式把数据和 offset 保存在进程内存中。MemoryMappedFile 模式把记录写入内存映射分段文件，并把 producer offset 和已提交的 consumer offset 持久化到磁盘。
 
-![BufferQueue](docs/assets/BufferQueueMindMap.png)
+![BufferQueue 架构](docs/assets/BufferQueueMindMap.zh-CN.svg)
 
 ## 高性能设计
 ### Partition 并发设计
@@ -150,7 +169,7 @@ Producer 默认以轮询方式往每个 Partition 中写入数据。Topic 也可
 
 每个 Partition 上会记录不同消费组的消费进度，不同组之间的消费进度互不干扰。
 
-![BufferQueue](docs/assets/Partition.png)
+![BufferQueue Partition 与 Consumer Group](docs/assets/Partition.zh-CN.svg)
 
 ### 动态调整缓冲区大小
 支持动态调整缓冲区大小，以适应生产和消费速度不断变化的场景。

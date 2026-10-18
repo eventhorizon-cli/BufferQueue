@@ -1,0 +1,22 @@
+---
+config:
+  flowchart:
+    htmlLabels: true
+    curve: linear
+  theme: base
+  themeVariables:
+    fontFamily: "Arial, Helvetica, sans-serif"
+    fontSize: 18px
+    primaryTextColor: "#233247"
+    lineColor: "#52657a"
+    clusterBkg: "#f8fafc"
+    clusterBorder: "#94a3b8"
+---
+flowchart LR
+    P[Producer appends data] --> Q[Partition has queued data]
+    Q -. wake-up hint .-> W[Wait for pending-data notification]
+    W -. notification .-> D{Try pulling the next batch<br/>Data available?}
+    S[Scan assigned partitions<br/>round-robin] --> D
+    D -- Yes --> B[Opportunistic batch<br/>up to BatchSize queued items]
+    B --> S
+    D -- No --> W

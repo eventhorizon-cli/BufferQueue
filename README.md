@@ -36,7 +36,7 @@ Summary:
 
 - Producing one item at a time: BufferQueue in Memory mode is close to `Channel<T>` under the recorded parameters. Its elapsed time is about `16%` higher in Unbounded mode and `17%` higher in Bounded mode.
 - Producing `ReadOnlyMemory<T>` batches: the Memory path is about `8.73x` faster than its single-item path in Unbounded mode and `8.92x` faster in Bounded mode. This narrow workload is also about `7.49x` and `7.61x` faster than `Channel<T>`, respectively.
-- Consuming: BufferQueue is optimized for batch consumption. It is faster than `Channel<T>` at every tested batch size in Unbounded mode, reaching about `109x` at `BatchSize = 1000`. In Bounded mode it is slower at `BatchSize = 1`, then faster from `BatchSize = 10` through `1000`, reaching about `52x` at the largest batch.
+- Consuming: BufferQueue is optimized for batch consumption. It is faster than `Channel<T>` at every tested batch size in Unbounded mode, reaching about `99x` at `BatchSize = 1000`. In Bounded mode it is slower at `BatchSize = 1`, then faster from `BatchSize = 10` through `1000`, reaching about `59x` at the largest batch.
 - Memory allocation: BufferQueue allocates less in producing scenarios; `Channel<T>` allocates less in consuming scenarios.
 
 The producing and consuming rows below are from the latest recorded benchmark runs. The in-memory queue comparisons use
@@ -87,14 +87,14 @@ Consuming:
 
 | Mode | `MessageSize` | `BatchSize` | `Consumers` | `Channel<T>` Mean | BufferQueue (Memory) Mean | Result |
 | --- | ---: | ---: | ---: | ---: | ---: | --- |
-| Unbounded | 8192 | 1 | 12 | `3,594.66 μs` | `2,337.00 μs` | BufferQueue is about `1.54x` faster under these parameters |
-| Bounded | 8192 | 1 | 12 | `2,119.80 μs` | `4,963.46 μs` | `Channel<T>` is about `2.34x` faster under these parameters |
-| Unbounded | 8192 | 10 | 12 | `3,663.01 μs` | `322.70 μs` | BufferQueue is about `11.35x` faster under these parameters |
-| Bounded | 8192 | 10 | 12 | `2,114.17 μs` | `586.42 μs` | BufferQueue is about `3.60x` faster under these parameters |
-| Unbounded | 8192 | 100 | 12 | `3,755.67 μs` | `52.65 μs` | BufferQueue is about `71.33x` faster under these parameters |
-| Bounded | 8192 | 100 | 12 | `2,105.76 μs` | `115.12 μs` | BufferQueue is about `18.29x` faster under these parameters |
-| Unbounded | 8192 | 1000 | 12 | `3,692.76 μs` | `33.80 μs` | BufferQueue is about `109.25x` faster under these parameters |
-| Bounded | 8192 | 1000 | 12 | `2,119.47 μs` | `40.70 μs` | BufferQueue is about `52.08x` faster under these parameters |
+| Unbounded | 8192 | 1 | 12 | `3,621.90 μs` | `727.21 μs` | BufferQueue is about `4.98x` faster under these parameters |
+| Bounded | 8192 | 1 | 12 | `2,213.62 μs` | `4,200.10 μs` | `Channel<T>` is about `1.90x` faster under these parameters |
+| Unbounded | 8192 | 10 | 12 | `3,686.78 μs` | `182.25 μs` | BufferQueue is about `20.24x` faster under these parameters |
+| Bounded | 8192 | 10 | 12 | `2,183.59 μs` | `528.29 μs` | BufferQueue is about `4.13x` faster under these parameters |
+| Unbounded | 8192 | 100 | 12 | `3,761.21 μs` | `53.70 μs` | BufferQueue is about `70.04x` faster under these parameters |
+| Bounded | 8192 | 100 | 12 | `2,115.15 μs` | `102.31 μs` | BufferQueue is about `20.67x` faster under these parameters |
+| Unbounded | 8192 | 1000 | 12 | `3,290.14 μs` | `33.28 μs` | BufferQueue is about `98.92x` faster under these parameters |
+| Bounded | 8192 | 1000 | 12 | `2,180.94 μs` | `37.02 μs` | BufferQueue is about `58.91x` faster under these parameters |
 
 Benchmark platform for the latest benchmark runs:
 
@@ -121,6 +121,29 @@ Run only the System.Text.Json, MessagePack, and unmanaged MMF serializer compari
 dotnet run -c Release --project tests/BufferQueue.Benchmarks/BufferQueue.Benchmarks.csproj -- --filter '*MemoryMappedFileSerializer*'
 ```
 
+### Opportunistic Batching (机会式批量消费)
+
+BufferQueue forms batches from data that is already available when a consumer scans a partition. A pull returns up
+to `BatchSize` items from one readable partition. Items already queued in the same partition may be combined
+opportunistically into that batch; the consumer does not hold the first item for a fixed collection window. Low
+traffic can therefore produce a one-item batch, while a burst can produce a larger batch from the same partition.
+
+A producer appends an item and sends a wake-up hint to registered consumers. The shared consumer scans its assigned
+partitions in round-robin order. After a successful pull it returns the batch to the caller and resumes the scan when
+the caller continues enumeration. A push handler completes its current batch before the next pull. Only when every
+assigned partition is empty does the consumer wait for a pending-data notification. The notification version is checked across the scan-to-wait transition so data
+that arrives at that boundary causes another pull attempt instead of a missed wake-up.
+
+With `AutoCommit`, the consumer commits immediately after a successful pull. With manual commit, it returns the batch
+to the caller and advances only after `CommitAsync`; an uncommitted batch may be delivered again. Push consumers use
+the same pull and wake-up path underneath.
+
+![BufferQueue opportunistic batch consumption](docs/assets/bufferqueue-opportunistic-batching.svg)
+
+The diagram shows the normal pull loop and omits cancellation and shutdown branches. “Opportunistic” describes when
+items are collected into a batch; it is not a business-level merge or deduplication guarantee. Batch composition
+depends on enqueue timing, partition routing, `BatchSize`, and consumer scheduling.
+
 ## Functional Design
 
 1. Supports creating multiple topics, each of which can have multiple data types. Each pair of topics and data types corresponds to an independent buffer.
@@ -137,7 +160,7 @@ dotnet run -c Release --project tests/BufferQueue.Benchmarks/BufferQueue.Benchma
 
 7. Supports multiple storage modes. Memory mode keeps data and offsets in process memory. MemoryMappedFile mode stores records in memory-mapped segment files and persists producer and committed consumer offsets to disk.
 
-![BufferQueue](docs/assets/BufferQueueMindMap.png)
+![BufferQueue architecture](docs/assets/BufferQueueMindMap.svg)
 
 ## High-Performance Design
 
@@ -159,7 +182,7 @@ When a consumer is assigned multiple partitions, it consumes in a round-robin ma
 
 Different consumption groups' consumption progress is recorded on each partition, and the consumption progress of different groups does not interfere with each other.
 
-![BufferQueue](docs/assets/Partition.png)
+![BufferQueue partitions and consumer groups](docs/assets/Partition.svg)
 
 ### Dynamically Adjust Buffer Size
 

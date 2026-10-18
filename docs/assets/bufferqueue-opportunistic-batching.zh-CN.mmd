@@ -1,0 +1,22 @@
+---
+config:
+  flowchart:
+    htmlLabels: true
+    curve: linear
+  theme: base
+  themeVariables:
+    fontFamily: "Arial, Helvetica, sans-serif"
+    fontSize: 18px
+    primaryTextColor: "#233247"
+    lineColor: "#52657a"
+    clusterBkg: "#f8fafc"
+    clusterBorder: "#94a3b8"
+---
+flowchart LR
+    P[Producer 追加数据] --> Q[Partition 中已有排队数据]
+    Q -. 唤醒提示 .-> W[等待 pending-data 通知]
+    W -. 通知 .-> D{尝试拉取下一批<br/>有数据？}
+    S[扫描已分配 Partition<br/>round-robin] --> D
+    D -- 是 --> B[机会式批量消费<br/>最多 BatchSize 条已排队数据]
+    B --> S
+    D -- 否 --> W
