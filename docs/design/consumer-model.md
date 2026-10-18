@@ -61,7 +61,12 @@ Consumers do not spin when no data is available. The common consumer waits throu
 7. The consumer resumes the same ring scan; the notification is a wake-up hint, not a priority override.
 
 The pending-data version prevents a lost wake-up when data arrives between the final pull attempt
-and the transition into the waiting state.
+and the transition into the waiting state. Checking that version and resetting the waiter are one
+write-locked operation. Notifications acquire the same lock before checking whether a waiter exists,
+so an arrival after the version check still completes the newly registered waiter. A check outside
+that lock must not skip notification merely because the consumer has not registered its waiter yet.
+A deterministic regression holds the registration lock while notification starts, then registers
+the waiter and verifies that this notification completes it without another write.
 
 ## Push Consumers
 
