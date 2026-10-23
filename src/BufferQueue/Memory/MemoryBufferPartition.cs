@@ -21,6 +21,8 @@ internal sealed class MemoryBufferPartition<T>
 
     // At most one consumer per group can consume the same partition at the same time,
     private readonly ConcurrentDictionary<string /* group name */, Reader> _consumerReaders;
+    // Registry changes and committed-position scans share the append lock.
+    private readonly List<Reader> _registeredReaders = [];
     // The append lock serializes replacements. Published sets are never mutated, so notifications
     // can enumerate an older set without locking or copying it.
     private HashSet<IBufferPartitionConsumer<T>> _consumers;
@@ -65,7 +67,7 @@ internal sealed class MemoryBufferPartition<T>
 
     internal object? AppendCoordinator => _appendCoordinator;
 
-    public ulong Capacity => (ulong)(_tail.EndOffset - _head.StartOffset + 1);
+    public ulong Capacity => _tail.EndOffset - _head.StartOffset + 1;
 
     public ulong Count
     {
@@ -88,7 +90,7 @@ internal sealed class MemoryBufferPartition<T>
             }
 
             // Initialize the reader before making the consumer visible to notifications.
-            _consumerReaders.TryAdd(consumer.GroupName, CreateReader());
+            GetOrCreateReader(consumer.GroupName);
             Volatile.Write(ref _consumers, consumers);
         }
         finally
@@ -110,7 +112,10 @@ internal sealed class MemoryBufferPartition<T>
                 consumers.Remove(consumer);
             }
 
-            _consumerReaders.TryRemove(consumer.GroupName, out _);
+            if (_consumerReaders.TryRemove(consumer.GroupName, out var reader))
+            {
+                _registeredReaders.Remove(reader);
+            }
             // Notifications already using the old set may still call this consumer.
             Volatile.Write(ref _consumers, consumers);
             releasedCount = ReleaseCommittedCapacity();
@@ -204,7 +209,7 @@ internal sealed class MemoryBufferPartition<T>
             EnterAppendLock();
             try
             {
-                reader = _consumerReaders.GetOrAdd(groupName, _ => CreateReader());
+                reader = GetOrCreateReader(groupName);
             }
             finally
             {
@@ -292,10 +297,25 @@ internal sealed class MemoryBufferPartition<T>
         return true;
     }
 
+    private Reader GetOrCreateReader(string groupName)
+    {
+        Debug.Assert(Monitor.IsEntered(_appendLock));
+        if (_consumerReaders.TryGetValue(groupName, out var reader))
+        {
+            return reader;
+        }
+
+        reader = CreateReader();
+        _consumerReaders[groupName] = reader;
+        _registeredReaders.Add(reader);
+        return reader;
+    }
+
     private Reader CreateReader()
     {
         var head = _head;
-        var startPosition = _releasedCapacityPosition > head.StartOffset
+        // An unbounded partition never advances the release cursor; it may be outside the current live window.
+        var startPosition = _releaseCapacity != null && _releasedCapacityPosition > head.StartOffset
             ? _releasedCapacityPosition
             : head.StartOffset;
         return new(head, startPosition);
@@ -303,7 +323,7 @@ internal sealed class MemoryBufferPartition<T>
 
     private ulong ReleaseCommittedCapacity()
     {
-        if (_releaseCapacity == null || _consumerReaders.IsEmpty)
+        if (_releaseCapacity == null || _registeredReaders.Count == 0)
         {
             return 0;
         }
@@ -314,7 +334,7 @@ internal sealed class MemoryBufferPartition<T>
             return 0;
         }
 
-        var releasedCount = (minConsumerReadPosition - _releasedCapacityPosition).ToUInt64();
+        var releasedCount = minConsumerReadPosition - _releasedCapacityPosition;
         _releasedCapacityPosition = minConsumerReadPosition;
         return releasedCount;
     }
@@ -322,7 +342,7 @@ internal sealed class MemoryBufferPartition<T>
     private MemoryBufferPartitionOffset MinConsumerReadPosition()
     {
         MemoryBufferPartitionOffset? minReadPosition = null;
-        foreach (var reader in _consumerReaders.Values)
+        foreach (var reader in _registeredReaders)
         {
             var readPosition = reader.ReadPosition;
 

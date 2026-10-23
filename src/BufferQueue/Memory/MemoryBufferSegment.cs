@@ -66,7 +66,7 @@ internal sealed class MemoryBufferSegment<T>
             return false;
         }
 
-        var readPosition = (offset - _startOffset).ToInt32();
+        var readPosition = checked((int)(offset - _startOffset));
 
         var lastPublishedPosition = Volatile.Read(ref _lastPublishedPosition);
         if (lastPublishedPosition < 0 || readPosition > lastPublishedPosition)
