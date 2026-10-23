@@ -34,13 +34,13 @@ BufferQueue 当前提供两种存储模式：
 
 结果摘要：
 
-- 单条写入：BufferQueue 的耗时在 Unbounded 模式下比 `Channel<T>` 高约 `18%`，在 Bounded 模式下高约 `16%`。
-- `ReadOnlyMemory<T>` 批量写入：Memory 路径在 Unbounded 下比单条路径快约 `8.40x`，在 Bounded 下快约 `8.60x`；也分别比 `Channel<T>` 快约 `7.13x` 和 `7.44x`。
-- 单个 consumer：`BatchSize = 1` 和 `10` 时，`Channel<T>` 更快；`100` 和 `1000` 时，BufferQueue 更快。在 `1000` 时，Unbounded 和 Bounded 模式分别约快 `6.64x` 和 `6.06x`。
-- 十二个 consumer：在本次参数下，BufferQueue 在两种模式的所有 batch size 中平均耗时都更低。`BatchSize = 1000` 时，Unbounded 和 Bounded 模式分别约快 `98.56x` 和 `47.67x`。
+- 单条写入：BufferQueue 的耗时在 Unbounded 模式下比 `Channel<T>` 高约 `19%`，在 Bounded 模式下高约 `18%`。
+- `ReadOnlyMemory<T>` 批量写入：Memory 路径在 Unbounded 下比单条路径快约 `8.59x`，在 Bounded 下快约 `9.05x`；也分别比 `Channel<T>` 快约 `7.22x` 和 `7.64x`。
+- 单个 consumer：`BatchSize = 1` 和 `10` 时，`Channel<T>` 更快；`100` 和 `1000` 时，BufferQueue 更快。在 `1000` 时，Unbounded 和 Bounded 模式分别约快 `6.16x` 和 `5.74x`。
+- 十二个 consumer：在本次参数下，BufferQueue 在两种模式的所有 batch size 中平均耗时都更低。`BatchSize = 1000` 时，Unbounded 和 Bounded 模式分别约快 `91.92x` 和 `54.03x`。
 - 内存分配：生产场景 BufferQueue 分配较少；消费场景 `Channel<T>` 分配较少。
 
-下列生产和消费数据于 `2026-10-23` 重跑。
+下列生产和消费数据于 `2026-10-23` 基于 main commit `a7ab752` 的运行时代码重跑。
 纯内存 queue 对比使用 `MessageSize = 8192`。生产数据的 Bounded 和 Unbounded 模式使用同一个 `Fixed` job，
 配置为 `LaunchCount = 1`、`WarmupCount = 6`、`IterationCount = 15`。消费 benchmark 使用默认 job，并因
 `IterationSetup` 使用 `InvocationCount = 1`、`UnrollFactor = 1`。两组 benchmark 均运行于 .NET 10。
@@ -74,8 +74,8 @@ MemoryMappedFile queue 对比使用 `MessageSize = 1024` 和 short-run job，
 
 | 模式 | `MessageSize` | `Producers` | `Channel<T>` Mean | BufferQueue 单条 Mean | BufferQueue `ReadOnlyMemory<T>` 批量 Mean | 结论 |
 | --- | ---: | ---: | ---: | ---: | ---: | --- |
-| Unbounded | 8192 | 12 | `289.85 μs` | `341.79 μs` | `40.68 μs` | 批量比单条快 `8.40x`，比 `Channel<T>` 快 `7.13x` |
-| Bounded | 8192 | 12 | `302.89 μs` | `349.94 μs` | `40.71 μs` | 批量比单条快 `8.60x`，比 `Channel<T>` 快 `7.44x` |
+| Unbounded | 8192 | 12 | `296.15 μs` | `352.65 μs` | `41.04 μs` | 批量比单条快 `8.59x`，比 `Channel<T>` 快 `7.22x` |
+| Bounded | 8192 | 12 | `306.59 μs` | `363.24 μs` | `40.12 μs` | 批量比单条快 `9.05x`，比 `Channel<T>` 快 `7.64x` |
 
 ### Round-robin 批量写入
 
@@ -86,22 +86,22 @@ MemoryMappedFile queue 对比使用 `MessageSize = 1024` 和 short-run job，
 
 | 模式 | `MessageSize` | `BatchSize` | `Consumers` | `Channel<T>` Mean | BufferQueue（Memory）Mean | 结论 |
 | --- | ---: | ---: | ---: | ---: | ---: | --- |
-| Unbounded | 8192 | 1 | 1 | `165.13 μs` | `3,285.53 μs` | 该组参数下 `Channel<T>` 约快 `19.90x` |
-| Bounded | 8192 | 1 | 1 | `186.78 μs` | `6,522.00 μs` | 该组参数下 `Channel<T>` 约快 `34.92x` |
-| Unbounded | 8192 | 10 | 1 | `163.79 μs` | `413.60 μs` | 该组参数下 `Channel<T>` 约快 `2.53x` |
-| Bounded | 8192 | 10 | 1 | `192.05 μs` | `762.31 μs` | 该组参数下 `Channel<T>` 约快 `3.97x` |
-| Unbounded | 8192 | 100 | 1 | `161.80 μs` | `62.55 μs` | 该组参数下 BufferQueue 约快 `2.59x` |
-| Bounded | 8192 | 100 | 1 | `192.81 μs` | `98.65 μs` | 该组参数下 BufferQueue 约快 `1.95x` |
-| Unbounded | 8192 | 1000 | 1 | `166.71 μs` | `25.12 μs` | 该组参数下 BufferQueue 约快 `6.64x` |
-| Bounded | 8192 | 1000 | 1 | `190.05 μs` | `31.38 μs` | 该组参数下 BufferQueue 约快 `6.06x` |
-| Unbounded | 8192 | 1 | 12 | `3,306.15 μs` | `745.04 μs` | 该组参数下 BufferQueue 约快 `4.44x` |
-| Bounded | 8192 | 1 | 12 | `2,204.18 μs` | `1,910.49 μs` | 该组参数下 BufferQueue 约快 `1.15x` |
-| Unbounded | 8192 | 10 | 12 | `3,479.02 μs` | `195.68 μs` | 该组参数下 BufferQueue 约快 `17.78x` |
-| Bounded | 8192 | 10 | 12 | `2,308.89 μs` | `567.60 μs` | 该组参数下 BufferQueue 约快 `4.07x` |
-| Unbounded | 8192 | 100 | 12 | `3,440.50 μs` | `53.13 μs` | 该组参数下 BufferQueue 约快 `64.76x` |
-| Bounded | 8192 | 100 | 12 | `2,079.65 μs` | `100.32 μs` | 该组参数下 BufferQueue 约快 `20.73x` |
-| Unbounded | 8192 | 1000 | 12 | `3,456.67 μs` | `35.07 μs` | 该组参数下 BufferQueue 约快 `98.56x` |
-| Bounded | 8192 | 1000 | 12 | `1,958.24 μs` | `41.08 μs` | 该组参数下 BufferQueue 约快 `47.67x` |
+| Unbounded | 8192 | 1 | 1 | `166.06 μs` | `3,370.12 μs` | 该组参数下 `Channel<T>` 约快 `20.29x` |
+| Bounded | 8192 | 1 | 1 | `199.18 μs` | `6,440.61 μs` | 该组参数下 `Channel<T>` 约快 `32.34x` |
+| Unbounded | 8192 | 10 | 1 | `168.76 μs` | `417.70 μs` | 该组参数下 `Channel<T>` 约快 `2.48x` |
+| Bounded | 8192 | 10 | 1 | `195.81 μs` | `754.76 μs` | 该组参数下 `Channel<T>` 约快 `3.85x` |
+| Unbounded | 8192 | 100 | 1 | `167.36 μs` | `62.98 μs` | 该组参数下 BufferQueue 约快 `2.66x` |
+| Bounded | 8192 | 100 | 1 | `193.24 μs` | `98.49 μs` | 该组参数下 BufferQueue 约快 `1.96x` |
+| Unbounded | 8192 | 1000 | 1 | `167.94 μs` | `27.28 μs` | 该组参数下 BufferQueue 约快 `6.16x` |
+| Bounded | 8192 | 1000 | 1 | `193.11 μs` | `33.63 μs` | 该组参数下 BufferQueue 约快 `5.74x` |
+| Unbounded | 8192 | 1 | 12 | `3,498.05 μs` | `2,183.03 μs` | 该组参数下 BufferQueue 约快 `1.60x` |
+| Bounded | 8192 | 1 | 12 | `2,114.84 μs` | `1,949.75 μs` | 该组参数下 BufferQueue 约快 `1.08x` |
+| Unbounded | 8192 | 10 | 12 | `3,512.23 μs` | `322.42 μs` | 该组参数下 BufferQueue 约快 `10.89x` |
+| Bounded | 8192 | 10 | 12 | `2,055.04 μs` | `620.36 μs` | 该组参数下 BufferQueue 约快 `3.31x` |
+| Unbounded | 8192 | 100 | 12 | `3,400.68 μs` | `55.91 μs` | 该组参数下 BufferQueue 约快 `60.82x` |
+| Bounded | 8192 | 100 | 12 | `2,065.02 μs` | `128.18 μs` | 该组参数下 BufferQueue 约快 `16.11x` |
+| Unbounded | 8192 | 1000 | 12 | `3,408.49 μs` | `37.08 μs` | 该组参数下 BufferQueue 约快 `91.92x` |
+| Bounded | 8192 | 1000 | 12 | `2,312.93 μs` | `42.81 μs` | 该组参数下 BufferQueue 约快 `54.03x` |
 
 最新 benchmark 的测试平台：
 

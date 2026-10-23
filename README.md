@@ -35,13 +35,13 @@ The project includes BenchmarkDotNet benchmarks that compare BufferQueue in Memo
 
 Summary:
 
-- Producing one item at a time: BufferQueue's elapsed time is about `18%` higher than `Channel<T>` in Unbounded mode and `16%` higher in Bounded mode.
-- Producing `ReadOnlyMemory<T>` batches: the Memory path is about `8.40x` faster than its single-item path in Unbounded mode and `8.60x` faster in Bounded mode; it is about `7.13x` and `7.44x` faster than `Channel<T>`, respectively.
-- One consumer: `Channel<T>` is faster at `BatchSize = 1` and `10`. BufferQueue is faster at `100` and `1000`; at `1000`, it is about `6.64x` faster in Unbounded mode and `6.06x` faster in Bounded mode.
-- Twelve consumers: BufferQueue has a lower mean at every tested batch size in both modes. At `BatchSize = 1000`, it is about `98.56x` faster in Unbounded mode and `47.67x` faster in Bounded mode under these parameters.
+- Producing one item at a time: BufferQueue's elapsed time is about `19%` higher than `Channel<T>` in Unbounded mode and `18%` higher in Bounded mode.
+- Producing `ReadOnlyMemory<T>` batches: the Memory path is about `8.59x` faster than its single-item path in Unbounded mode and `9.05x` faster in Bounded mode; it is about `7.22x` and `7.64x` faster than `Channel<T>`, respectively.
+- One consumer: `Channel<T>` is faster at `BatchSize = 1` and `10`. BufferQueue is faster at `100` and `1000`; at `1000`, it is about `6.16x` faster in Unbounded mode and `5.74x` faster in Bounded mode.
+- Twelve consumers: BufferQueue has a lower mean at every tested batch size in both modes. At `BatchSize = 1000`, it is about `91.92x` faster in Unbounded mode and `54.03x` faster in Bounded mode under these parameters.
 - Memory allocation: BufferQueue allocates less in producing scenarios; `Channel<T>` allocates less in consuming scenarios.
 
-The producing and consuming rows below were rerun on `2026-10-23`. The in-memory queue comparisons use
+The producing and consuming rows below were rerun on `2026-10-23` against the runtime from main commit `a7ab752`. The in-memory queue comparisons use
 `MessageSize = 8192`. The producing rows run both capacity modes in the same `Fixed` job with `LaunchCount = 1`,
 `WarmupCount = 6`, and `IterationCount = 15`. The consuming benchmarks use the default job and, because they use
 `IterationSetup`, run with `InvocationCount = 1` and `UnrollFactor = 1`. Both benchmark groups run on .NET 10.
@@ -78,8 +78,8 @@ Producing:
 
 | Mode | `MessageSize` | `Producers` | `Channel<T>` Mean | BufferQueue single-item Mean | BufferQueue `ReadOnlyMemory<T>` batch Mean | Result |
 | --- | ---: | ---: | ---: | ---: | ---: | --- |
-| Unbounded | 8192 | 12 | `289.85 μs` | `341.79 μs` | `40.68 μs` | Batch is `8.40x` faster than single-item and `7.13x` faster than `Channel<T>` |
-| Bounded | 8192 | 12 | `302.89 μs` | `349.94 μs` | `40.71 μs` | Batch is `8.60x` faster than single-item and `7.44x` faster than `Channel<T>` |
+| Unbounded | 8192 | 12 | `296.15 μs` | `352.65 μs` | `41.04 μs` | Batch is `8.59x` faster than single-item and `7.22x` faster than `Channel<T>` |
+| Bounded | 8192 | 12 | `306.59 μs` | `363.24 μs` | `40.12 μs` | Batch is `9.05x` faster than single-item and `7.64x` faster than `Channel<T>` |
 
 ### Round-Robin Batch Writes
 
@@ -91,22 +91,22 @@ Consuming:
 
 | Mode | `MessageSize` | `BatchSize` | `Consumers` | `Channel<T>` Mean | BufferQueue (Memory) Mean | Result |
 | --- | ---: | ---: | ---: | ---: | ---: | --- |
-| Unbounded | 8192 | 1 | 1 | `165.13 μs` | `3,285.53 μs` | `Channel<T>` is about `19.90x` faster under these parameters |
-| Bounded | 8192 | 1 | 1 | `186.78 μs` | `6,522.00 μs` | `Channel<T>` is about `34.92x` faster under these parameters |
-| Unbounded | 8192 | 10 | 1 | `163.79 μs` | `413.60 μs` | `Channel<T>` is about `2.53x` faster under these parameters |
-| Bounded | 8192 | 10 | 1 | `192.05 μs` | `762.31 μs` | `Channel<T>` is about `3.97x` faster under these parameters |
-| Unbounded | 8192 | 100 | 1 | `161.80 μs` | `62.55 μs` | BufferQueue is about `2.59x` faster under these parameters |
-| Bounded | 8192 | 100 | 1 | `192.81 μs` | `98.65 μs` | BufferQueue is about `1.95x` faster under these parameters |
-| Unbounded | 8192 | 1000 | 1 | `166.71 μs` | `25.12 μs` | BufferQueue is about `6.64x` faster under these parameters |
-| Bounded | 8192 | 1000 | 1 | `190.05 μs` | `31.38 μs` | BufferQueue is about `6.06x` faster under these parameters |
-| Unbounded | 8192 | 1 | 12 | `3,306.15 μs` | `745.04 μs` | BufferQueue is about `4.44x` faster under these parameters |
-| Bounded | 8192 | 1 | 12 | `2,204.18 μs` | `1,910.49 μs` | BufferQueue is about `1.15x` faster under these parameters |
-| Unbounded | 8192 | 10 | 12 | `3,479.02 μs` | `195.68 μs` | BufferQueue is about `17.78x` faster under these parameters |
-| Bounded | 8192 | 10 | 12 | `2,308.89 μs` | `567.60 μs` | BufferQueue is about `4.07x` faster under these parameters |
-| Unbounded | 8192 | 100 | 12 | `3,440.50 μs` | `53.13 μs` | BufferQueue is about `64.76x` faster under these parameters |
-| Bounded | 8192 | 100 | 12 | `2,079.65 μs` | `100.32 μs` | BufferQueue is about `20.73x` faster under these parameters |
-| Unbounded | 8192 | 1000 | 12 | `3,456.67 μs` | `35.07 μs` | BufferQueue is about `98.56x` faster under these parameters |
-| Bounded | 8192 | 1000 | 12 | `1,958.24 μs` | `41.08 μs` | BufferQueue is about `47.67x` faster under these parameters |
+| Unbounded | 8192 | 1 | 1 | `166.06 μs` | `3,370.12 μs` | `Channel<T>` is about `20.29x` faster under these parameters |
+| Bounded | 8192 | 1 | 1 | `199.18 μs` | `6,440.61 μs` | `Channel<T>` is about `32.34x` faster under these parameters |
+| Unbounded | 8192 | 10 | 1 | `168.76 μs` | `417.70 μs` | `Channel<T>` is about `2.48x` faster under these parameters |
+| Bounded | 8192 | 10 | 1 | `195.81 μs` | `754.76 μs` | `Channel<T>` is about `3.85x` faster under these parameters |
+| Unbounded | 8192 | 100 | 1 | `167.36 μs` | `62.98 μs` | BufferQueue is about `2.66x` faster under these parameters |
+| Bounded | 8192 | 100 | 1 | `193.24 μs` | `98.49 μs` | BufferQueue is about `1.96x` faster under these parameters |
+| Unbounded | 8192 | 1000 | 1 | `167.94 μs` | `27.28 μs` | BufferQueue is about `6.16x` faster under these parameters |
+| Bounded | 8192 | 1000 | 1 | `193.11 μs` | `33.63 μs` | BufferQueue is about `5.74x` faster under these parameters |
+| Unbounded | 8192 | 1 | 12 | `3,498.05 μs` | `2,183.03 μs` | BufferQueue is about `1.60x` faster under these parameters |
+| Bounded | 8192 | 1 | 12 | `2,114.84 μs` | `1,949.75 μs` | BufferQueue is about `1.08x` faster under these parameters |
+| Unbounded | 8192 | 10 | 12 | `3,512.23 μs` | `322.42 μs` | BufferQueue is about `10.89x` faster under these parameters |
+| Bounded | 8192 | 10 | 12 | `2,055.04 μs` | `620.36 μs` | BufferQueue is about `3.31x` faster under these parameters |
+| Unbounded | 8192 | 100 | 12 | `3,400.68 μs` | `55.91 μs` | BufferQueue is about `60.82x` faster under these parameters |
+| Bounded | 8192 | 100 | 12 | `2,065.02 μs` | `128.18 μs` | BufferQueue is about `16.11x` faster under these parameters |
+| Unbounded | 8192 | 1000 | 12 | `3,408.49 μs` | `37.08 μs` | BufferQueue is about `91.92x` faster under these parameters |
+| Bounded | 8192 | 1000 | 12 | `2,312.93 μs` | `42.81 μs` | BufferQueue is about `54.03x` faster under these parameters |
 
 Benchmark platform for the latest benchmark runs:
 
