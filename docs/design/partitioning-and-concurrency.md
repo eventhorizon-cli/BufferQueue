@@ -105,11 +105,15 @@ The queue is designed for concurrent production and consumption within one proce
 - Producers select a partition through round-robin counters by default, or through the configured
   partition-key selector. Selector implementations must be safe for concurrent calls.
 - In Memory mode, default round-robin selection and batch-range reservation use a short topic-level
-  coordinator. Each admitted batch or batch slice obtains its complete capacity before it reserves
-  the range, then appends each partition slice under that partition's append lock. A single
-  round-robin append uses its target partition lock while a batch append is active; consumer state
-  changes use the same coordinator. Partition-key routing selects a partition first, then uses that
-  partition's append lock. Appends to one partition remain serialized.
+  coordinator in both bounded and unbounded modes. Each admitted batch or batch slice obtains its
+  complete capacity before it reserves the range, then appends each partition slice under that
+  partition's append lock. Concurrent single-item and batch appends targeting one partition remain
+  serialized. A scalar fallback retains the coordinator while acquiring and holding its target
+  partition lock, so a selection made during an active batch cannot race the coordinator-only path
+  after that batch ends. The active-batch count is updated atomically because batch completion occurs
+  outside the coordinator. Consumer state changes use the same coordinator. Partition-key routing
+  selects a partition first, then uses that partition's append lock. Appends to one partition remain
+  serialized.
 - A Memory partition publishes its readable segment cursor only after it stores the item. Consumers
   never observe an unwritten slot and do not take the append lock while reading.
 - Consumer-group creation is guarded by a queue-level lock.

@@ -212,7 +212,6 @@ internal sealed class MemoryBufferProducer<T>(
         object appendLock)
     {
         MemoryBufferPartition<T> partition;
-        var appendedWithoutPartitionLock = false;
         lock (appendLock)
         {
             if (!capacityGate.TryAcquire())
@@ -226,21 +225,13 @@ internal sealed class MemoryBufferProducer<T>(
                 if (CanAppendRoundRobinSingleWithoutPartitionLock())
                 {
                     partition.AppendFromSerializedProducer(item);
-                    appendedWithoutPartitionLock = true;
                 }
-            }
-            catch
-            {
-                capacityGate.Release();
-                throw;
-            }
-        }
-
-        if (!appendedWithoutPartitionLock)
-        {
-            try
-            {
-                AppendToPartition(partition, item);
+                else
+                {
+                    // Retain the coordinator until this append finishes: the last batch can end
+                    // while we wait for the partition lock, enabling coordinator-only writers.
+                    AppendToPartition(partition, item);
+                }
             }
             catch
             {
@@ -595,16 +586,19 @@ internal sealed class MemoryBufferProducer<T>(
                 if (CanAppendRoundRobinSingleWithoutPartitionLock())
                 {
                     partition.AppendFromSerializedProducer(item);
-                    return partition;
                 }
+                else
+                {
+                    // Keep fallback writers serialized with coordinator-only writers even
+                    // when the last active batch finishes before this append acquires its lock.
+                    AppendToPartition(partition, item);
+                }
+
+                return partition;
             }
         }
 
-        else
-        {
-            partition = SelectPartition(item);
-        }
-
+        partition = SelectPartition(item);
         AppendToPartition(partition, item);
 
         return partition;
@@ -629,14 +623,15 @@ internal sealed class MemoryBufferProducer<T>(
 
         lock (serializedAppendLock)
         {
-            _activeRoundRobinBatchAppendCount++;
+            // Completions run outside the coordinator, so both updates must be atomic.
+            Interlocked.Increment(ref _activeRoundRobinBatchAppendCount);
             try
             {
                 return roundRobinBatchPartitioner.ReserveBatch(itemCount, partitions.Length);
             }
             catch
             {
-                _activeRoundRobinBatchAppendCount--;
+                Interlocked.Decrement(ref _activeRoundRobinBatchAppendCount);
                 throw;
             }
         }
