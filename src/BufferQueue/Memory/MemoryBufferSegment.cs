@@ -60,24 +60,18 @@ internal sealed class MemoryBufferSegment<T>
 
     public bool TryGet(MemoryBufferPartitionOffset offset, int count, out ArraySegment<T> items)
     {
-        if (offset < _startOffset || offset > _endOffset)
+        var relativeOffset = offset - _startOffset;
+        var publishedCount = Volatile.Read(ref _lastPublishedPosition) + 1;
+        // Published slots fit within the array. Unsigned distance also rejects positions before this segment.
+        if (relativeOffset >= (ulong)publishedCount)
         {
             items = default;
             return false;
         }
 
-        var readPosition = checked((int)(offset - _startOffset));
-
-        var lastPublishedPosition = Volatile.Read(ref _lastPublishedPosition);
-        if (lastPublishedPosition < 0 || readPosition > lastPublishedPosition)
-        {
-            items = default;
-            return false;
-        }
-
-        var lastReadablePosition = Math.Min(lastPublishedPosition, _slots.Length - 1);
+        var readPosition = (int)relativeOffset;
         // Number of items actually available to return (bounded by requested count and written items).
-        var availableCount = Math.Min(count, lastReadablePosition - readPosition + 1);
+        var availableCount = Math.Min(count, publishedCount - readPosition);
         items = new(_slots, readPosition, availableCount);
         return true;
     }

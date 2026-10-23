@@ -6,6 +6,105 @@ namespace BufferQueue.Tests.Memory;
 public sealed class MemoryBufferPartitionWrapTests
 {
     [Theory]
+    [InlineData(1)]
+    [InlineData(3)]
+    public async Task Concurrent_Readers_And_Writer_Preserve_Backpressure_And_Replay_Across_Wrap(int batchSize)
+    {
+        const int itemCount = 512;
+        var segment = CreateSegment(new(ulong.MaxValue - 3), 4);
+        var partition = SeedPartition(segment, segment);
+        var producer = new MemoryBufferProducer<int>(new MemoryBufferQueueOptions
+        {
+            TopicName = "Wrap",
+            PartitionNumber = 1,
+            SegmentSize = 4,
+            BoundedCapacity = 8,
+            FullMode = BufferQueueFullMode.Wait
+        }, [partition]);
+        var fast = new BufferPullConsumer<int>(new BufferPullConsumerOptions
+        {
+            TopicName = "Wrap",
+            GroupName = "Fast",
+            BatchSize = batchSize,
+            AutoCommit = true
+        });
+        var slow = new BufferPullConsumer<int>(new BufferPullConsumerOptions
+        {
+            TopicName = "Wrap",
+            GroupName = "Slow",
+            BatchSize = batchSize,
+            AutoCommit = false
+        });
+        fast.AssignPartitions(partition);
+        slow.AssignPartitions(partition);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var token = cancellation.Token;
+        await using var fastBatches = fast.ConsumeAsync(token).GetAsyncEnumerator();
+        await using var slowBatches = slow.ConsumeAsync(token).GetAsyncEnumerator();
+        var fastItems = new List<int>();
+        var slowItems = new List<int>();
+
+        for (var item = 0; item < 8; item++)
+        {
+            await producer.ProduceAsync(item, token);
+        }
+
+        var blockedWrite = producer.ProduceAsync(8, token).AsTask();
+        Assert.False(blockedWrite.IsCompleted);
+        while (fastItems.Count < 8)
+        {
+            Assert.True(await fastBatches.MoveNextAsync());
+            fastItems.AddRange(fastBatches.Current);
+        }
+
+        // The fast group's auto commits must not release the slow group's retained capacity.
+        Assert.False(blockedWrite.IsCompleted);
+        Assert.True(await slowBatches.MoveNextAsync());
+        var heldBatch = slowBatches.Current;
+        Assert.Equal(Enumerable.Range(0, batchSize), heldBatch);
+        Assert.True(await slowBatches.MoveNextAsync());
+        Assert.Equal(heldBatch, slowBatches.Current);
+        Assert.False(blockedWrite.IsCompleted);
+        slowItems.AddRange(heldBatch);
+        await slow.CommitAsync();
+        await blockedWrite.WaitAsync(token);
+
+        var writing = Task.Run(async () =>
+        {
+            for (var item = 9; item < itemCount; item++)
+            {
+                await producer.ProduceAsync(item, token);
+                await Task.Yield();
+            }
+        }, token);
+        var fastReading = Task.Run(() => DrainAsync(fastBatches, fastItems, null), token);
+        var slowReading = Task.Run(() => DrainAsync(slowBatches, slowItems, slow), token);
+        await Task.WhenAll(writing, fastReading, slowReading).WaitAsync(token);
+
+        Assert.Equal(Enumerable.Range(0, itemCount), fastItems);
+        Assert.Equal(Enumerable.Range(0, itemCount), slowItems);
+        Assert.Equal(Enumerable.Range(0, batchSize), heldBatch);
+        Assert.True(GetHead(partition).StartOffset > segment.StartOffset);
+
+        async Task DrainAsync(
+            IAsyncEnumerator<IEnumerable<int>> batches,
+            List<int> consumed,
+            IBufferPullConsumer<int>? manualConsumer)
+        {
+            while (consumed.Count < itemCount)
+            {
+                Assert.True(await batches.MoveNextAsync());
+                consumed.AddRange(batches.Current);
+                if (manualConsumer != null)
+                {
+                    await Task.Yield();
+                    await manualConsumer.CommitAsync();
+                }
+            }
+        }
+    }
+
+    [Theory]
     [InlineData(true)]
     [InlineData(false)]
     public async Task Consumer_Commit_Releases_Bounded_Producer_Capacity_Across_Wrap(bool autoCommit)

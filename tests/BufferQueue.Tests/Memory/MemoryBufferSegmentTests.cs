@@ -45,6 +45,28 @@ public class MemoryBufferSegmentTests
         Assert.Equal(new[] { 3 }, items.ToArray());
     }
 
+    [Theory]
+    [InlineData(0UL)]
+    [InlineData(ulong.MaxValue)]
+    public void TryGet_Returns_Only_Published_Slots(ulong start)
+    {
+        var offset = new MemoryBufferPartitionOffset(start);
+        var segment = new MemoryBufferSegment<int>(4, offset);
+        Assert.False(segment.TryGet(offset, int.MaxValue, out _));
+
+        Assert.True(segment.TryEnqueueSingleWriter(10));
+        Assert.False(segment.TryGet(offset - 1, 1, out _));
+        Assert.False(segment.TryGet(offset + 1, 1, out _));
+        Assert.False(segment.TryGet(offset + 4, 1, out _));
+        Assert.True(segment.TryGet(offset, int.MaxValue, out var first));
+        Assert.Equal(new[] { 10 }, first.ToArray());
+
+        Assert.True(segment.TryEnqueueSingleWriter(20));
+        Assert.True(segment.TryGet(offset + 1, int.MaxValue, out var second));
+        Assert.Equal(new[] { 20 }, second.ToArray());
+        Assert.False(segment.TryGet(offset + 2, 1, out _));
+    }
+
     [Fact]
     public void TryGet_Reads_Each_Slot_Across_Index_Wrap()
     {
