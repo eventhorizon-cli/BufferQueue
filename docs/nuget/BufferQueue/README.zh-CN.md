@@ -146,6 +146,8 @@ consumer 数量必须介于 1 和该 topic 的 partition 数量之间。创建�
 对于采用 `Wait` 模式的有界 Memory topic，容量不足时写入会等待。应启动消费并提交进度来释放容量，避免先等待
 超过可用容量的写入全部完成后才开始消费。
 
+Memory pull 在 `BatchSize = 1` 时使用专用读取路径，适用于 Auto Commit 和 Manual Commit；segment 复用后，已返回的数据仍保持稳定。
+
 下面的示例使用手动提交：只有整个批次处理成功后，消费进度才会推进。
 
 ```csharp

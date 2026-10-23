@@ -75,6 +75,8 @@ Consumer group 的成员变化并不频繁。私有的 `ReaderRegistry` 会在 g
 `TryPull` 最多返回 `BatchSize` 条数据。只有调用 `Commit` 后，reader 的
 已提交位置才会推进。因此在 queue 实例仍存活期间，未提交 batch 可能再次交付。
 
+`BatchSize = 1` 在 private reader 内使用专用路径。它在 commit 前将 item 复制到独立快照，因此 segment 复用不会改变已经返回的 batch。Published-slot 检查和 commit 同步机制保持不变。
+
 ## Segment 复用
 
 Memory 模式可以复用旧 segment。只有当所有 consumer group 都已经消费过某个 segment 的末尾后，该 segment

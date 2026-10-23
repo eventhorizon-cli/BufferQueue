@@ -92,6 +92,8 @@ protected by the existing synchronization.
 moves only when `Commit` is called. An uncommitted batch can therefore be delivered
 again while the queue instance remains alive.
 
+`BatchSize = 1` uses a dedicated path within the private reader. It copies the item into an independent snapshot before commit, so segment recycling cannot change a returned batch. Published-slot checks and commit synchronization remain unchanged.
+
 ## Segment Recycling
 
 Memory mode can recycle old segments. A segment is eligible only after every consumer group has
