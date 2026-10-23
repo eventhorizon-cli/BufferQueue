@@ -9,22 +9,16 @@ internal sealed class PendingDataValueTaskSource<T> : IValueTaskSource<T>
     private ManualResetValueTaskSourceCore<T> _core = new() { RunContinuationsAsynchronously = true };
 
     private ValueTask<T> _valueTask;
-    private volatile bool _isWaiting;
-
     public ValueTask<T> ValueTask => _valueTask;
-
-    public bool IsWaiting => _isWaiting;
 
     public void Reset()
     {
-        _isWaiting = true;
         _core.Reset();
         _valueTask = new(this, _core.Version);
     }
 
     public void SetResult(T result)
     {
-        _isWaiting = false;
         _core.SetResult(result);
     }
 

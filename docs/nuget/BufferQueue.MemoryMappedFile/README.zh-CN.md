@@ -130,6 +130,8 @@ MMF 会将批次中的每条数据视为一条普通记录：选择 partition、
 
 ## Pull consumer
 
+没有可读数据时，consumer 异步等待；并发通知会唤醒 consumer，不改变 partition 调度公平性或提交语义。
+
 Consumer 在已分配的可读 partition 之间轮转，每次从上一批数据所在 partition 之后开始。
 空 partition 不会使低编号 partition 获得更多机会。这均衡的是拉取机会，不是处理时间；
 partition 内顺序和手动提交的重放语义保持不变。

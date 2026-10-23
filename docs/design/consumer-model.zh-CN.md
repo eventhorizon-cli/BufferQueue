@@ -56,11 +56,14 @@ Consumer 在无数据时不会自旋。通用 consumer 通过
 6. Consumer 增加 pending-data version，并完成 pending value task。
 7. Consumer 被唤醒后继续同一环形扫描；通知仅用于唤醒，不改变 partition 的优先级。
 
-pending-data version 用来避免 lost wake-up：如果数据在最后一次拉取尝试和进入等待状态之间到达，consumer
-可以检测版本变化并重新尝试消费。版本检查和重置等待源在同一个写锁内完成；通知流程也必须先取得
-同一把锁，再判断是否存在等待者。这样，在版本检查之后到达的通知仍会完成新注册的等待源，不能因为
-锁外观察到 consumer 尚未等待就直接跳过通知。
-确定性回归测试会持有等待注册锁、启动通知，再注册等待源，验证这次通知无需额外写入就能完成等待。
+pending-data version 用于避免最后一次空扫描与等待之间丢失唤醒。Consumer 在注册锁内先通过
+interlocked exchange 发布等待标志，再检查版本。版本变化时清除标志并重新扫描；版本未变时，
+在释放锁前重置 pending value-task source。
+
+通知先增加版本，再检查等待标志。没有已发布的等待者时直接返回，不获取锁；否则取得注册锁，
+再次检查标志，最多完成一次等待。Interlocked 操作保证顺序：注册方要么看到新版本，通知方要么看到
+已发布的等待者。标志可能先于等待源重置而可见，因此完成等待仍必须在同一把锁内执行。
+通知仍只用于唤醒 round-robin 扫描。
 
 ## Push Consumer
 

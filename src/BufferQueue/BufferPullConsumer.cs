@@ -15,7 +15,8 @@ internal sealed class BufferPullConsumer<TItem>(BufferPullConsumerOptions option
     private IBufferPartition<TItem>? _partitionBeingConsumed;
     private volatile int _pendingDataVersion;
     private readonly PendingDataValueTaskSource<IBufferPartition<TItem>> _pendingDataValueTaskSource = new();
-    private readonly ReaderWriterLockSlim _pendingDataLock = new();
+    private readonly object _pendingDataLock = new();
+    private int _waitingForData;
 
     public string TopicName => options.TopicName;
 
@@ -73,20 +74,18 @@ internal sealed class BufferPullConsumer<TItem>(BufferPullConsumerOptions option
                 continue;
             }
 
-            try
+            lock (_pendingDataLock)
             {
-                _pendingDataLock.EnterWriteLock();
-
+                // Publish before rechecking the version. The full fence pairs with the
+                // notifier's increment: either we see new data or it sees this waiter.
+                Interlocked.Exchange(ref _waitingForData, 1);
                 if (_pendingDataVersion != pendingDataVersion)
                 {
+                    Volatile.Write(ref _waitingForData, 0);
                     continue;
                 }
 
                 _pendingDataValueTaskSource.Reset();
-            }
-            finally
-            {
-                _pendingDataLock.ExitWriteLock();
             }
 
             var pendingDataTask = _pendingDataValueTaskSource.ValueTask;
@@ -122,33 +121,21 @@ internal sealed class BufferPullConsumer<TItem>(BufferPullConsumerOptions option
     {
         Interlocked.Increment(ref _pendingDataVersion);
 
-        // Share the registration lock so a notification after the version check reaches the new waiter.
-        _pendingDataLock.EnterUpgradeableReadLock();
-        try
+        // Active consumers observe the new version before registering a waiter.
+        if (Volatile.Read(ref _waitingForData) == 0)
         {
-            if (!_pendingDataValueTaskSource.IsWaiting)
+            return;
+        }
+
+        lock (_pendingDataLock)
+        {
+            if (_waitingForData == 0)
             {
                 return;
             }
 
-            _pendingDataLock.EnterWriteLock();
-            try
-            {
-                if (!_pendingDataValueTaskSource.IsWaiting)
-                {
-                    return;
-                }
-
-                _pendingDataValueTaskSource.SetResult(partition);
-            }
-            finally
-            {
-                _pendingDataLock.ExitWriteLock();
-            }
-        }
-        finally
-        {
-            _pendingDataLock.ExitUpgradeableReadLock();
+            Volatile.Write(ref _waitingForData, 0);
+            _pendingDataValueTaskSource.SetResult(partition);
         }
     }
 
