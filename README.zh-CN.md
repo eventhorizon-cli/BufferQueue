@@ -41,6 +41,17 @@ IAsyncEnumerable<IEnumerable<T>> ConsumeAsync(CancellationToken cancellationToke
 BufferQueue 启用 `AutoCommit = true`，`Channel<T>.TryRead` 作为同步参考。测试消费预填充队列中的 `8,192` 条 `int` 消息，
 BufferQueue 使用 `12` 个 partition，consumer 数量为 `1` 或 `12`。`BatchSize` 只影响 BufferQueue。
 
+在这组预填充队列测试中，启用 Auto Commit 的 BufferQueue 与 `Channel.ReadAllAsync` 相比：
+
+- **1 个消费者，BatchSize = 1**：耗时约为 Channel 的 2.0–2.7 倍，逐条消费场景仍是 Channel 更快。
+- **1 个消费者，增大 batch**：BatchSize = 10 时耗时减少约 48–61%；BatchSize = 50–100 时减少约 87–92%。
+  这些范围涵盖 bounded 和 unbounded 两种模式。
+- **12 个消费者**：两种模式下，BufferQueue 在五档实测 BatchSize 的平均耗时都更低。Channel 的消费者共享一个队列，
+  BufferQueue 的消费者读取各自分配的分区，因此结果也反映了两者并发组织方式的差异。
+
+数据已经积累时，批量消费的收益更明显。低流量下，调大 BatchSize 不代表每次都能取满；这里测量的是消费积压数据的耗时，
+不是单条消息的交付延迟。
+
 ### unbounded 队列
 
 ![unbounded 队列消费基准测试，1 个消费者](docs/benchmarks/memory-unbounded-1-consumer.zh-CN.svg)

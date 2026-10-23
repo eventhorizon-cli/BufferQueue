@@ -42,6 +42,17 @@ IAsyncEnumerable<IEnumerable<T>> ConsumeAsync(CancellationToken cancellationToke
 BufferQueue uses `AutoCommit = true`; `Channel<T>.TryRead` is a synchronous reference. The workload drains prefilled queues
 with `8,192` `int` messages, `12` BufferQueue partitions, and `1` or `12` consumers. `BatchSize` affects BufferQueue only.
 
+In this prefilled workload, compared with `Channel.ReadAllAsync`, BufferQueue with Auto Commit shows:
+
+- **1 consumer, BatchSize = 1:** elapsed time is about 2.0–2.7× Channel's; Channel is faster for this single-item case.
+- **1 consumer, larger batches:** BatchSize = 10 reduces elapsed time by about 48–61%; BatchSize = 50–100 reduces it by
+  about 87–92%. These ranges cover both bounded and unbounded results.
+- **12 consumers:** BufferQueue has lower mean elapsed time at all five measured batch sizes in both modes. Channel
+  readers share one queue, while BufferQueue consumers read assigned partitions, so the comparison also reflects that concurrency difference.
+
+Batching provides the clearest benefit when messages are already available. A larger configured BatchSize does not
+ensure a full batch under sparse traffic; these results measure draining a backlog, not per-message delivery latency.
+
 ### Unbounded
 
 ![Unbounded queue benchmark, 1 consumer](docs/benchmarks/memory-unbounded-1-consumer.svg)
