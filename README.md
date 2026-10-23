@@ -35,14 +35,20 @@ The project includes BenchmarkDotNet benchmarks that compare BufferQueue in Memo
 
 Summary:
 
+The consuming performance summary and tables below use `AutoCommit = true`; no Manual Commit timing is included.
+
 - Producing one item at a time: BufferQueue's elapsed time is about `19%` higher than `Channel<T>` in Unbounded mode and `18%` higher in Bounded mode.
 - Producing `ReadOnlyMemory<T>` batches: the Memory path is about `8.59x` faster than its single-item path in Unbounded mode and `9.05x` faster in Bounded mode; it is about `7.22x` and `7.64x` faster than `Channel<T>`, respectively.
-- One consumer: `Channel<T>` is faster at `BatchSize = 1` and `10`. BufferQueue is faster at `100` and `1000`; at `1000`, it is about `6.16x` faster in Unbounded mode and `5.74x` faster in Bounded mode.
-- Twelve consumers: BufferQueue has a lower mean at every tested batch size in both modes. At `BatchSize = 1000`, it is about `91.92x` faster in Unbounded mode and `54.03x` faster in Bounded mode under these parameters.
+- One consumer: with the default Channel, `Channel<T>` is faster at `BatchSize = 1` and `10`, while BufferQueue is faster at `100` and `1000`. At `1000`, BufferQueue is about `6.85x` faster in Unbounded mode and `7.26x` faster in Bounded mode.
+- Twelve consumers: in Unbounded mode BufferQueue is about `1.58x`, `12.30x`, `39.61x`, and `80.62x` faster at `BatchSize = 1`, `10`, `100`, and `1000`. In Bounded mode, `Channel<T>` is about `1.01x` faster at `1`, while BufferQueue is about `6.79x`, `44.95x`, and `61.11x` faster at `10`, `100`, and `1000`.
+- Single-reader Channel: enabling `SingleReader = true` lowers the one-consumer Channel mean to about `0.66x-0.69x` of the default Channel. BufferQueue is slower at `BatchSize = 1` and `10`, then faster at `100` and `1000` in this isolated comparison.
+- **Manual Commit is a BufferQueue feature advantage:** an application can process a batch successfully before calling `CommitAsync`, preserving a replay opportunity for an uncommitted batch. `Channel<T>` has no built-in equivalent acknowledgement, checkpoint, or replay.
 - Memory allocation: BufferQueue allocates less in producing scenarios; `Channel<T>` allocates less in consuming scenarios.
 
-The producing and consuming rows below were rerun on `2026-10-23` against the runtime from main commit `a7ab752`. The in-memory queue comparisons use
-`MessageSize = 8192`. The producing rows run both capacity modes in the same `Fixed` job with `LaunchCount = 1`,
+The producing rows below were rerun on `2026-10-23` against the runtime from main commit `a7ab752`. The consuming rows were rerun
+on the same date using the current working tree based on main commit `ddf5834`, including the Memory reader-scan optimization and wrapping single-`ulong` offsets.
+The in-memory queue comparisons use `MessageSize = 8192`.
+The producing rows run both capacity modes in the same `Fixed` job with `LaunchCount = 1`,
 `WarmupCount = 6`, and `IterationCount = 15`. The consuming benchmarks use the default job and, because they use
 `IterationSetup`, run with `InvocationCount = 1` and `UnrollFactor = 1`. Both benchmark groups run on .NET 10.
 
@@ -58,7 +64,10 @@ cover Memory mode only; MemoryMappedFile production was not run for this compari
 
 `IterationSetup` is outside the measured operation, which only drains the queues concurrently. Channel calls
 `TryRead` for each item, while BufferQueue returns up to `BatchSize` items at a time with
-Auto Commit enabled; no per-item business processing is included. `BatchSize` only affects BufferQueue and is an
+`AutoCommit = true`; each successful pull advances the consumer group immediately. All consuming results in this section,
+including bounded and unbounded runs with `Consumers = 1` and `12`, the SingleReader comparison, and the reader-scan
+allocation comparison before and after the optimization, use this setting. The measured drain therefore includes commit
+cost, while no per-item business processing is included. `BatchSize` only affects BufferQueue and is an
 upper bound. With `MessageSize = 8192` and `Consumers = 12`, `BatchSize = 1000` usually lets each consumer drain its
 approximately 682 or 683 assigned items in one batch. With `Consumers = 1`, the same consumer drains all
 `12` partitions, still returning at most one partition's items per pull. The tables show the source's `1`, `10`,
@@ -73,6 +82,12 @@ Producer concurrency and the partition count come from `Environment.ProcessorCou
 Producing uses `12` tasks sharing one `Channel<T>` writer or one BufferQueue producer over `12` partitions.
 Consuming tests `Consumers = 1` and `12`: the same number of Channel reader tasks or BufferQueue consumers,
 with BufferQueue retaining `12` partitions in both cases.
+
+Manual Commit (`AutoCommit = false`) lets an application finish processing a batch before advancing its consumer group's
+position with `CommitAsync`. An uncommitted batch remains eligible for replay, allowing processing to be attempted again
+after a failure. Memory mode keeps this progress for the lifetime of the process. `Channel<T>` removes an item when
+`TryRead` succeeds and has no built-in consumer-group checkpoint, manual acknowledgement, or replay of unacknowledged
+items. An application using Channel must implement those capabilities separately.
 
 Producing:
 
@@ -89,24 +104,50 @@ global order across partitions.
 
 Consuming:
 
-| Mode | `MessageSize` | `BatchSize` | `Consumers` | `Channel<T>` Mean | BufferQueue (Memory) Mean | Result |
+| Mode | `MessageSize` | `BatchSize` | `Consumers` | `Channel<T>` Mean | BufferQueue (Memory, Auto Commit) Mean | Result |
 | --- | ---: | ---: | ---: | ---: | ---: | --- |
-| Unbounded | 8192 | 1 | 1 | `166.06 μs` | `3,370.12 μs` | `Channel<T>` is about `20.29x` faster under these parameters |
-| Bounded | 8192 | 1 | 1 | `199.18 μs` | `6,440.61 μs` | `Channel<T>` is about `32.34x` faster under these parameters |
-| Unbounded | 8192 | 10 | 1 | `168.76 μs` | `417.70 μs` | `Channel<T>` is about `2.48x` faster under these parameters |
-| Bounded | 8192 | 10 | 1 | `195.81 μs` | `754.76 μs` | `Channel<T>` is about `3.85x` faster under these parameters |
-| Unbounded | 8192 | 100 | 1 | `167.36 μs` | `62.98 μs` | BufferQueue is about `2.66x` faster under these parameters |
-| Bounded | 8192 | 100 | 1 | `193.24 μs` | `98.49 μs` | BufferQueue is about `1.96x` faster under these parameters |
-| Unbounded | 8192 | 1000 | 1 | `167.94 μs` | `27.28 μs` | BufferQueue is about `6.16x` faster under these parameters |
-| Bounded | 8192 | 1000 | 1 | `193.11 μs` | `33.63 μs` | BufferQueue is about `5.74x` faster under these parameters |
-| Unbounded | 8192 | 1 | 12 | `3,498.05 μs` | `2,183.03 μs` | BufferQueue is about `1.60x` faster under these parameters |
-| Bounded | 8192 | 1 | 12 | `2,114.84 μs` | `1,949.75 μs` | BufferQueue is about `1.08x` faster under these parameters |
-| Unbounded | 8192 | 10 | 12 | `3,512.23 μs` | `322.42 μs` | BufferQueue is about `10.89x` faster under these parameters |
-| Bounded | 8192 | 10 | 12 | `2,055.04 μs` | `620.36 μs` | BufferQueue is about `3.31x` faster under these parameters |
-| Unbounded | 8192 | 100 | 12 | `3,400.68 μs` | `55.91 μs` | BufferQueue is about `60.82x` faster under these parameters |
-| Bounded | 8192 | 100 | 12 | `2,065.02 μs` | `128.18 μs` | BufferQueue is about `16.11x` faster under these parameters |
-| Unbounded | 8192 | 1000 | 12 | `3,408.49 μs` | `37.08 μs` | BufferQueue is about `91.92x` faster under these parameters |
-| Bounded | 8192 | 1000 | 12 | `2,312.93 μs` | `42.81 μs` | BufferQueue is about `54.03x` faster under these parameters |
+| Unbounded | 8192 | 1 | 1 | `161.16 μs` | `1,200.48 μs` | `Channel<T>` is about `7.45x` faster under these parameters |
+| Bounded | 8192 | 1 | 1 | `192.41 μs` | `1,539.02 μs` | `Channel<T>` is about `8.00x` faster under these parameters |
+| Unbounded | 8192 | 10 | 1 | `166.89 μs` | `205.20 μs` | `Channel<T>` is about `1.23x` faster under these parameters |
+| Bounded | 8192 | 10 | 1 | `196.01 μs` | `252.03 μs` | `Channel<T>` is about `1.29x` faster under these parameters |
+| Unbounded | 8192 | 100 | 1 | `158.75 μs` | `41.49 μs` | BufferQueue is about `3.83x` faster under these parameters |
+| Bounded | 8192 | 100 | 1 | `191.79 μs` | `42.45 μs` | BufferQueue is about `4.52x` faster under these parameters |
+| Unbounded | 8192 | 1000 | 1 | `163.12 μs` | `23.81 μs` | BufferQueue is about `6.85x` faster under these parameters |
+| Bounded | 8192 | 1000 | 1 | `184.97 μs` | `25.47 μs` | BufferQueue is about `7.26x` faster under these parameters |
+| Unbounded | 8192 | 1 | 12 | `3,228.43 μs` | `2,044.47 μs` | BufferQueue is about `1.58x` faster under these parameters |
+| Bounded | 8192 | 1 | 12 | `2,028.88 μs` | `2,048.48 μs` | `Channel<T>` is about `1.01x` faster under these parameters |
+| Unbounded | 8192 | 10 | 12 | `3,174.30 μs` | `258.04 μs` | BufferQueue is about `12.30x` faster under these parameters |
+| Bounded | 8192 | 10 | 12 | `2,087.85 μs` | `307.28 μs` | BufferQueue is about `6.79x` faster under these parameters |
+| Unbounded | 8192 | 100 | 12 | `2,322.14 μs` | `58.63 μs` | BufferQueue is about `39.61x` faster under these parameters |
+| Bounded | 8192 | 100 | 12 | `2,205.18 μs` | `49.06 μs` | BufferQueue is about `44.95x` faster under these parameters |
+| Unbounded | 8192 | 1000 | 12 | `2,944.09 μs` | `36.52 μs` | BufferQueue is about `80.62x` faster under these parameters |
+| Bounded | 8192 | 1000 | 12 | `2,124.94 μs` | `34.77 μs` | BufferQueue is about `61.11x` faster under these parameters |
+
+### Single-Reader Channel Comparison
+
+The main consuming table uses the default Channel and has no `SingleReader` specialization. This isolated unbounded benchmark
+prefills each queue with the same `8192` integers and uses one consumer; BufferQueue still has `12` partitions. Its specialized Channel is
+created with `new UnboundedChannelOptions { SingleReader = true, SingleWriter = false, AllowSynchronousContinuations = false }`.
+`SingleReader = true` is a caller promise that no more than one reader accesses the channel concurrently; it does not enforce
+that limit, so this Channel is not a valid replacement for the `Consumers = 12` case. In .NET 10, `CreateBounded` does not
+select a different implementation based on `SingleReader` or `SingleWriter`.
+Channel measurements use one `Task.Run` that performs item-by-item `TryRead` with `Volatile.Read` and
+`Interlocked.Decrement`. BufferQueue uses one `Task.Run` with async `foreach`, Auto Commit, and the selected batch size;
+`BatchSize` affects BufferQueue only. The benchmark isolates the Channel option rather than changing the main table's
+default Channel configuration.
+
+| `BatchSize` | Channel default Mean | Channel `SingleReader = true` Mean | BufferQueue (Auto Commit) Mean | SingleReader speedup over default | Result vs SingleReader |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | `159.78 μs` | `109.38 μs` | `1,221.76 μs` | `1.46x` | Channel is about `11.17x` faster |
+| 10 | `163.43 μs` | `107.50 μs` | `215.96 μs` | `1.52x` | Channel is about `2.01x` faster |
+| 100 | `165.59 μs` | `109.71 μs` | `41.06 μs` | `1.51x` | BufferQueue is about `2.67x` faster |
+| 1000 | `161.96 μs` | `111.09 μs` | `23.23 μs` | `1.46x` | BufferQueue is about `4.78x` faster |
+
+The specialized Channel is about `1.46x-1.52x` faster than the default Channel in this one-reader run. BufferQueue takes
+about `11.17x` the specialized Channel's time at `BatchSize = 1` and `2.01x` at `10`, then is about `2.67x`
+faster at `100` and `4.78x` faster at `1000`. The official .NET 10.0 implementations are
+[Channel.cs](https://github.com/dotnet/runtime/blob/v10.0.0/src/libraries/System.Threading.Channels/src/System/Threading/Channels/Channel.cs)
+and [ChannelOptions.cs](https://github.com/dotnet/runtime/blob/v10.0.0/src/libraries/System.Threading.Channels/src/System/Threading/Channels/ChannelOptions.cs).
 
 Benchmark platform for the latest benchmark runs:
 
@@ -131,6 +172,12 @@ Reproduce the producing and consuming comparisons above with:
 
 ```shell
 dotnet run -c Release --project tests/BufferQueue.Benchmarks/BufferQueue.Benchmarks.csproj -- --filter '*ChannelVsMemoryBufferQueue*'
+```
+
+Run only the single-reader Channel comparison with:
+
+```shell
+dotnet run -c Release --project tests/BufferQueue.Benchmarks/BufferQueue.Benchmarks.csproj -- --filter '*SingleReaderChannelVsMemoryBufferQueueConsumeBenchmark*'
 ```
 
 Run only the System.Text.Json, MessagePack, and unmanaged MMF serializer comparison with:

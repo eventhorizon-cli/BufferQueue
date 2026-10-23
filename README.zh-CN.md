@@ -34,14 +34,19 @@ BufferQueue 当前提供两种存储模式：
 
 结果摘要：
 
+下面的消费性能摘要和表格均使用 `AutoCommit = true`；没有包含 Manual Commit 的性能测量。
+
 - 单条写入：BufferQueue 的耗时在 Unbounded 模式下比 `Channel<T>` 高约 `19%`，在 Bounded 模式下高约 `18%`。
 - `ReadOnlyMemory<T>` 批量写入：Memory 路径在 Unbounded 下比单条路径快约 `8.59x`，在 Bounded 下快约 `9.05x`；也分别比 `Channel<T>` 快约 `7.22x` 和 `7.64x`。
-- 单个 consumer：`BatchSize = 1` 和 `10` 时，`Channel<T>` 更快；`100` 和 `1000` 时，BufferQueue 更快。在 `1000` 时，Unbounded 和 Bounded 模式分别约快 `6.16x` 和 `5.74x`。
-- 十二个 consumer：在本次参数下，BufferQueue 在两种模式的所有 batch size 中平均耗时都更低。`BatchSize = 1000` 时，Unbounded 和 Bounded 模式分别约快 `91.92x` 和 `54.03x`。
+- 单个 consumer：使用默认 Channel 时，`BatchSize = 1` 和 `10` 由 `Channel<T>` 更快，`100` 和 `1000` 由 BufferQueue 更快。在 `1000` 时，Unbounded 和 Bounded 模式下 BufferQueue 分别约快 `6.85x` 和 `7.26x`。
+- 十二个 consumer：Unbounded 模式下，BufferQueue 在 `BatchSize = 1`、`10`、`100` 和 `1000` 时分别约快 `1.58x`、`12.30x`、`39.61x` 和 `80.62x`。Bounded 模式下，`1` 时 `Channel<T>` 约快 `1.01x`，`10`、`100` 和 `1000` 时 BufferQueue 分别约快 `6.79x`、`44.95x` 和 `61.11x`。
+- Single-reader Channel：启用 `SingleReader = true` 后，单 consumer 的 Channel 平均耗时约为默认 Channel 的 `0.66x-0.69x`。在这个隔离对比中，BufferQueue 在 `BatchSize = 1` 和 `10` 时更慢，在 `100` 和 `1000` 时更快。
+- **手动提交（Manual Commit）是 BufferQueue 的功能优势：**应用可以先成功处理 batch，再调用 `CommitAsync`，未提交的 batch 保留重放机会。`Channel<T>` 没有内建的等价确认、checkpoint 或重放机制。
 - 内存分配：生产场景 BufferQueue 分配较少；消费场景 `Channel<T>` 分配较少。
 
-下列生产和消费数据于 `2026-10-23` 基于 main commit `a7ab752` 的运行时代码重跑。
-纯内存 queue 对比使用 `MessageSize = 8192`。生产数据的 Bounded 和 Unbounded 模式使用同一个 `Fixed` job，
+下列生产数据于 `2026-10-23` 基于 main commit `a7ab752` 的运行时代码重跑。消费数据于同日基于 main commit
+`ddf5834` 的当前工作树重跑，包含 Memory reader-scan 优化和单 `ulong` 回绕 offset。纯内存 queue 对比使用 `MessageSize = 8192`。
+生产数据的 Bounded 和 Unbounded 模式使用同一个 `Fixed` job，
 配置为 `LaunchCount = 1`、`WarmupCount = 6`、`IterationCount = 15`。消费 benchmark 使用默认 job，并因
 `IterationSetup` 使用 `InvocationCount = 1`、`UnrollFactor = 1`。两组 benchmark 均运行于 .NET 10。
 
@@ -54,7 +59,9 @@ Bounded 的 BufferQueue 生产测试使用默认的 `Wait` 模式，容量与 `M
 的接纳路径，不包含队列写满后的等待时间。本组生产结果仅覆盖 Memory 模式，没有运行 MemoryMappedFile 写入测试。
 
 `IterationSetup` 不计入测量，测量范围只包含并发排空队列：Channel 使用 `TryRead` 逐条读取，
-BufferQueue 按 `BatchSize` 批量返回并启用 Auto Commit，不包含逐条业务处理。`BatchSize` 只作用于
+BufferQueue 按 `BatchSize` 批量返回，并设置 `AutoCommit = true`；每次成功 pull 后立即推进 consumer group 进度。
+本节所有消费结果，包括 Bounded 和 Unbounded 的 `Consumers = 1`、`12` 用例、SingleReader 对比，以及 reader-scan
+优化前后的分配对比，均使用该设置。因此测量包含 commit 成本，但不包含逐条业务处理。`BatchSize` 只作用于
 BufferQueue，并且表示每批上限；`MessageSize = 8192`、`Consumers = 12` 时，`BatchSize = 1000`
 通常意味着每个 consumer 用一批读完分配到的约 682 或 683 条数据。`Consumers = 1` 时，同一个 consumer
 排空全部 `12` 个 partition，每次 pull 仍只返回一个 partition 中的数据。下表展示源码中的 `1`、`10`、`100`
@@ -70,6 +77,11 @@ MemoryMappedFile queue 对比使用 `MessageSize = 1024` 和 short-run job，
 消费场景分别测试 `Consumers = 1` 和 `12`，Channel reader task 与 BufferQueue consumer 的数量一致，
 两档都保留 `12` 个 BufferQueue partition。
 
+手动提交（`AutoCommit = false`）允许应用先完成 batch 处理，再调用 `CommitAsync` 推进 consumer group 的消费进度。
+未提交的 batch 保留重放机会，处理失败后可以再次尝试。Memory 模式在当前进程生命周期内保存这些进度。
+`Channel<T>` 在 `TryRead` 成功时立即将 item 出队，没有内建的 consumer group checkpoint、手动确认或未确认重放机制。
+使用 Channel 的应用需要自行实现这些能力。
+
 生产性能：
 
 | 模式 | `MessageSize` | `Producers` | `Channel<T>` Mean | BufferQueue 单条 Mean | BufferQueue `ReadOnlyMemory<T>` 批量 Mean | 结论 |
@@ -84,24 +96,46 @@ MemoryMappedFile queue 对比使用 `MessageSize = 1024` 和 short-run job，
 
 消费性能：
 
-| 模式 | `MessageSize` | `BatchSize` | `Consumers` | `Channel<T>` Mean | BufferQueue（Memory）Mean | 结论 |
+| 模式 | `MessageSize` | `BatchSize` | `Consumers` | `Channel<T>` Mean | BufferQueue（Memory，Auto Commit）Mean | 结论 |
 | --- | ---: | ---: | ---: | ---: | ---: | --- |
-| Unbounded | 8192 | 1 | 1 | `166.06 μs` | `3,370.12 μs` | 该组参数下 `Channel<T>` 约快 `20.29x` |
-| Bounded | 8192 | 1 | 1 | `199.18 μs` | `6,440.61 μs` | 该组参数下 `Channel<T>` 约快 `32.34x` |
-| Unbounded | 8192 | 10 | 1 | `168.76 μs` | `417.70 μs` | 该组参数下 `Channel<T>` 约快 `2.48x` |
-| Bounded | 8192 | 10 | 1 | `195.81 μs` | `754.76 μs` | 该组参数下 `Channel<T>` 约快 `3.85x` |
-| Unbounded | 8192 | 100 | 1 | `167.36 μs` | `62.98 μs` | 该组参数下 BufferQueue 约快 `2.66x` |
-| Bounded | 8192 | 100 | 1 | `193.24 μs` | `98.49 μs` | 该组参数下 BufferQueue 约快 `1.96x` |
-| Unbounded | 8192 | 1000 | 1 | `167.94 μs` | `27.28 μs` | 该组参数下 BufferQueue 约快 `6.16x` |
-| Bounded | 8192 | 1000 | 1 | `193.11 μs` | `33.63 μs` | 该组参数下 BufferQueue 约快 `5.74x` |
-| Unbounded | 8192 | 1 | 12 | `3,498.05 μs` | `2,183.03 μs` | 该组参数下 BufferQueue 约快 `1.60x` |
-| Bounded | 8192 | 1 | 12 | `2,114.84 μs` | `1,949.75 μs` | 该组参数下 BufferQueue 约快 `1.08x` |
-| Unbounded | 8192 | 10 | 12 | `3,512.23 μs` | `322.42 μs` | 该组参数下 BufferQueue 约快 `10.89x` |
-| Bounded | 8192 | 10 | 12 | `2,055.04 μs` | `620.36 μs` | 该组参数下 BufferQueue 约快 `3.31x` |
-| Unbounded | 8192 | 100 | 12 | `3,400.68 μs` | `55.91 μs` | 该组参数下 BufferQueue 约快 `60.82x` |
-| Bounded | 8192 | 100 | 12 | `2,065.02 μs` | `128.18 μs` | 该组参数下 BufferQueue 约快 `16.11x` |
-| Unbounded | 8192 | 1000 | 12 | `3,408.49 μs` | `37.08 μs` | 该组参数下 BufferQueue 约快 `91.92x` |
-| Bounded | 8192 | 1000 | 12 | `2,312.93 μs` | `42.81 μs` | 该组参数下 BufferQueue 约快 `54.03x` |
+| Unbounded | 8192 | 1 | 1 | `161.16 μs` | `1,200.48 μs` | 该组参数下 `Channel<T>` 约快 `7.45x` |
+| Bounded | 8192 | 1 | 1 | `192.41 μs` | `1,539.02 μs` | 该组参数下 `Channel<T>` 约快 `8.00x` |
+| Unbounded | 8192 | 10 | 1 | `166.89 μs` | `205.20 μs` | 该组参数下 `Channel<T>` 约快 `1.23x` |
+| Bounded | 8192 | 10 | 1 | `196.01 μs` | `252.03 μs` | 该组参数下 `Channel<T>` 约快 `1.29x` |
+| Unbounded | 8192 | 100 | 1 | `158.75 μs` | `41.49 μs` | 该组参数下 BufferQueue 约快 `3.83x` |
+| Bounded | 8192 | 100 | 1 | `191.79 μs` | `42.45 μs` | 该组参数下 BufferQueue 约快 `4.52x` |
+| Unbounded | 8192 | 1000 | 1 | `163.12 μs` | `23.81 μs` | 该组参数下 BufferQueue 约快 `6.85x` |
+| Bounded | 8192 | 1000 | 1 | `184.97 μs` | `25.47 μs` | 该组参数下 BufferQueue 约快 `7.26x` |
+| Unbounded | 8192 | 1 | 12 | `3,228.43 μs` | `2,044.47 μs` | 该组参数下 BufferQueue 约快 `1.58x` |
+| Bounded | 8192 | 1 | 12 | `2,028.88 μs` | `2,048.48 μs` | 该组参数下 `Channel<T>` 约快 `1.01x` |
+| Unbounded | 8192 | 10 | 12 | `3,174.30 μs` | `258.04 μs` | 该组参数下 BufferQueue 约快 `12.30x` |
+| Bounded | 8192 | 10 | 12 | `2,087.85 μs` | `307.28 μs` | 该组参数下 BufferQueue 约快 `6.79x` |
+| Unbounded | 8192 | 100 | 12 | `2,322.14 μs` | `58.63 μs` | 该组参数下 BufferQueue 约快 `39.61x` |
+| Bounded | 8192 | 100 | 12 | `2,205.18 μs` | `49.06 μs` | 该组参数下 BufferQueue 约快 `44.95x` |
+| Unbounded | 8192 | 1000 | 12 | `2,944.09 μs` | `36.52 μs` | 该组参数下 BufferQueue 约快 `80.62x` |
+| Bounded | 8192 | 1000 | 12 | `2,124.94 μs` | `34.77 μs` | 该组参数下 BufferQueue 约快 `61.11x` |
+
+### Single-Reader Channel 对比
+
+上面的消费主表使用默认 Channel，没有启用 `SingleReader` 特化。这个无界队列隔离 benchmark 使用一个 consumer，计时前预先写入同样的
+`8192` 个整数；BufferQueue 仍然使用 `12` 个 partition。特化 Channel 通过
+`new UnboundedChannelOptions { SingleReader = true, SingleWriter = false, AllowSynchronousContinuations = false }` 创建。
+`SingleReader = true` 是调用者承诺不会并发使用多个 reader，并不是运行时强制限制，因此不能用于替代 `Consumers = 12` 的场景。
+在 .NET 10 中，`CreateBounded` 不会根据 `SingleReader` 或 `SingleWriter` 选择不同的实现。Channel 测量使用一个 `Task.Run`，逐条执行
+`TryRead`，并配合 `Volatile.Read` 和 `Interlocked.Decrement`；BufferQueue 使用一个 `Task.Run` 和异步 `foreach`，启用
+Auto Commit，并使用指定 batch size。`BatchSize` 只影响 BufferQueue。本 benchmark 只隔离 Channel 选项，不改变主表的默认 Channel 配置。
+
+| `BatchSize` | 默认 Channel Mean | Channel `SingleReader = true` Mean | BufferQueue（Auto Commit）Mean | SingleReader 相对默认加速 | 相对 SingleReader 的结果 |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | `159.78 μs` | `109.38 μs` | `1,221.76 μs` | `1.46x` | Channel 约快 `11.17x` |
+| 10 | `163.43 μs` | `107.50 μs` | `215.96 μs` | `1.52x` | Channel 约快 `2.01x` |
+| 100 | `165.59 μs` | `109.71 μs` | `41.06 μs` | `1.51x` | BufferQueue 约快 `2.67x` |
+| 1000 | `161.96 μs` | `111.09 μs` | `23.23 μs` | `1.46x` | BufferQueue 约快 `4.78x` |
+
+在本次单 reader 测试中，特化 Channel 比默认 Channel 快约 `1.46x-1.52x`。`BatchSize = 1` 和 `10` 时，BufferQueue
+的耗时分别约为特化 Channel 的 `11.17x` 和 `2.01x`；`100` 和 `1000` 时则分别快约 `2.67x` 和 `4.78x`。
+官方 .NET 10.0 实现见 [Channel.cs](https://github.com/dotnet/runtime/blob/v10.0.0/src/libraries/System.Threading.Channels/src/System/Threading/Channels/Channel.cs)
+和 [ChannelOptions.cs](https://github.com/dotnet/runtime/blob/v10.0.0/src/libraries/System.Threading.Channels/src/System/Threading/Channels/ChannelOptions.cs)。
 
 最新 benchmark 的测试平台：
 
@@ -126,6 +160,12 @@ dotnet run -c Release --project tests/BufferQueue.Benchmarks/BufferQueue.Benchma
 
 ```shell
 dotnet run -c Release --project tests/BufferQueue.Benchmarks/BufferQueue.Benchmarks.csproj -- --filter '*ChannelVsMemoryBufferQueue*'
+```
+
+只运行 Single-Reader Channel 对比：
+
+```shell
+dotnet run -c Release --project tests/BufferQueue.Benchmarks/BufferQueue.Benchmarks.csproj -- --filter '*SingleReaderChannelVsMemoryBufferQueueConsumeBenchmark*'
 ```
 
 只运行 System.Text.Json、MessagePack 和 unmanaged MMF serializer 对比：

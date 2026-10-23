@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using BufferQueue.Memory;
 
 namespace BufferQueue.Tests.Memory;
@@ -5,101 +6,79 @@ namespace BufferQueue.Tests.Memory;
 public class MemoryBufferPartitionOffsetTests
 {
     [Fact]
-    public void Plus()
+    public void Offset_Occupies_One_UInt64()
     {
-        var offset1 = new MemoryBufferPartitionOffset(1, 2);
-        var offset2 = new MemoryBufferPartitionOffset(1, ulong.MaxValue);
-        Assert.Equal(new MemoryBufferPartitionOffset(1, 5), offset1 + 3);
-        Assert.Equal(new MemoryBufferPartitionOffset(2, 0), offset2 + 1);
+        Assert.Equal(sizeof(ulong), Unsafe.SizeOf<MemoryBufferPartitionOffset>());
     }
 
     [Fact]
-    public void Minus()
+    public void Arithmetic_Wraps_In_Both_Directions()
     {
-        var offset1 = new MemoryBufferPartitionOffset(0, 2);
-        var offset2 = new MemoryBufferPartitionOffset(0, 1);
-        var offset3 = new MemoryBufferPartitionOffset(1, 1);
-        var offset4 = new MemoryBufferPartitionOffset(2, ulong.MaxValue);
-        var offset5 = new MemoryBufferPartitionOffset(ulong.MaxValue, 3);
-        var offset6 = new MemoryBufferPartitionOffset(ulong.MaxValue, ulong.MaxValue);
+        var last = Create(ulong.MaxValue);
+        var first = Create(0);
 
-        Assert.Equal(new MemoryBufferPartitionOffset(0, 1), offset1 - 1);
-        Assert.Equal(new MemoryBufferPartitionOffset(0, 1), offset1 - offset2);
-        Assert.Equal(new MemoryBufferPartitionOffset(0, ulong.MaxValue), offset3 - offset1);
-        Assert.Equal(new MemoryBufferPartitionOffset(0, ulong.MaxValue), offset3 - 2);
-        Assert.Equal(new MemoryBufferPartitionOffset(1, ulong.MaxValue - 1), offset4 - offset3);
-        Assert.Equal(new MemoryBufferPartitionOffset(ulong.MaxValue - 3, 4), offset5 - offset4);
-        Assert.Equal(new MemoryBufferPartitionOffset(0, ulong.MaxValue - 3), offset6 - offset5);
-        Assert.Equal(new MemoryBufferPartitionOffset(0, 3), offset1 - offset6);
-        Assert.Throws<OverflowException>(() => offset1 - offset3);
-        Assert.Throws<OverflowException>(() => offset5 - offset1);
+        checked
+        {
+            Assert.Equal(first, last + 1);
+            Assert.Equal(Create(2), last + 3);
+            Assert.Equal(last, first - 1);
+            Assert.Equal(Create(ulong.MaxValue - 2), first - 3);
+            Assert.Equal(first, ++last);
+            Assert.Equal(Create(ulong.MaxValue), --first);
+        }
     }
 
     [Fact]
-    public void IncrementOperator()
+    public void Postfix_Operators_Preserve_Previous_Position()
     {
-        var offset = new MemoryBufferPartitionOffset(0, 2);
-        Assert.Equal(new MemoryBufferPartitionOffset(0, 3), ++offset);
-        Assert.Equal(new MemoryBufferPartitionOffset(0, 3), offset++);
-        Assert.Equal(new MemoryBufferPartitionOffset(0, 4), offset);
+        var offset = Create(ulong.MaxValue);
+        Assert.Equal(Create(ulong.MaxValue), offset++);
+        Assert.Equal(Create(0), offset);
+        Assert.Equal(Create(0), offset--);
+        Assert.Equal(Create(ulong.MaxValue), offset);
     }
 
-    [Fact]
-    public void DecrementOperator()
+    [Theory]
+    [InlineData(0UL)]
+    [InlineData(ulong.MaxValue - 15)]
+    [InlineData((ulong)long.MaxValue - 15)]
+    public void Retained_Window_Preserves_Order_And_Distance(ulong start)
     {
-        var offset = new MemoryBufferPartitionOffset(0, 2);
-        Assert.Equal(new MemoryBufferPartitionOffset(0, 1), --offset);
-        Assert.Equal(new MemoryBufferPartitionOffset(0, 1), offset--);
-        Assert.Equal(new MemoryBufferPartitionOffset(0, 0), offset);
+        var origin = Create(start);
+        for (var i = 0UL; i < 64; i++)
+        {
+            var left = origin + i;
+            var same = Create(left.Index);
+            Assert.False(left > same);
+            Assert.False(left < same);
+            Assert.Equal(0UL, left - same);
+
+            for (var j = i + 1; j < 64; j++)
+            {
+                var right = origin + j;
+                Assert.True(left < right);
+                Assert.True(right > left);
+                Assert.False(left > right);
+                Assert.False(right < left);
+                Assert.NotEqual(left, right);
+                Assert.Equal(j - i, right - left);
+            }
+        }
     }
 
-    [Fact]
-    public void Compare()
+    [Theory]
+    [InlineData(0UL)]
+    [InlineData(ulong.MaxValue)]
+    [InlineData((ulong)long.MaxValue)]
+    public void Largest_Valid_Forward_Distance_Is_Ordered(ulong start)
     {
-        var offset1 = new MemoryBufferPartitionOffset(0, 1);
-        var offset2 = new MemoryBufferPartitionOffset(0, 2);
-        var offset3 = new MemoryBufferPartitionOffset(1, 0);
-        var offset4 = new MemoryBufferPartitionOffset(ulong.MaxValue - 1, ulong.MaxValue);
-        var offset5 = new MemoryBufferPartitionOffset(ulong.MaxValue, 1);
-        var offset6 = new MemoryBufferPartitionOffset(ulong.MaxValue, ulong.MaxValue);
-        var offset7 = new MemoryBufferPartitionOffset(ulong.MaxValue, ulong.MaxValue);
+        var first = Create(start);
+        var last = first + (ulong)long.MaxValue;
 
-        Assert.True(offset2 > offset1);
-        Assert.True(offset3 > offset2);
-        Assert.True(offset4 > offset3);
-        Assert.True(offset5 > offset4);
-        Assert.True(offset6 > offset5);
-        Assert.True(offset1 > offset6);
-        Assert.True(offset1 > offset5);
-        Assert.True(offset1 < offset4);
-        Assert.True(offset7 == offset6);
+        Assert.True(last > first);
+        Assert.True(first < last);
+        Assert.Equal((ulong)long.MaxValue, last - first);
     }
 
-    [Fact]
-    public void ToUInt64()
-    {
-        var offset1 = new MemoryBufferPartitionOffset(0, 1);
-        var offset2 = new MemoryBufferPartitionOffset(0, ulong.MaxValue);
-        var offset3 = new MemoryBufferPartitionOffset(1, 0);
-        var offset4 = new MemoryBufferPartitionOffset(0, 2);
-
-        Assert.Equal(1UL, offset1.ToUInt64());
-        Assert.Equal(ulong.MaxValue, offset2.ToUInt64());
-        Assert.Throws<OverflowException>(() => offset3.ToUInt64());
-        Assert.Equal(2UL, (ulong)offset4);
-    }
-
-    [Fact]
-    public void ToInt32()
-    {
-        var offset1 = new MemoryBufferPartitionOffset(0, 1);
-        var offset2 = new MemoryBufferPartitionOffset(0, int.MaxValue);
-        var offset3 = new MemoryBufferPartitionOffset(1, 0);
-        var offset4 = new MemoryBufferPartitionOffset(0, 2);
-
-        Assert.Equal(1, offset1.ToInt32());
-        Assert.Equal(int.MaxValue, offset2.ToInt32());
-        Assert.Throws<OverflowException>(() => offset3.ToInt32());
-        Assert.Equal(2, (int)offset4);
-    }
+    private static MemoryBufferPartitionOffset Create(ulong index) => new(index);
 }

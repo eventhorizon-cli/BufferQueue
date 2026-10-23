@@ -119,6 +119,10 @@ consumer group 的最小 committed position 向前推进时归还容量；即使
 因此较慢的 group 仍可能在其他 group 提交后继续占用容量。较晚创建的 consumer group 会从当前逻辑上的最早位置
 开始消费，无法读取容量已经释放的数据。
 
+Memory 使用一个内部的 64 位逻辑位置，超过最大值后会回到零。对于仍保留的数据和 reader position，环形比较仍然
+明确，因此跨越回绕点时，读取、提交、重放、容量释放和 segment 复用都会继续工作。这不会改变公共 API，也不会改变
+MemoryMappedFile 格式。
+
 ## 批量消费
 
 在同一个 topic queue 实例内，同名 group 只能创建一次。`CreatePullConsumer<T>` 创建包含一个 consumer 的

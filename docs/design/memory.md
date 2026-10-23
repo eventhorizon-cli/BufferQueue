@@ -17,6 +17,26 @@ head segment -> segment -> ... -> tail segment
 Each record offset is represented by `MemoryBufferPartitionOffset`. These are logical
 item positions, not byte positions.
 
+The internal `MemoryBufferPartitionOffset` contains one `ulong Index`. Offset arithmetic is
+unchecked, so incrementing the maximum value wraps to zero and subtraction wraps in the same
+64-bit domain.
+Ordering uses the signed difference of two modular positions; this is unambiguous while the
+live window being compared is strictly smaller than `2^63` positions. The live window includes
+retained segment data and all reader positions. A Memory queue cannot retain `2^63` items, so
+normal reads, commits, replay of uncommitted batches, bounded-capacity release, and segment
+recycling continue across the wrap boundary.
+
+The former `Generation` field tracked how many times `Index` had wrapped. Memory storage only
+needs to order positions within the currently retained window of one partition; it does not
+compare them with arbitrary positions from discarded history. A slow group keeps its unread
+segments resident, so its lag is part of that same memory-limited window. Modular ordering
+therefore makes `Generation` unnecessary, even when `Index` wraps. Removing it reduces each
+offset from 16 to 8 bytes and removes generation comparisons and carry/borrow handling. This
+decision relies on the live-window invariant, not on assuming that a 64-bit counter never wraps.
+
+This is an internal Memory offset representation. It does not change public APIs or the
+MemoryMappedFile record and offset format.
+
 Memory data and consumer offsets exist only for the lifetime of the process. Restarting the process
 does not recover them.
 

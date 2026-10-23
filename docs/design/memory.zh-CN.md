@@ -17,6 +17,20 @@ head segment -> segment -> ... -> tail segment
 每条记录的 offset 由 `MemoryBufferPartitionOffset` 表示。这里的 offset 是逻辑 item
 位置，不是字节位置。
 
+内部的 `MemoryBufferPartitionOffset` 只包含一个 `ulong Index`。offset 运算使用 unchecked 语义，因此从最大值继续递增
+会回到零，减法也在同一个 64 位环形域内进行。位置比较使用两个环形位置的有符号差值；只要参与比较的
+live window 严格小于 `2^63` 个位置，比较结果就是明确的。live window 包括仍保留的 segment 数据和所有
+reader position。Memory queue 不可能保留 `2^63` 条数据，因此跨越回绕点时，正常读取、提交、未提交批次重放、
+有界容量释放和 segment 复用都会继续工作。
+
+原来的 `Generation` 字段用于记录 `Index` 已经回绕了多少次。Memory 存储只需要比较同一个 partition 当前仍保留的
+窗口内的位置，不会拿这些位置与已丢弃历史中的任意位置比较。慢速 group 会让未读 segment 继续驻留内存，因此它的
+落后距离也包含在同一个受内存限制的窗口内。回绕比较已经能满足这个需求，即使 `Index` 发生回绕，也不需要
+`Generation`。移除该字段后，每个 offset 从 16 字节缩小到 8 字节，同时省去 generation 比较和进位、借位处理。
+这个决定依赖的是有效窗口的跨度约束，而不是假设 64 位计数器永远不会回绕。
+
+这是 Memory 内部的 offset 表示，不会改变公共 API，也不会改变 MemoryMappedFile 的记录和 offset 格式。
+
 Memory 数据和 consumer offset 只在当前进程生命周期内存在。进程重启后不会恢复它们。
 
 ## 写入路径

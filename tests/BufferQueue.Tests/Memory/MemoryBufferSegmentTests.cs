@@ -34,7 +34,7 @@ public class MemoryBufferSegmentTests
         Assert.True(segment.TryEnqueueSingleWriter(1));
         Assert.True(segment.TryEnqueueSingleWriter(2));
 
-        var startOffset = new MemoryBufferPartitionOffset(0, 2);
+        var startOffset = new MemoryBufferPartitionOffset(2);
         var recycledSegment = segment.RecycleSlots(startOffset);
 
         Assert.Equal(0, recycledSegment.Count);
@@ -43,6 +43,62 @@ public class MemoryBufferSegmentTests
         Assert.Equal(1, recycledSegment.Count);
         Assert.True(recycledSegment.TryGet(startOffset, 2, out var items));
         Assert.Equal(new[] { 3 }, items.ToArray());
+    }
+
+    [Fact]
+    public void TryGet_Reads_Each_Slot_Across_Index_Wrap()
+    {
+        var segment = new MemoryBufferSegment<int>(3, new(ulong.MaxValue - 1));
+        Assert.True(segment.TryEnqueueSingleWriter(10));
+        Assert.True(segment.TryEnqueueSingleWriter(11));
+        Assert.True(segment.TryEnqueueSingleWriter(12));
+
+        var offsets = new[]
+        {
+            new MemoryBufferPartitionOffset(ulong.MaxValue - 1),
+            new MemoryBufferPartitionOffset(ulong.MaxValue),
+            new MemoryBufferPartitionOffset(0)
+        };
+        var expected = new[] { 10, 11, 12 };
+
+        for (var index = 0; index < offsets.Length; index++)
+        {
+            Assert.True(segment.TryGet(offsets[index], 1, out var items));
+            Assert.Equal(new[] { expected[index] }, items.ToArray());
+        }
+
+        Assert.Equal(new MemoryBufferPartitionOffset(0), segment.EndOffset);
+    }
+
+    [Fact]
+    public void TryGet_Rejects_Offsets_Outside_Wrapped_Segment()
+    {
+        var segment = new MemoryBufferSegment<int>(3, new(ulong.MaxValue - 1));
+        Assert.True(segment.TryEnqueueSingleWriter(10));
+        Assert.True(segment.TryEnqueueSingleWriter(11));
+        Assert.True(segment.TryEnqueueSingleWriter(12));
+
+        Assert.False(segment.TryGet(new MemoryBufferPartitionOffset(ulong.MaxValue - 2), 1, out _));
+        Assert.False(segment.TryGet(new MemoryBufferPartitionOffset(2), 1, out _));
+    }
+
+    [Fact]
+    public void RecycleSlots_Restarts_At_Wrapped_Offset()
+    {
+        var segment = new MemoryBufferSegment<int>(2, new(ulong.MaxValue));
+        Assert.True(segment.TryEnqueueSingleWriter(1));
+        Assert.True(segment.TryEnqueueSingleWriter(2));
+
+        var recycledSegment = segment.RecycleSlots(new MemoryBufferPartitionOffset(1));
+
+        Assert.Equal(new MemoryBufferPartitionOffset(1), recycledSegment.StartOffset);
+        Assert.Equal(new MemoryBufferPartitionOffset(2), recycledSegment.EndOffset);
+        Assert.Equal(0, recycledSegment.Count);
+        Assert.False(recycledSegment.TryGet(new MemoryBufferPartitionOffset(1), 1, out _));
+        Assert.True(recycledSegment.TryEnqueueSingleWriter(3));
+        Assert.True(recycledSegment.TryEnqueueSingleWriter(4));
+        Assert.True(recycledSegment.TryGet(new MemoryBufferPartitionOffset(1), 2, out var items));
+        Assert.Equal(new[] { 3, 4 }, items.ToArray());
     }
 
     [Fact]

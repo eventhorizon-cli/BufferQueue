@@ -143,6 +143,11 @@ across all known consumer groups advances, including within a segment, so a slow
 capacity after another group commits. A group created later starts at the current logical earliest
 position and cannot read records whose capacity has already been released.
 
+Memory uses an internal 64-bit logical position that wraps from its maximum value to zero. Its
+modular comparisons remain unambiguous for the live retained data and reader positions, so reads,
+commits, replay, capacity release, and segment recycling continue across the wrap boundary. This
+does not change the public API or the MemoryMappedFile format.
+
 ## Consume in batches
 
 Create each named group once per topic queue instance. `CreatePullConsumer<T>` creates a group with one consumer;

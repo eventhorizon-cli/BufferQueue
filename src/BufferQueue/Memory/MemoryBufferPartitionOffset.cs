@@ -1,110 +1,33 @@
-using System;
 using System.Diagnostics;
 
 namespace BufferQueue.Memory;
 
-[DebuggerDisplay("Generation = {Generation}, Index = {Index}")]
-internal readonly record struct MemoryBufferPartitionOffset(ulong Generation, ulong Index)
+// Logical item position modulo 2^64; reaching ulong.MaxValue does not exhaust the sequence.
+// Generation is unnecessary: only positions in the currently retained window need ordering.
+// One ulong reduces the offset from 16 to 8 bytes and removes generation carry/borrow branches.
+// Retained segments and reader positions must span fewer than 2^63 items for ordering to be valid.
+// This is not a total order over arbitrary ulong values or offsets from different partitions.
+[DebuggerDisplay("Index = {Index}")]
+internal readonly record struct MemoryBufferPartitionOffset(ulong Index)
 {
-    public ulong ToUInt64()
-    {
-        if (Generation == 0)
-        {
-            return Index;
-        }
-
-        throw new OverflowException("Offset is too large to be converted to UInt64.");
-    }
-
-    public int ToInt32()
-    {
-        if (Generation == 0 && Index <= int.MaxValue)
-        {
-            return (int)Index;
-        }
-
-        throw new OverflowException("Offset is too large to be converted to Int32.");
-    }
-
-    public static explicit operator ulong(MemoryBufferPartitionOffset offset) => offset.ToUInt64();
-
-    public static explicit operator int(MemoryBufferPartitionOffset offset) => offset.ToInt32();
-
+    // The signed modular difference makes 0 follow ulong.MaxValue; comparing raw Index values would not.
+    // A distance of exactly 2^63 is ambiguous and is excluded by the live-window invariant above.
     public static bool operator >(MemoryBufferPartitionOffset left, MemoryBufferPartitionOffset right)
-    {
-        var leftGeneration = left.Generation;
-        var rightGeneration = right.Generation;
+        => unchecked((long)(left.Index - right.Index)) > 0;
 
-        // Consider that leftGeneration has overflowed to 0, it is greater than rightGeneration.
-        if (leftGeneration == 0 && rightGeneration == ulong.MaxValue)
-        {
-            return true;
-        }
+    public static bool operator <(MemoryBufferPartitionOffset left, MemoryBufferPartitionOffset right)
+        => unchecked((long)(left.Index - right.Index)) < 0;
 
-        if (leftGeneration == ulong.MaxValue && rightGeneration == 0)
-        {
-            return false;
-        }
+    // Forward item count, not another position. Callers ensure left is at or after right in the live window.
+    public static ulong operator -(MemoryBufferPartitionOffset left, MemoryBufferPartitionOffset right)
+        => unchecked(left.Index - right.Index);
 
-        return leftGeneration > rightGeneration ||
-               leftGeneration == rightGeneration && left.Index > right.Index;
-    }
-
-    public static bool operator <(MemoryBufferPartitionOffset left, MemoryBufferPartitionOffset right) =>
-        left != right && left > right == false;
-
-    public static MemoryBufferPartitionOffset operator -(
-        MemoryBufferPartitionOffset left,
-        MemoryBufferPartitionOffset right)
-    {
-        if (left.Generation == 0 && right.Generation == ulong.MaxValue)
-        {
-            return left with { Generation = 1 } - right with { Generation = 0 };
-        }
-
-        if (left < right)
-        {
-            throw new OverflowException("Cannot subtract a larger offset from a smaller offset.");
-        }
-
-        if (left.Generation == right.Generation)
-        {
-            return new(0, left.Index - right.Index);
-        }
-
-        if (left.Index >= right.Index)
-        {
-            return new(left.Generation - right.Generation, left.Index - right.Index);
-        }
-
-        return new(
-            left.Generation - right.Generation - 1,
-            ulong.MaxValue - right.Index + left.Index + 1);
-    }
-
+    // Explicit unchecked arithmetic preserves natural wrap even in builds with overflow checking enabled.
     public static MemoryBufferPartitionOffset operator +(MemoryBufferPartitionOffset offset, ulong value)
-    {
-        var generation = offset.Generation;
-        var index = offset.Index + value;
-        if (index < offset.Index)
-        {
-            generation++;
-        }
-
-        return new(generation, index);
-    }
+        => new(unchecked(offset.Index + value));
 
     public static MemoryBufferPartitionOffset operator -(MemoryBufferPartitionOffset offset, ulong value)
-    {
-        var generation = offset.Generation;
-        var index = offset.Index - value;
-        if (index > offset.Index)
-        {
-            generation--;
-        }
-
-        return new(generation, index);
-    }
+        => new(unchecked(offset.Index - value));
 
     public static MemoryBufferPartitionOffset operator ++(MemoryBufferPartitionOffset offset) => offset + 1;
 
