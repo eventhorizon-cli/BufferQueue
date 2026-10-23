@@ -21,7 +21,7 @@ head segment -> segment -> ... -> tail segment
 会回到零，减法也在同一个 64 位环形域内进行。位置比较使用两个环形位置的有符号差值；只要参与比较的
 live window 严格小于 `2^63` 个位置，比较结果就是明确的。live window 包括仍保留的 segment 数据和所有
 reader position。Memory queue 不可能保留 `2^63` 条数据，因此跨越回绕点时，正常读取、提交、未提交批次重放、
-有界容量释放和 segment 复用都会继续工作。
+bounded 容量释放和 segment 复用都会继续工作。
 
 这里限制的是同时保留的 item 位置跨度，不是历史累计流量或字节数。即使每条 item 只占 1 字节，保留 `2^63` 条
 也需要 8 EiB（约 9.22 EB）内存，还没有计算 segment 的额外开销，因此这个范围足以覆盖实际的内存驻留窗口。
@@ -75,14 +75,17 @@ Consumer group 的成员变化并不频繁。私有的 `ReaderRegistry` 会在 g
 `TryPull` 最多返回 `BatchSize` 条数据。只有调用 `Commit` 后，reader 的
 已提交位置才会推进。因此在 queue 实例仍存活期间，未提交 batch 可能再次交付。
 
-`BatchSize = 1` 在 private reader 内使用专用路径。它在 commit 前将 item 复制到独立快照，因此 segment 复用不会改变已经返回的 batch。Published-slot 检查和 commit 同步机制保持不变。
+`BatchSize` 是上限。只要还有已发布的数据，pull 就会跨越已发布的 segment 继续读取。Reader 会先暂存第一条数据，
+只有发现第二条可用数据后才分配请求大小的 batch array。如果当前只有一条数据可用，无论配置的 `BatchSize` 是多少，
+都会返回独立的 singleton snapshot。`BatchSize = 1` 在 private reader 内使用专用路径，但仍复用相同的无锁 published-slot
+检查；commit 和容量释放的同步机制保持不变。
 
 ## Segment 复用
 
 Memory 模式可以复用旧 segment。只有当所有 consumer group 都已经消费过某个 segment 的末尾后，该 segment
 才可以复用。这可以避免慢速 group 尚未读取的数据被覆盖。
 
-## 有界容量
+## bounded 容量
 
 Memory 模式可以通过 `MemoryBufferQueueOptions.BoundedCapacity` 限制整个 topic 的容量。该上限由 topic 下的
 所有 partition 共享。
@@ -110,5 +113,5 @@ topic 共享的容量门。释放范围可以只覆盖 segment 的一部分；�
 如果新的 consumer group 在容量已经释放后才注册，它会从当前逻辑上的最早位置开始消费。即使旧数据所在的物理
 segment 还没有被复用，新 group 也无法再读取该位置之前的数据。
 
-MemoryMappedFile 当前不支持有界容量。持久化存储行为参见
+MemoryMappedFile 当前不支持 bounded 容量。持久化存储行为参见
 [MemoryMappedFile 存储](memory-mapped-file.zh-CN.md)。

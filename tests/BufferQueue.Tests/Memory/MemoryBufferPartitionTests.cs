@@ -196,6 +196,32 @@ public class MemoryBufferPartitionTests
     }
 
     [Fact]
+    public void Larger_Batch_Pull_Continues_From_One_Item_Into_Next_Published_Segment()
+    {
+        var partition = new MemoryBufferPartition<int>(0, 2);
+        const string groupName = "cross-segment-group";
+
+        Assert.False(partition.TryPull(groupName, 16, out _));
+        partition.Enqueue(0);
+        partition.Enqueue(1);
+        partition.Enqueue(2);
+        partition.Enqueue(3);
+
+        Assert.True(partition.TryPull(groupName, 1, out var firstItem));
+        Assert.Equal(new[] { 0 }, firstItem);
+        partition.Commit(groupName);
+
+        // One item remains in the first segment, and the next segment already has two.
+        Assert.True(partition.TryPull(groupName, 16, out var batch));
+        Assert.Equal(new[] { 1, 2, 3 }, batch);
+        Assert.True(partition.TryPull(groupName, 16, out var replayedBatch));
+        Assert.Equal(batch, replayedBatch);
+
+        partition.Commit(groupName);
+        Assert.False(partition.TryPull(groupName, 16, out _));
+    }
+
+    [Fact]
     public void Repeatable_Pull_If_Not_Commit()
     {
         var partition = new MemoryBufferPartition<int>(0, 2);

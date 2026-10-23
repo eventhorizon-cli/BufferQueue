@@ -92,7 +92,12 @@ protected by the existing synchronization.
 moves only when `Commit` is called. An uncommitted batch can therefore be delivered
 again while the queue instance remains alive.
 
-`BatchSize = 1` uses a dedicated path within the private reader. It copies the item into an independent snapshot before commit, so segment recycling cannot change a returned batch. Published-slot checks and commit synchronization remain unchanged.
+`BatchSize` is an upper limit. A pull continues opportunistically across published segments while
+items are available. The reader stages the first item without allocating the requested batch array
+and allocates that array only after a second available item is found. If only one item is available,
+it returns an independent singleton snapshot for any configured `BatchSize`. `BatchSize = 1` uses a
+dedicated path within the private reader; it shares the same lock-free published-slot checks, and
+commit and capacity-release synchronization are unchanged.
 
 ## Segment Recycling
 

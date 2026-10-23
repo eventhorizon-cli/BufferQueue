@@ -181,6 +181,30 @@ public sealed class MemoryBufferPartitionWrapTests
         Assert.False(partition.TryPull("Group", 1, out _));
     }
 
+    [Theory]
+    [InlineData(0UL)]
+    [InlineData(ulong.MaxValue)]
+    public void TryPull_Does_Not_Read_Unpublished_Next_Segment(ulong initialStart)
+    {
+        var first = CreateSegment(new(initialStart), 1, 42);
+        var tail = CreateSegment(new(unchecked(initialStart + 1)), 1);
+        Link(first, tail);
+        var partition = SeedPartition(first, tail);
+
+        Assert.True(partition.TryPull("Group", 16, out var firstBatch));
+        Assert.Equal(new[] { 42 }, firstBatch);
+        Assert.True(partition.TryPull("Group", 16, out var replayedBatch));
+        Assert.Equal(new[] { 42 }, replayedBatch);
+
+        partition.Commit("Group");
+        Assert.False(partition.TryPull("Group", 16, out _));
+
+        partition.Enqueue(43);
+        Assert.True(partition.TryPull("Group", 16, out var nextBatch));
+        Assert.Equal(new[] { 43 }, nextBatch);
+        Assert.Equal(new[] { 42 }, firstBatch);
+    }
+
     [Fact]
     public void Slow_Reader_Blocks_Recycle_Until_Commit_Across_Index_Wrap()
     {
