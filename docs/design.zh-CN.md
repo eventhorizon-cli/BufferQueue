@@ -54,7 +54,7 @@
 
 ### 容量控制
 
-参见[Memory 存储](design/memory.zh-CN.md#有界容量)。
+参见[Memory 存储](design/memory.zh-CN.md#bounded-容量)。
 
 ## MemoryMappedFile 模式
 

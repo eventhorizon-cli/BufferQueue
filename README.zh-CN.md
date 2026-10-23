@@ -12,7 +12,7 @@ BufferQueue
 
 BufferQueue 是一个用 .NET 编写的高性能的缓冲队列实现，支持多线程并发操作。
 包同时支持 .NET 8 和 .NET 10。
-Consumer 转入空闲等待期间到达的新数据会唤醒消费流程，无需再写入一条消息才能继续处理。
+Consumer 进入空闲等待后，新数据到达会直接唤醒消费流程。
 
 BufferQueue 当前提供两种存储模式：
 
@@ -28,172 +28,51 @@ BufferQueue 当前提供两种存储模式：
 
 ## 和其他常用内存缓存 Queue 的对比
 
-**BufferQueue 的 Memory 模式单条写入性能已接近 `Channel<T>`，同时支持高性能的批量写入和批量消费。**
+主要对比选择 `ReadAllAsync`，因为两边的方法都返回异步流，通过 `await foreach` 消费：
 
-项目内置 BenchmarkDotNet 基准测试，对比 BufferQueue 在 Memory 模式下与 `Channel<T>`、`BlockingCollection<T>` 的并发生产、并发消费表现。下表展示与 `Channel<T>` 的对比结果摘要。
-
-结果摘要：
-
-下面的消费性能摘要和表格均使用 `AutoCommit = true`；没有包含 Manual Commit 的性能测量。
-
-- 单条写入：BufferQueue 的耗时在 Unbounded 模式下比 `Channel<T>` 高约 `19%`，在 Bounded 模式下高约 `18%`。
-- `ReadOnlyMemory<T>` 批量写入：Memory 路径在 Unbounded 下比单条路径快约 `8.59x`，在 Bounded 下快约 `9.05x`；也分别比 `Channel<T>` 快约 `7.22x` 和 `7.64x`。
-- 单个 consumer：使用默认 Channel 时，`BatchSize = 1` 和 `10` 由 `Channel<T>` 更快，`100` 和 `1000` 由 BufferQueue 更快。在 `1000` 时，Unbounded 和 Bounded 模式下 BufferQueue 分别约快 `6.85x` 和 `7.26x`。
-- 十二个 consumer：Unbounded 模式下，BufferQueue 在 `BatchSize = 1`、`10`、`100` 和 `1000` 时分别约快 `1.58x`、`12.30x`、`39.61x` 和 `80.62x`。Bounded 模式下，`1` 时 `Channel<T>` 约快 `1.01x`，`10`、`100` 和 `1000` 时 BufferQueue 分别约快 `6.79x`、`44.95x` 和 `61.11x`。
-- Single-reader Channel：启用 `SingleReader = true` 后，单 consumer 的 Channel 平均耗时约为默认 Channel 的 `0.66x-0.69x`。在这个隔离对比中，BufferQueue 在 `BatchSize = 1` 和 `10` 时更慢，在 `100` 和 `1000` 时更快。
-- **手动提交（Manual Commit）是 BufferQueue 的功能优势：**应用可以先成功处理 batch，再调用 `CommitAsync`，未提交的 batch 保留重放机会。`Channel<T>` 没有内建的等价确认、checkpoint 或重放机制。
-- 内存分配：生产场景 BufferQueue 分配较少；消费场景 `Channel<T>` 分配较少。
-
-下列生产数据于 `2026-10-23` 基于 main commit `a7ab752` 的运行时代码重跑。消费数据于同日基于 main commit
-`ddf5834` 的当前工作树重跑，包含 Memory reader-scan 优化和单 `ulong` 回绕 offset。纯内存 queue 对比使用 `MessageSize = 8192`。
-生产数据的 Bounded 和 Unbounded 模式使用同一个 `Fixed` job，
-配置为 `LaunchCount = 1`、`WarmupCount = 6`、`IterationCount = 15`。消费 benchmark 使用默认 job，并因
-`IterationSetup` 使用 `InvocationCount = 1`、`UnrollFactor = 1`。两组 benchmark 均运行于 .NET 10。
-
-生产和消费测试均使用 `int` 消息，依次写入从 `0` 到 `8191` 的 8192 个整数。这里的
-`MessageSize = 8192` 表示消息条数，而非单条消息的字节大小。生产测试将这组整数分为 `12` 份，交由
-`12` 个并发任务写入：单条路径逐个遍历各自的分片；批量路径则对每个分片仅调用一次
-`producer.ProduceAsync(chunk.AsMemory())`。消费测试会在计时前将同一组整数预先写入待测队列。
-
-Bounded 的 BufferQueue 生产测试使用默认的 `Wait` 模式，容量与 `MessageSize` 相同。这里测量的是容量充足时
-的接纳路径，不包含队列写满后的等待时间。本组生产结果仅覆盖 Memory 模式，没有运行 MemoryMappedFile 写入测试。
-
-`IterationSetup` 不计入测量，测量范围只包含并发排空队列：Channel 使用 `TryRead` 逐条读取，
-BufferQueue 按 `BatchSize` 批量返回，并设置 `AutoCommit = true`；每次成功 pull 后立即推进 consumer group 进度。
-本节所有消费结果，包括 Bounded 和 Unbounded 的 `Consumers = 1`、`12` 用例、SingleReader 对比，以及 reader-scan
-优化前后的分配对比，均使用该设置。因此测量包含 commit 成本，但不包含逐条业务处理。`BatchSize` 只作用于
-BufferQueue，并且表示每批上限；`MessageSize = 8192`、`Consumers = 12` 时，`BatchSize = 1000`
-通常意味着每个 consumer 用一批读完分配到的约 682 或 683 条数据。`Consumers = 1` 时，同一个 consumer
-排空全部 `12` 个 partition，每次 pull 仍只返回一个 partition 中的数据。下表展示源码中的 `1`、`10`、`100`
-和 `1000` 四档 batch size。
-
-消费用例的单次迭代较短，BenchmarkDotNet 报告了最小迭代时间和多峰分布提示，本次运行也未能设置高进程优先级。
-这些结果展示该负载下的测量趋势，不代表端到端业务吞吐。表中的倍数按展示的平均耗时计算。
-MemoryMappedFile queue 对比使用 `MessageSize = 1024` 和 short-run job，
-以缩短文件存储场景的运行时间。
-
-生产并发数和 partition 数量取自 `Environment.ProcessorCount`，本次为 `12`。生产场景使用 `12` 个 task
-共享一个 `Channel<T>` writer 或一个 BufferQueue producer，BufferQueue 配置 `12` 个 partition。
-消费场景分别测试 `Consumers = 1` 和 `12`，Channel reader task 与 BufferQueue consumer 的数量一致，
-两档都保留 `12` 个 BufferQueue partition。
-
-手动提交（`AutoCommit = false`）允许应用先完成 batch 处理，再调用 `CommitAsync` 推进 consumer group 的消费进度。
-未提交的 batch 保留重放机会，处理失败后可以再次尝试。Memory 模式在当前进程生命周期内保存这些进度。
-`Channel<T>` 在 `TryRead` 成功时立即将 item 出队，没有内建的 consumer group checkpoint、手动确认或未确认重放机制。
-使用 Channel 的应用需要自行实现这些能力。
-
-生产性能：
-
-| 模式 | `MessageSize` | `Producers` | `Channel<T>` Mean | BufferQueue 单条 Mean | BufferQueue `ReadOnlyMemory<T>` 批量 Mean | 结论 |
-| --- | ---: | ---: | ---: | ---: | ---: | --- |
-| Unbounded | 8192 | 12 | `296.15 μs` | `352.65 μs` | `41.04 μs` | 批量比单条快 `8.59x`，比 `Channel<T>` 快 `7.22x` |
-| Bounded | 8192 | 12 | `306.59 μs` | `363.24 μs` | `40.12 μs` | 批量比单条快 `9.05x`，比 `Channel<T>` 快 `7.64x` |
-
-### Round-robin 批量写入
-
-默认的 Memory round-robin 批量路径会先保留一段连续的分区选择范围，再按 partition 拆分出步长切片，
-并在各自的 partition 锁内追加。路由规则仍然是每条数据轮转一次；跨 partition 不提供全局顺序。
-
-消费性能：
-
-| 模式 | `MessageSize` | `BatchSize` | `Consumers` | `Channel<T>` Mean | BufferQueue（Memory，Auto Commit）Mean | 结论 |
-| --- | ---: | ---: | ---: | ---: | ---: | --- |
-| Unbounded | 8192 | 1 | 1 | `161.16 μs` | `1,200.48 μs` | 该组参数下 `Channel<T>` 约快 `7.45x` |
-| Bounded | 8192 | 1 | 1 | `192.41 μs` | `1,539.02 μs` | 该组参数下 `Channel<T>` 约快 `8.00x` |
-| Unbounded | 8192 | 10 | 1 | `166.89 μs` | `205.20 μs` | 该组参数下 `Channel<T>` 约快 `1.23x` |
-| Bounded | 8192 | 10 | 1 | `196.01 μs` | `252.03 μs` | 该组参数下 `Channel<T>` 约快 `1.29x` |
-| Unbounded | 8192 | 100 | 1 | `158.75 μs` | `41.49 μs` | 该组参数下 BufferQueue 约快 `3.83x` |
-| Bounded | 8192 | 100 | 1 | `191.79 μs` | `42.45 μs` | 该组参数下 BufferQueue 约快 `4.52x` |
-| Unbounded | 8192 | 1000 | 1 | `163.12 μs` | `23.81 μs` | 该组参数下 BufferQueue 约快 `6.85x` |
-| Bounded | 8192 | 1000 | 1 | `184.97 μs` | `25.47 μs` | 该组参数下 BufferQueue 约快 `7.26x` |
-| Unbounded | 8192 | 1 | 12 | `3,228.43 μs` | `2,044.47 μs` | 该组参数下 BufferQueue 约快 `1.58x` |
-| Bounded | 8192 | 1 | 12 | `2,028.88 μs` | `2,048.48 μs` | 该组参数下 `Channel<T>` 约快 `1.01x` |
-| Unbounded | 8192 | 10 | 12 | `3,174.30 μs` | `258.04 μs` | 该组参数下 BufferQueue 约快 `12.30x` |
-| Bounded | 8192 | 10 | 12 | `2,087.85 μs` | `307.28 μs` | 该组参数下 BufferQueue 约快 `6.79x` |
-| Unbounded | 8192 | 100 | 12 | `2,322.14 μs` | `58.63 μs` | 该组参数下 BufferQueue 约快 `39.61x` |
-| Bounded | 8192 | 100 | 12 | `2,205.18 μs` | `49.06 μs` | 该组参数下 BufferQueue 约快 `44.95x` |
-| Unbounded | 8192 | 1000 | 12 | `2,944.09 μs` | `36.52 μs` | 该组参数下 BufferQueue 约快 `80.62x` |
-| Bounded | 8192 | 1000 | 12 | `2,124.94 μs` | `34.77 μs` | 该组参数下 BufferQueue 约快 `61.11x` |
-
-### Single-Reader Channel 对比
-
-上面的消费主表使用默认 Channel，没有启用 `SingleReader` 特化。这个无界队列隔离 benchmark 使用一个 consumer，计时前预先写入同样的
-`8192` 个整数；BufferQueue 仍然使用 `12` 个 partition。特化 Channel 通过
-`new UnboundedChannelOptions { SingleReader = true, SingleWriter = false, AllowSynchronousContinuations = false }` 创建。
-`SingleReader = true` 是调用者承诺不会并发使用多个 reader，并不是运行时强制限制，因此不能用于替代 `Consumers = 12` 的场景。
-在 .NET 10 中，`CreateBounded` 不会根据 `SingleReader` 或 `SingleWriter` 选择不同的实现。Channel 测量使用一个 `Task.Run`，逐条执行
-`TryRead`，并配合 `Volatile.Read` 和 `Interlocked.Decrement`；BufferQueue 使用一个 `Task.Run` 和异步 `foreach`，启用
-Auto Commit，并使用指定 batch size。`BatchSize` 只影响 BufferQueue。本 benchmark 只隔离 Channel 选项，不改变主表的默认 Channel 配置。
-
-| `BatchSize` | 默认 Channel Mean | Channel `SingleReader = true` Mean | BufferQueue（Auto Commit）Mean | SingleReader 相对默认加速 | 相对 SingleReader 的结果 |
-| ---: | ---: | ---: | ---: | ---: | ---: |
-| 1 | `159.78 μs` | `109.38 μs` | `1,221.76 μs` | `1.46x` | Channel 约快 `11.17x` |
-| 10 | `163.43 μs` | `107.50 μs` | `215.96 μs` | `1.52x` | Channel 约快 `2.01x` |
-| 100 | `165.59 μs` | `109.71 μs` | `41.06 μs` | `1.51x` | BufferQueue 约快 `2.67x` |
-| 1000 | `161.96 μs` | `111.09 μs` | `23.23 μs` | `1.46x` | BufferQueue 约快 `4.78x` |
-
-在本次单 reader 测试中，特化 Channel 比默认 Channel 快约 `1.46x-1.52x`。`BatchSize = 1` 和 `10` 时，BufferQueue
-的耗时分别约为特化 Channel 的 `11.17x` 和 `2.01x`；`100` 和 `1000` 时则分别快约 `2.67x` 和 `4.78x`。
-官方 .NET 10.0 实现见 [Channel.cs](https://github.com/dotnet/runtime/blob/v10.0.0/src/libraries/System.Threading.Channels/src/System/Threading/Channels/Channel.cs)
-和 [ChannelOptions.cs](https://github.com/dotnet/runtime/blob/v10.0.0/src/libraries/System.Threading.Channels/src/System/Threading/Channels/ChannelOptions.cs)。
-
-最新 benchmark 的测试平台：
-
-| 项目 | 信息 |
-| --- | --- |
-| CPU | Apple M2 Max，`12` logical / `12` physical cores |
-| 操作系统 | macOS `27.0.1` (`26A434`) |
-| 运行时标识 | `osx-arm64` |
-| .NET SDK | `10.0.100` |
-| .NET runtime | `10.0.0`, `arm64` |
-| BenchmarkDotNet | `0.15.8` |
-| Channel | .NET `10.0.0` 共享框架自带的 `System.Threading.Channels 10.0.0`；程序集版本 `10.0.0.0`；未单独引用 NuGet 包 |
-| Benchmark 运行目标 | `net10.0` |
-
-可以通过以下命令运行完整 benchmark：
-
-```shell
-dotnet run -c Release --project tests/BufferQueue.Benchmarks/BufferQueue.Benchmarks.csproj
+```csharp
+// ChannelReader<T>: one item per iteration
+IAsyncEnumerable<T> ReadAllAsync(CancellationToken cancellationToken = default);
+// IBufferPullConsumer<T>: one batch per iteration
+IAsyncEnumerable<IEnumerable<T>> ConsumeAsync(CancellationToken cancellationToken = default);
 ```
 
-通过以下命令复现上面的生产和消费对比：
+`ReadAllAsync` 逐条返回消息，直到 Channel 完成，并不是一次返回整批数据。
+BufferQueue 启用 `AutoCommit = true`，`Channel<T>.TryRead` 作为同步参考。测试消费预填充队列中的 `8,192` 条 `int` 消息，
+BufferQueue 使用 `12` 个 partition，consumer 数量为 `1` 或 `12`。`BatchSize` 只影响 BufferQueue。
 
-```shell
-dotnet run -c Release --project tests/BufferQueue.Benchmarks/BufferQueue.Benchmarks.csproj -- --filter '*ChannelVsMemoryBufferQueue*'
-```
+### unbounded 队列
 
-只运行 Single-Reader Channel 对比：
+![unbounded 队列 benchmark，1 个 consumer](docs/benchmarks/memory-unbounded-1-consumer.svg)
 
-```shell
-dotnet run -c Release --project tests/BufferQueue.Benchmarks/BufferQueue.Benchmarks.csproj -- --filter '*SingleReaderChannelVsMemoryBufferQueueConsumeBenchmark*'
-```
+![unbounded 队列 benchmark，12 个 consumer](docs/benchmarks/memory-unbounded-12-consumers.svg)
 
-只运行 System.Text.Json、MessagePack 和 unmanaged MMF serializer 对比：
+### bounded 队列
 
-```shell
-dotnet run -c Release --project tests/BufferQueue.Benchmarks/BufferQueue.Benchmarks.csproj -- --filter '*MemoryMappedFileSerializer*'
-```
+![bounded 队列 benchmark，1 个 consumer](docs/benchmarks/memory-bounded-1-consumer.svg)
 
-### 机会式批量消费（Opportunistic Batching）
+![bounded 队列 benchmark，12 个 consumer](docs/benchmarks/memory-bounded-12-consumers.svg)
+
+**手动提交（Manual Commit）是 BufferQueue 的功能优势**：应用可以先成功处理 batch，再调用 `CommitAsync`，未提交的 batch
+保留重放机会。`Channel<T>` 没有内建的等价确认、checkpoint 或重放机制。
+
+详细的 benchmark 配置和结果解释参见[内存队列 benchmark 说明](docs/benchmarks/memory-queues.zh-CN.md)。
+
+## 机会式批量消费（Opportunistic Batching）
 
 BufferQueue 会在 Consumer 扫描 Partition 时，把当时已经可读的数据组成 batch。一次 pull 最多从一个有数据的
 Partition 返回 `BatchSize` 条记录。同一 Partition 中已经排队的数据可能被机会式地合并到这个 batch 中；它不会为了凑满
 `BatchSize` 而等待固定时间窗口。因此低流量可能得到只有一条数据的 batch，突发流量则可能得到同一 Partition 中已经排队的更大 batch。
 
-Producer 追加数据后会向已注册的 Consumer 发出唤醒提示。通用 Consumer 按 round-robin 扫描已分配的 Partition。
-成功 pull 后会把 batch 返回给调用方，调用方继续异步枚举时才恢复扫描。Push Handler 处理完当前 batch 后才会 pull
-下一批。只有所有已分配 Partition 都为空时，Consumer 才会等待 pending-data 通知。扫描结束到进入等待之间会检查
-通知版本，确保这个边界到达的新数据会触发下一次拉取，不会因为时序竞争漏掉唤醒。
-
 开启 `AutoCommit` 时，Consumer 在成功 pull 后立即提交进度。手动提交时，batch 会先返回给调用方，只有调用
-`CommitAsync` 后才推进进度；未提交的 batch 可能再次交付。Push Consumer 底层复用同一套 pull 和唤醒流程。
+`CommitAsync` 后才推进进度；未提交的 batch 可能再次交付。Push Consumer 复用相同的交付和提交语义。
 
 ![BufferQueue 机会式批量消费](docs/assets/bufferqueue-opportunistic-batching.zh-CN.svg)
 
-图中展示正常的 pull 循环，省略取消和停止分支。“机会式”描述的是数据何时被收集进 batch，不代表业务层面的合并或去重
-保证。具体 batch 受入队时机、Partition 路由、`BatchSize` 和 Consumer 调度影响。
+“机会式”描述的是数据何时被收集进 batch，不代表业务层面的合并或去重保证。具体 batch 受入队时机、Partition 路由、
+`BatchSize` 和 Consumer 调度影响。交付和唤醒细节参见[Consumer 模型](docs/design/consumer-model.zh-CN.md)。
 
-## 功能设计：
+## 功能设计
 1. 支持创建多个 Topic，每个 Topic 可以有多种数据类型。每一对 Topic 和数据类型对应一个独立的缓冲区。
 
 2. 支持创建多个 Consumer Group，每个 Consumer Group 的消费进度都是独立的。支持多个 Consumer Group 并发消费同一个 Topic。
@@ -213,8 +92,8 @@ Producer 追加数据后会向已注册的 Consumer 发出唤醒提示。通用 
 ## 高性能设计
 ### Partition 并发设计
 
-Memory 模式的 consumer 采用 lock-free 设计。不同 Consumer Group 可以并发、独立地读取数据并推进
-各自的消费进度，互不阻塞。
+Memory 模式对已发布 slot 的读取不会持有追加锁，因此不同 Consumer Group 可以独立读取数据。
+Consumer 注册、提交以及 segment 回收仍使用 partition 的同步机制。
 
 ### 多 partition 设计
 每个 Topic 可以有多个 partition，每个 partition 都有独立的消费进度，支持多个 Consumer Group 并发消费。
@@ -222,7 +101,7 @@ Memory 模式的 consumer 采用 lock-free 设计。不同 Consumer Group 可以
 Producer 默认以轮询方式往每个 Partition 中写入数据。Topic 也可以启用 PartitionKey 路由，
 让相同 key 的数据写入同一个 Partition。
 
-**Consumer 最多不允许超过 Partition 的数量，Partition 会均分到组内每个 Customer 上**。
+**Consumer 数量不能超过 Partition 数量，Partition 会尽可能均衡地分配给组内各个 Consumer**。
 
 当一个 Consumer 被分配了多个 Partition 时，以轮训的方式进行消费。
 
@@ -230,8 +109,9 @@ Producer 默认以轮询方式往每个 Partition 中写入数据。Topic 也可
 
 ![BufferQueue Partition 与 Consumer Group](docs/assets/Partition.zh-CN.svg)
 
-### 动态调整缓冲区大小
-支持动态调整缓冲区大小，以适应生产和消费速度不断变化的场景。
+### Segment 存储
+Memory 模式使用固定大小的 segment 保存记录。unbounded topic 会按需分配新的 segment；bounded topic 遵守配置的总容量，
+并在所有 consumer group 提交进度后释放容量。
 
 ## 使用示例
 
@@ -247,7 +127,7 @@ BufferQueue 支持两种消费模式：pull 模式和 push 模式。
 
 ### Memory 模式注册
 
-Memory 模式把数据保存在进程内存中，并支持可选的有界容量。
+Memory 模式把数据保存在进程内存中，并支持可选的 bounded 容量。
 
 ```csharp
 using BufferQueue.Memory;
@@ -296,42 +176,12 @@ builder.Services.AddHostedService<Foo1PullConsumerHostService>();
 相同 key 因此能保持 partition 内顺序，不同 key 仍可能进入同一个 partition。未调用 `UsePartitionKey` 时，Producer 继续使用默认的轮询路由。Selector 必须保持确定性，
 并能安全地被并发调用。Memory 模式下，并发 Producer 可以并行写入不同 key 选中的 partition；写入同一个 partition 仍会串行执行。
 
-字符串路由使用种子为零的 XXH3-64，对包含后缀的完整 UTF-16LE key 计算哈希，不提供旧映射模式。
-空字符串合法，null key 会被拒绝。路由保留原始码元，不执行 Unicode 规范化。受支持的小端 .NET
-环境直接哈希 UTF-16 数据，不需要编码缓冲区或托管内存分配。长 key 可使用硬件 SIMD，短 key
-使用专用标量路径。MMF topic 数据不计划在字节序不同的平台之间迁移。已有 MMF 数据仍可读取，
-但从前缀路由升级后，同 key 的新消息可能进入其他 partition，因此不保证跨升级的顺序。
+字符串路由对完整 UTF-16 key 执行确定性哈希。空字符串合法，null key 会被拒绝，路由保留原始码元且不执行
+Unicode 规范化。在受支持的小端 .NET 环境中，重启前后映射保持稳定；MMF topic 不计划在字节序不同的平台之间迁移。
+已有 MMF 数据仍可读取，但路由实现升级后同 key 的新消息可能进入其他 partition，因此不保证跨升级的按 key 顺序。
+路由契约和持久化约束参见[分区与并发设计](docs/design/partitioning-and-concurrency.zh-CN.md)。
 
-### PartitionKey 路由性能
-
-下面的 [`MemoryBufferPartitionerBenchmark`](tests/BufferQueue.Benchmarks/MemoryBufferPartitionerBenchmark.cs)
-测量完整的 Memory 模式 producer 路径，使用 `8` 个 partition、`8,192` 条消息重复 `832` 次、`6` 次预热和
-`15` 次测量迭代。结果为单条写入耗时，运行环境为 macOS 27.0.1、ARM64 和 .NET 10.0.0；
-所有路径均无托管内存分配。字符串 key 包含 `7` 个 UTF-16 码元；完整 key 哈希的耗时随 key 长度增加。
-
-| 路由方式 | Mean | 相对轮询 |
-| --- | ---: | ---: |
-| 轮询 | `13.40 ns` | `1.00x` |
-| `int` key | `12.03 ns` | `0.90x` |
-| `string` key（XXH3-64，完整 UTF-16 key） | `12.94 ns` | `0.97x` |
-| 自定义消息，取数值 `CustomerId` key | `11.19 ns` | `0.83x` |
-
-通过以下命令运行该 producer 基准：
-
-```bash
-dotnet run -c Release --project tests/BufferQueue.Benchmarks/BufferQueue.Benchmarks.csproj -- --filter '*MemoryBufferPartitionerBenchmark*'
-```
-
-独立的 [`StringPartitionRoutingBenchmark`](tests/BufferQueue.Benchmarks/StringPartitionRoutingBenchmark.cs)
-仅测量字符串路由，使用预先构造的 `4`、`9`、`64`、`120`、`121`、`256`、`1024` 个 UTF-16 码元的 key 和 `8` 个 partition。
-`120`/`121` 两组覆盖 XXH3 的 `240` 字节长输入阈值两侧。
-它使用一次启动、`6` 次预热和 `10` 次测量迭代，目标迭代时间为 `100 ms`。
-其结果为单次路由耗时，不包含队列写入；上表数据来自 producer 基准。
-通过以下命令运行 key 长度基准：
-
-```bash
-dotnet run -c Release --project tests/BufferQueue.Benchmarks/BufferQueue.Benchmarks.csproj -- --filter '*StringPartitionRoutingBenchmark*'
-```
+详细的历史测量、方法和复现命令见[保留的 PartitionKey 路由 benchmark](docs/benchmarks/memory-queues.zh-CN.md#partitionkey-路由性能)。
 
 ### MemoryMappedFile 模式注册
 
@@ -454,32 +304,14 @@ options.Serializer = UnmanagedMemoryMappedFileSerializer<Quote>.Instance;
 
 Batch flush 可以减少显式 flush 次数，但如果后续没有继续生产、segment rollover 或 consumer commit，未满一批的尾部记录不保证已经被显式 flush。要求每次成功 produce 都形成显式持久化边界的应用应使用默认的 `Immediate` 策略。
 
-MemoryMappedFile 数据按 topic 和 partition 存储：
+MemoryMappedFile 会在配置的数据目录下保存记录以及 producer/consumer checkpoint；group name 作为路径组件使用时会进行转义。
+创建 consumer 时会为每个已分配 partition 持久化初始 offset，因此慢速、未提交、离线或废弃的 group 都可能阻止 retention。
+删除废弃 group 的保留状态前，必须先停止 queue，再删除该 group 转义后的 offsets 目录。
 
-```text
-{DataDirectory}/{TopicName}/partition-{PartitionId:D5}/
-```
-
-例如：
-
-```text
-/var/lib/bufferqueue/topic-foo/partition-00000/00000000000000000000.log
-/var/lib/bufferqueue/topic-foo/partition-00000/producer.offset
-/var/lib/bufferqueue/topic-foo/partition-00000/earliest.offset
-/var/lib/bufferqueue/topic-foo/partition-00000/offsets/group-foo/consumer.offset
-```
-
-Consumer group name 如果本身是合法文件夹名，会直接作为 offset 目录名。不能作为单个路径组件的字符会被百分号编码。例如 group `orders/worker 1` 会存储在：
-
-```text
-offsets/orders%2Fworker 1/consumer.offset
-```
-
-`earliest.offset` 是一个 8 字节 little-endian checkpoint，记录当前最早保留的 segment boundary。新 consumer group 从该位置开始。创建 consumer 时会为其分配到的每个 partition 持久化初始 offset，因此尚未从某个 partition pull 的 group 也会参与 retention 水位计算。慢速、未提交、离线或已经废弃的 group 都会阻止删除，直到其 checkpoint 推进。移除废弃 group 时必须先停止 queue，并删除完整的 `offsets/{escaped-group-name}/` 目录。
-
-恢复时，如果 `producer.offset` 不存在，会从 `earliest.offset` 开始向后扫描；没有 retention checkpoint 时起点为 `0`。如果 producer offset 落后于实际日志，也会继续向后扫描补齐。由于 `producer.offset` 只会在对应日志成功 flush 后推进，它可以安全地落后于 checkpoint 之后实际写入日志的完整记录。损坏、超过日志范围、没有对齐到 record boundary 的 offset，以及保留区间内缺失的 segment 文件都会直接抛出异常，不会被重新创建或静默重置进度。在 `Batch` 模式下，异常终止后未 flush 的尾部记录可能不存在。
-
-恢复已有 MemoryMappedFile topic 时，不要调小 `PartitionNumber`。原本存储在被移除 partition 中的历史记录将不再有对应的 partition reader，因此无法继续消费；如果已有 partition 目录超过当前配置的 partition 数量，启动会快速失败并抛出 `InvalidDataException`。
+恢复时会从保留边界向后扫描缺失或落后的 producer checkpoint，但损坏、超过日志范围、未对齐 record boundary 的 checkpoint，
+以及保留区间内缺失的 segment 都会快速失败。`Batch` 模式下，异常终止后未 flush 的尾部记录可能不存在。已有 topic 不能调小
+`PartitionNumber`；如果已有 partition 目录超过当前配置数量，启动会抛出 `InvalidDataException`。布局、retention 和恢复规则参见
+[MemoryMappedFile 存储](docs/design/memory-mapped-file.zh-CN.md)。
 
 ### Consumer Group
 
@@ -503,7 +335,7 @@ consumer 数量必须介于 1 和该 topic 的 partition 数量之间。创建�
 先写入数据再创建 group，也支持 group 创建与生产并发进行。新 group 从各 partition 当前仍可读的最早位置开始，
 无法读取容量已经释放或 segment 已经回收的数据，因此不保证能读取该 topic 的完整历史。
 
-对于采用 `Wait` 模式的有界 Memory topic，容量不足时写入会等待。应启动消费并提交进度来释放容量，避免先等待
+对于采用 `Wait` 模式的 bounded Memory topic，容量不足时写入会等待。应启动消费并提交进度来释放容量，避免先等待
 超过可用容量的写入全部完成后才开始消费。
 
 ### Pull 模式消费者
@@ -615,7 +447,7 @@ Producer 示例：
 - 在声明依赖时 topic 已固定：使用 `[FromKeyedServices("topic-name")]` 注入 `IBufferProducer<T>`。
 - topic 需要在运行时确定：注入 `IBufferQueue`，再调用 `GetProducer<T>(topicName)` 获取 Producer。
 
-在 Memory 模式下，有界 topic 的 `FullMode` 默认为 `Wait`。此时 `ProduceAsync` 和 `TryProduceAsync` 都会
+在 Memory 模式下，bounded topic 的 `FullMode` 默认为 `Wait`。此时 `ProduceAsync` 和 `TryProduceAsync` 都会
 异步等待容量可用；输入完整接纳后，`TryProduceAsync` 返回 `true`。生产代码应传入 `CancellationToken`，以便
 取消背压等待。需要立即拒绝写入时，可将 `FullMode` 设为 `Fail`：`ProduceAsync` 会抛出
 `BufferQueueFullException`，`TryProduceAsync` 返回 `false`。大小不超过配置容量的批次会整批接纳；超过容量的
@@ -679,7 +511,7 @@ await producer.ProduceAsync(orders.Where(order => order.Total > 0));
 
 if (!await producer.TryProduceAsync(orders.AsMemory()))
 {
-    // 配置为 FullMode.Fail 的有界 Memory 队列无法接纳该批次。
+    // 配置为 FullMode.Fail 的 bounded Memory 队列无法接纳该批次。
 }
 ```
 

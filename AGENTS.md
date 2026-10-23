@@ -115,6 +115,7 @@ semantic, persistence format, or consumer lifecycle.
 
 ## Documentation
 
+- Keep `bounded` and `unbounded` in English in Chinese documentation and explanations.
 - Update documentation when behavior, configuration, public APIs, package workflows, storage layout, or architectural
   decisions change.
 - Keep English and Simplified Chinese README and design-note pairs semantically synchronized. Preserve identifiers,
