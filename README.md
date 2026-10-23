@@ -33,17 +33,15 @@ Use MemoryMappedFile mode when produced data and committed consumer offsets need
 
 The project includes BenchmarkDotNet benchmarks that compare BufferQueue in Memory mode with `Channel<T>` and `BlockingCollection<T>` for concurrent producing and consuming. The tables below summarize the `Channel<T>` comparison results.
 
-The benchmark values in this section were recorded for BufferQueue v2.0.3 (commit `90c6208`), before the 2.0.4 runtime changes.
-
 Summary:
 
-- Producing one item at a time: BufferQueue in Memory mode is close to `Channel<T>` under the recorded parameters. Its elapsed time is about `11%` higher in Unbounded mode and `22%` higher in Bounded mode.
-- Producing `ReadOnlyMemory<T>` batches: the Memory path is about `8.50x` faster than its single-item path in Unbounded mode and `9.28x` faster in Bounded mode. This narrow workload is also about `7.66x` and `7.63x` faster than `Channel<T>`, respectively.
-- Consuming: BufferQueue is optimized for batch consumption. It is faster than `Channel<T>` from `BatchSize = 1` through `1000` in this benchmark set, with a clearer advantage at larger batches and a maximum of about `103x` under the recorded parameters.
+- Producing one item at a time: BufferQueue's elapsed time is about `18%` higher than `Channel<T>` in Unbounded mode and `16%` higher in Bounded mode.
+- Producing `ReadOnlyMemory<T>` batches: the Memory path is about `8.40x` faster than its single-item path in Unbounded mode and `8.60x` faster in Bounded mode; it is about `7.13x` and `7.44x` faster than `Channel<T>`, respectively.
+- One consumer: `Channel<T>` is faster at `BatchSize = 1` and `10`. BufferQueue is faster at `100` and `1000`; at `1000`, it is about `6.64x` faster in Unbounded mode and `6.06x` faster in Bounded mode.
+- Twelve consumers: BufferQueue has a lower mean at every tested batch size in both modes. At `BatchSize = 1000`, it is about `98.56x` faster in Unbounded mode and `47.67x` faster in Bounded mode under these parameters.
 - Memory allocation: BufferQueue allocates less in producing scenarios; `Channel<T>` allocates less in consuming scenarios.
 
-The producing rows below were recorded for BufferQueue v2.0.3 (commit `90c6208`). The consuming rows are retained from
-the same v2.0.3 benchmark record and were not rerun with later runtime changes. The in-memory queue comparisons use
+The producing and consuming rows below were rerun on `2026-10-23`. The in-memory queue comparisons use
 `MessageSize = 8192`. The producing rows run both capacity modes in the same `Fixed` job with `LaunchCount = 1`,
 `WarmupCount = 6`, and `IterationCount = 15`. The consuming benchmarks use the default job and, because they use
 `IterationSetup`, run with `InvocationCount = 1` and `UnrollFactor = 1`. Both benchmark groups run on .NET 10.
@@ -62,24 +60,26 @@ cover Memory mode only; MemoryMappedFile production was not run for this compari
 `TryRead` for each item, while BufferQueue returns up to `BatchSize` items at a time with
 Auto Commit enabled; no per-item business processing is included. `BatchSize` only affects BufferQueue and is an
 upper bound. With `MessageSize = 8192` and `Consumers = 12`, `BatchSize = 1000` usually lets each consumer drain its
-approximately 682 or 683 assigned items in one batch. The source also includes `BatchSize = 10`; the table shows
-the `1`, `100`, and `1000` tiers.
+approximately 682 or 683 assigned items in one batch. With `Consumers = 1`, the same consumer drains all
+`12` partitions, still returning at most one partition's items per pull. The tables show the source's `1`, `10`,
+`100`, and `1000` batch-size tiers.
 
-The consuming iterations are short, so these results primarily show the trend for the recorded parameters rather
-than an end-to-end application throughput guarantee. The
+The consuming iterations are short; BenchmarkDotNet reported minimum-iteration-time and multimodal-distribution
+warnings. The run also could not obtain high process priority. These results show this workload's measured trend,
+not an end-to-end application throughput guarantee. Ratios in the tables are calculated from the displayed means. The
 MemoryMappedFile queue comparisons use `MessageSize = 1024` and a short-run job to keep their file-backed runs brief.
 
-Producer and consumer concurrency are derived from `Environment.ProcessorCount`, which was `12` for the recorded
-results. Producing uses `12` tasks sharing one `Channel<T>` writer or one BufferQueue producer; BufferQueue has
-`12` partitions. Consuming uses `12` Channel reader tasks or `12` BufferQueue consumers over
-`12` partitions.
+Producer concurrency and the partition count come from `Environment.ProcessorCount`, which was `12` for this run.
+Producing uses `12` tasks sharing one `Channel<T>` writer or one BufferQueue producer over `12` partitions.
+Consuming tests `Consumers = 1` and `12`: the same number of Channel reader tasks or BufferQueue consumers,
+with BufferQueue retaining `12` partitions in both cases.
 
 Producing:
 
 | Mode | `MessageSize` | `Producers` | `Channel<T>` Mean | BufferQueue single-item Mean | BufferQueue `ReadOnlyMemory<T>` batch Mean | Result |
 | --- | ---: | ---: | ---: | ---: | ---: | --- |
-| Unbounded | 8192 | 12 | `301.7 μs` | `334.5 μs` | `39.4 μs` | Batch is `8.50x` faster than single-item and `7.66x` faster than `Channel<T>` |
-| Bounded | 8192 | 12 | `300.4 μs` | `365.3 μs` | `39.4 μs` | Batch is `9.28x` faster than single-item and `7.63x` faster than `Channel<T>` |
+| Unbounded | 8192 | 12 | `289.85 μs` | `341.79 μs` | `40.68 μs` | Batch is `8.40x` faster than single-item and `7.13x` faster than `Channel<T>` |
+| Bounded | 8192 | 12 | `302.89 μs` | `349.94 μs` | `40.71 μs` | Batch is `8.60x` faster than single-item and `7.44x` faster than `Channel<T>` |
 
 ### Round-Robin Batch Writes
 
@@ -91,19 +91,29 @@ Consuming:
 
 | Mode | `MessageSize` | `BatchSize` | `Consumers` | `Channel<T>` Mean | BufferQueue (Memory) Mean | Result |
 | --- | ---: | ---: | ---: | ---: | ---: | --- |
-| Unbounded | 8192 | 1 | 12 | `3,146.52 μs` | `815.80 μs` | BufferQueue is about `3.86x` faster under these parameters |
-| Bounded | 8192 | 1 | 12 | `2,118.13 μs` | `750.73 μs` | BufferQueue is about `2.82x` faster under these parameters |
-| Unbounded | 8192 | 100 | 12 | `3,384.68 μs` | `49.25 μs` | BufferQueue is about `68.72x` faster under these parameters |
-| Bounded | 8192 | 100 | 12 | `2,158.57 μs` | `53.95 μs` | BufferQueue is about `40.01x` faster under these parameters |
-| Unbounded | 8192 | 1000 | 12 | `3,485.82 μs` | `33.97 μs` | BufferQueue is about `102.61x` faster under these parameters |
-| Bounded | 8192 | 1000 | 12 | `2,115.11 μs` | `35.68 μs` | BufferQueue is about `59.28x` faster under these parameters |
+| Unbounded | 8192 | 1 | 1 | `165.13 μs` | `3,285.53 μs` | `Channel<T>` is about `19.90x` faster under these parameters |
+| Bounded | 8192 | 1 | 1 | `186.78 μs` | `6,522.00 μs` | `Channel<T>` is about `34.92x` faster under these parameters |
+| Unbounded | 8192 | 10 | 1 | `163.79 μs` | `413.60 μs` | `Channel<T>` is about `2.53x` faster under these parameters |
+| Bounded | 8192 | 10 | 1 | `192.05 μs` | `762.31 μs` | `Channel<T>` is about `3.97x` faster under these parameters |
+| Unbounded | 8192 | 100 | 1 | `161.80 μs` | `62.55 μs` | BufferQueue is about `2.59x` faster under these parameters |
+| Bounded | 8192 | 100 | 1 | `192.81 μs` | `98.65 μs` | BufferQueue is about `1.95x` faster under these parameters |
+| Unbounded | 8192 | 1000 | 1 | `166.71 μs` | `25.12 μs` | BufferQueue is about `6.64x` faster under these parameters |
+| Bounded | 8192 | 1000 | 1 | `190.05 μs` | `31.38 μs` | BufferQueue is about `6.06x` faster under these parameters |
+| Unbounded | 8192 | 1 | 12 | `3,306.15 μs` | `745.04 μs` | BufferQueue is about `4.44x` faster under these parameters |
+| Bounded | 8192 | 1 | 12 | `2,204.18 μs` | `1,910.49 μs` | BufferQueue is about `1.15x` faster under these parameters |
+| Unbounded | 8192 | 10 | 12 | `3,479.02 μs` | `195.68 μs` | BufferQueue is about `17.78x` faster under these parameters |
+| Bounded | 8192 | 10 | 12 | `2,308.89 μs` | `567.60 μs` | BufferQueue is about `4.07x` faster under these parameters |
+| Unbounded | 8192 | 100 | 12 | `3,440.50 μs` | `53.13 μs` | BufferQueue is about `64.76x` faster under these parameters |
+| Bounded | 8192 | 100 | 12 | `2,079.65 μs` | `100.32 μs` | BufferQueue is about `20.73x` faster under these parameters |
+| Unbounded | 8192 | 1000 | 12 | `3,456.67 μs` | `35.07 μs` | BufferQueue is about `98.56x` faster under these parameters |
+| Bounded | 8192 | 1000 | 12 | `1,958.24 μs` | `41.08 μs` | BufferQueue is about `47.67x` faster under these parameters |
 
-Benchmark platform for the v2.0.3 benchmark run:
+Benchmark platform for the latest benchmark runs:
 
 | Item | Value |
 | --- | --- |
 | CPU | Apple M2 Max, `12` logical / `12` physical cores |
-| OS | macOS `15.7.8` (`24G824`) |
+| OS | macOS `27.0.1` (`26A434`) |
 | RID | `osx-arm64` |
 | .NET SDK | `10.0.100` |
 | .NET runtime | `10.0.0`, `arm64` |
@@ -117,13 +127,19 @@ Run the full benchmark with:
 dotnet run -c Release --project tests/BufferQueue.Benchmarks/BufferQueue.Benchmarks.csproj
 ```
 
+Reproduce the producing and consuming comparisons above with:
+
+```shell
+dotnet run -c Release --project tests/BufferQueue.Benchmarks/BufferQueue.Benchmarks.csproj -- --filter '*ChannelVsMemoryBufferQueue*'
+```
+
 Run only the System.Text.Json, MessagePack, and unmanaged MMF serializer comparison with:
 
 ```shell
 dotnet run -c Release --project tests/BufferQueue.Benchmarks/BufferQueue.Benchmarks.csproj -- --filter '*MemoryMappedFileSerializer*'
 ```
 
-### Opportunistic Batching (机会式批量消费)
+### Opportunistic Batching
 
 BufferQueue forms batches from data that is already available when a consumer scans a partition. A pull returns up
 to `BatchSize` items from one readable partition. Items already queued in the same partition may be combined
