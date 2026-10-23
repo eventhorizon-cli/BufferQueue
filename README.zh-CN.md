@@ -32,16 +32,15 @@ BufferQueue 当前提供两种存储模式：
 
 项目内置 BenchmarkDotNet 基准测试，对比 BufferQueue 在 Memory 模式下与 `Channel<T>`、`BlockingCollection<T>` 的并发生产、并发消费表现。下表展示与 `Channel<T>` 的对比结果摘要。
 
-本节 benchmark 数据记录于 BufferQueue v2.0.3（commit `90c6208`），对应 2.0.4 运行时改动之前的基线。
-
 结果摘要：
 
-- 单条写入：在本次测试配置下，BufferQueue Memory 模式的写入性能接近 `Channel<T>`。Unbounded 和 Bounded 模式的耗时分别高约 `11%` 和 `22%`。
-- `ReadOnlyMemory<T>` 批量写入：Memory 路径在 Unbounded 下比单条路径快约 `8.50x`，在 Bounded 下快约 `9.28x`；在本次测试配置下，也分别比 `Channel<T>` 快约 `7.66x` 和 `7.63x`。
-- 消费：BufferQueue 的主要优势在批量消费；本组测试从 `BatchSize = 1` 到 `1000` 均快于 `Channel<T>`，批量越大优势越明显，该次记录参数下最高约快 `103x`。
+- 单条写入：BufferQueue 的耗时在 Unbounded 模式下比 `Channel<T>` 高约 `19%`，在 Bounded 模式下高约 `18%`。
+- `ReadOnlyMemory<T>` 批量写入：Memory 路径在 Unbounded 下比单条路径快约 `8.59x`，在 Bounded 下快约 `9.05x`；也分别比 `Channel<T>` 快约 `7.22x` 和 `7.64x`。
+- 单个 consumer：`BatchSize = 1` 和 `10` 时，`Channel<T>` 更快；`100` 和 `1000` 时，BufferQueue 更快。在 `1000` 时，Unbounded 和 Bounded 模式分别约快 `6.16x` 和 `5.74x`。
+- 十二个 consumer：在本次参数下，BufferQueue 在两种模式的所有 batch size 中平均耗时都更低。`BatchSize = 1000` 时，Unbounded 和 Bounded 模式分别约快 `91.92x` 和 `54.03x`。
 - 内存分配：生产场景 BufferQueue 分配较少；消费场景 `Channel<T>` 分配较少。
 
-下列数据记录于 BufferQueue v2.0.3（commit `90c6208`）。消费数据来自同一份 v2.0.3 基准记录，未使用后续运行时改动重新测量。
+下列生产和消费数据于 `2026-10-23` 基于 main commit `a7ab752` 的运行时代码重跑。
 纯内存 queue 对比使用 `MessageSize = 8192`。生产数据的 Bounded 和 Unbounded 模式使用同一个 `Fixed` job，
 配置为 `LaunchCount = 1`、`WarmupCount = 6`、`IterationCount = 15`。消费 benchmark 使用默认 job，并因
 `IterationSetup` 使用 `InvocationCount = 1`、`UnrollFactor = 1`。两组 benchmark 均运行于 .NET 10。
@@ -57,23 +56,26 @@ Bounded 的 BufferQueue 生产测试使用默认的 `Wait` 模式，容量与 `M
 `IterationSetup` 不计入测量，测量范围只包含并发排空队列：Channel 使用 `TryRead` 逐条读取，
 BufferQueue 按 `BatchSize` 批量返回并启用 Auto Commit，不包含逐条业务处理。`BatchSize` 只作用于
 BufferQueue，并且表示每批上限；`MessageSize = 8192`、`Consumers = 12` 时，`BatchSize = 1000`
-通常意味着每个 consumer 用一批读完分配到的约 682 或 683 条数据。源码还包含 `BatchSize = 10`，
-下表展示 `1`、`100` 和 `1000` 三档。
+通常意味着每个 consumer 用一批读完分配到的约 682 或 683 条数据。`Consumers = 1` 时，同一个 consumer
+排空全部 `12` 个 partition，每次 pull 仍只返回一个 partition 中的数据。下表展示源码中的 `1`、`10`、`100`
+和 `1000` 四档 batch size。
 
-消费用例的单次迭代较短，因此这些结果主要用于展示该组参数下的性能趋势，不代表端到端业务吞吐。
+消费用例的单次迭代较短，BenchmarkDotNet 报告了最小迭代时间和多峰分布提示，本次运行也未能设置高进程优先级。
+这些结果展示该负载下的测量趋势，不代表端到端业务吞吐。表中的倍数按展示的平均耗时计算。
 MemoryMappedFile queue 对比使用 `MessageSize = 1024` 和 short-run job，
 以缩短文件存储场景的运行时间。
 
-生产和消费的并发数均取自 `Environment.ProcessorCount`，该次记录结果为 `12`。生产场景使用 `12` 个 task
-共享一个 `Channel<T>` writer 或一个 BufferQueue producer，BufferQueue 配置 `12` 个 partition；
-消费场景使用 `12` 个 Channel reader task，或在 `12` 个 partition 上使用 `12` 个 BufferQueue consumer。
+生产并发数和 partition 数量取自 `Environment.ProcessorCount`，本次为 `12`。生产场景使用 `12` 个 task
+共享一个 `Channel<T>` writer 或一个 BufferQueue producer，BufferQueue 配置 `12` 个 partition。
+消费场景分别测试 `Consumers = 1` 和 `12`，Channel reader task 与 BufferQueue consumer 的数量一致，
+两档都保留 `12` 个 BufferQueue partition。
 
 生产性能：
 
 | 模式 | `MessageSize` | `Producers` | `Channel<T>` Mean | BufferQueue 单条 Mean | BufferQueue `ReadOnlyMemory<T>` 批量 Mean | 结论 |
 | --- | ---: | ---: | ---: | ---: | ---: | --- |
-| Unbounded | 8192 | 12 | `301.7 μs` | `334.5 μs` | `39.4 μs` | 批量比单条快 `8.50x`，比 `Channel<T>` 快 `7.66x` |
-| Bounded | 8192 | 12 | `300.4 μs` | `365.3 μs` | `39.4 μs` | 批量比单条快 `9.28x`，比 `Channel<T>` 快 `7.63x` |
+| Unbounded | 8192 | 12 | `296.15 μs` | `352.65 μs` | `41.04 μs` | 批量比单条快 `8.59x`，比 `Channel<T>` 快 `7.22x` |
+| Bounded | 8192 | 12 | `306.59 μs` | `363.24 μs` | `40.12 μs` | 批量比单条快 `9.05x`，比 `Channel<T>` 快 `7.64x` |
 
 ### Round-robin 批量写入
 
@@ -84,19 +86,29 @@ MemoryMappedFile queue 对比使用 `MessageSize = 1024` 和 short-run job，
 
 | 模式 | `MessageSize` | `BatchSize` | `Consumers` | `Channel<T>` Mean | BufferQueue（Memory）Mean | 结论 |
 | --- | ---: | ---: | ---: | ---: | ---: | --- |
-| Unbounded | 8192 | 1 | 12 | `3,146.52 μs` | `815.80 μs` | 该组参数下 BufferQueue 约快 `3.86x` |
-| Bounded | 8192 | 1 | 12 | `2,118.13 μs` | `750.73 μs` | 该组参数下 BufferQueue 约快 `2.82x` |
-| Unbounded | 8192 | 100 | 12 | `3,384.68 μs` | `49.25 μs` | 该组参数下 BufferQueue 约快 `68.72x` |
-| Bounded | 8192 | 100 | 12 | `2,158.57 μs` | `53.95 μs` | 该组参数下 BufferQueue 约快 `40.01x` |
-| Unbounded | 8192 | 1000 | 12 | `3,485.82 μs` | `33.97 μs` | 该组参数下 BufferQueue 约快 `102.61x` |
-| Bounded | 8192 | 1000 | 12 | `2,115.11 μs` | `35.68 μs` | 该组参数下 BufferQueue 约快 `59.28x` |
+| Unbounded | 8192 | 1 | 1 | `166.06 μs` | `3,370.12 μs` | 该组参数下 `Channel<T>` 约快 `20.29x` |
+| Bounded | 8192 | 1 | 1 | `199.18 μs` | `6,440.61 μs` | 该组参数下 `Channel<T>` 约快 `32.34x` |
+| Unbounded | 8192 | 10 | 1 | `168.76 μs` | `417.70 μs` | 该组参数下 `Channel<T>` 约快 `2.48x` |
+| Bounded | 8192 | 10 | 1 | `195.81 μs` | `754.76 μs` | 该组参数下 `Channel<T>` 约快 `3.85x` |
+| Unbounded | 8192 | 100 | 1 | `167.36 μs` | `62.98 μs` | 该组参数下 BufferQueue 约快 `2.66x` |
+| Bounded | 8192 | 100 | 1 | `193.24 μs` | `98.49 μs` | 该组参数下 BufferQueue 约快 `1.96x` |
+| Unbounded | 8192 | 1000 | 1 | `167.94 μs` | `27.28 μs` | 该组参数下 BufferQueue 约快 `6.16x` |
+| Bounded | 8192 | 1000 | 1 | `193.11 μs` | `33.63 μs` | 该组参数下 BufferQueue 约快 `5.74x` |
+| Unbounded | 8192 | 1 | 12 | `3,498.05 μs` | `2,183.03 μs` | 该组参数下 BufferQueue 约快 `1.60x` |
+| Bounded | 8192 | 1 | 12 | `2,114.84 μs` | `1,949.75 μs` | 该组参数下 BufferQueue 约快 `1.08x` |
+| Unbounded | 8192 | 10 | 12 | `3,512.23 μs` | `322.42 μs` | 该组参数下 BufferQueue 约快 `10.89x` |
+| Bounded | 8192 | 10 | 12 | `2,055.04 μs` | `620.36 μs` | 该组参数下 BufferQueue 约快 `3.31x` |
+| Unbounded | 8192 | 100 | 12 | `3,400.68 μs` | `55.91 μs` | 该组参数下 BufferQueue 约快 `60.82x` |
+| Bounded | 8192 | 100 | 12 | `2,065.02 μs` | `128.18 μs` | 该组参数下 BufferQueue 约快 `16.11x` |
+| Unbounded | 8192 | 1000 | 12 | `3,408.49 μs` | `37.08 μs` | 该组参数下 BufferQueue 约快 `91.92x` |
+| Bounded | 8192 | 1000 | 12 | `2,312.93 μs` | `42.81 μs` | 该组参数下 BufferQueue 约快 `54.03x` |
 
-v2.0.3 benchmark 的测试平台：
+最新 benchmark 的测试平台：
 
 | 项目 | 信息 |
 | --- | --- |
 | CPU | Apple M2 Max，`12` logical / `12` physical cores |
-| 操作系统 | macOS `15.7.8` (`24G824`) |
+| 操作系统 | macOS `27.0.1` (`26A434`) |
 | 运行时标识 | `osx-arm64` |
 | .NET SDK | `10.0.100` |
 | .NET runtime | `10.0.0`, `arm64` |
@@ -108,6 +120,12 @@ v2.0.3 benchmark 的测试平台：
 
 ```shell
 dotnet run -c Release --project tests/BufferQueue.Benchmarks/BufferQueue.Benchmarks.csproj
+```
+
+通过以下命令复现上面的生产和消费对比：
+
+```shell
+dotnet run -c Release --project tests/BufferQueue.Benchmarks/BufferQueue.Benchmarks.csproj -- --filter '*ChannelVsMemoryBufferQueue*'
 ```
 
 只运行 System.Text.Json、MessagePack 和 unmanaged MMF serializer 对比：

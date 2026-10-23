@@ -13,6 +13,11 @@ public class BoundedChannelVsMemoryBufferQueueConsumeBenchmark
 
     [Params(1, 10, 100, 1000)] public int BatchSize { get; set; }
 
+    public IEnumerable<int> ConsumerCounts => new[] { 1, Environment.ProcessorCount }.Distinct();
+
+    [ParamsSource(nameof(ConsumerCounts))]
+    public int Consumers { get; set; }
+
     [IterationSetup]
     public void Setup()
     {
@@ -44,7 +49,7 @@ public class BoundedChannelVsMemoryBufferQueueConsumeBenchmark
                 AutoCommit = true,
                 BatchSize = BatchSize,
             },
-            Environment.ProcessorCount);
+            Consumers);
     }
 
     [Benchmark(Baseline = true)]
@@ -62,7 +67,7 @@ public class BoundedChannelVsMemoryBufferQueueConsumeBenchmark
     private void ConsumeChannel(Channel<int> channel)
     {
         var remaining = MessageSize;
-        var tasks = Enumerable.Range(0, Environment.ProcessorCount).Select(_ => Task.Run(() =>
+        var tasks = Enumerable.Range(0, Consumers).Select(_ => Task.Run(() =>
         {
             var reader = channel.Reader;
             while (Volatile.Read(ref remaining) > 0 && reader.TryRead(out _))
