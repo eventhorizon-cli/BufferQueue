@@ -41,7 +41,7 @@ IAsyncEnumerable<IEnumerable<T>> ConsumeAsync(CancellationToken cancellationToke
 BufferQueue 启用 `AutoCommit = true`，`Channel<T>.TryRead` 作为同步参考。测试消费预填充队列中的 `8,192` 条 `int` 消息，
 BufferQueue 使用 `12` 个 partition，consumer 数量为 `1` 或 `12`。`BatchSize` 只影响 BufferQueue。
 
-测试环境：macOS 27.0.1 / Arm64，.NET 10.0.0，BenchmarkDotNet 0.15.8（Release）。
+测试环境：Apple M2 Max（12 核），macOS 27.0.1 / Arm64，.NET 10.0.0，BenchmarkDotNet 0.15.8（Release）。
 
 在这组预填充队列测试中，启用 Auto Commit 的 BufferQueue 与 `Channel.ReadAllAsync` 相比：
 

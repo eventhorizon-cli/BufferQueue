@@ -42,7 +42,7 @@ IAsyncEnumerable<IEnumerable<T>> ConsumeAsync(CancellationToken cancellationToke
 BufferQueue uses `AutoCommit = true`; `Channel<T>.TryRead` is a synchronous reference. The workload drains prefilled queues
 with `8,192` `int` messages, `12` BufferQueue partitions, and `1` or `12` consumers. `BatchSize` affects BufferQueue only.
 
-Benchmark environment: macOS 27.0.1 / Arm64, .NET 10.0.0, BenchmarkDotNet 0.15.8 (Release).
+Benchmark environment: Apple M2 Max (12 cores), macOS 27.0.1 / Arm64, .NET 10.0.0, BenchmarkDotNet 0.15.8 (Release).
 
 In this prefilled workload, compared with `Channel.ReadAllAsync`, BufferQueue with Auto Commit shows:
 
