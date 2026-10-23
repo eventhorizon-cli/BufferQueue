@@ -43,15 +43,15 @@ BufferQueue 使用 `12` 个 partition，consumer 数量为 `1` 或 `12`。`Batch
 
 ### unbounded 队列
 
-![unbounded 队列 benchmark，1 个 consumer](docs/benchmarks/memory-unbounded-1-consumer.svg)
+![unbounded 队列消费基准测试，1 个消费者](docs/benchmarks/memory-unbounded-1-consumer.zh-CN.svg)
 
-![unbounded 队列 benchmark，12 个 consumer](docs/benchmarks/memory-unbounded-12-consumers.svg)
+![unbounded 队列消费基准测试，12 个消费者](docs/benchmarks/memory-unbounded-12-consumers.zh-CN.svg)
 
 ### bounded 队列
 
-![bounded 队列 benchmark，1 个 consumer](docs/benchmarks/memory-bounded-1-consumer.svg)
+![bounded 队列消费基准测试，1 个消费者](docs/benchmarks/memory-bounded-1-consumer.zh-CN.svg)
 
-![bounded 队列 benchmark，12 个 consumer](docs/benchmarks/memory-bounded-12-consumers.svg)
+![bounded 队列消费基准测试，12 个消费者](docs/benchmarks/memory-bounded-12-consumers.zh-CN.svg)
 
 **手动提交（Manual Commit）是 BufferQueue 的功能优势**：应用可以先成功处理 batch，再调用 `CommitAsync`，未提交的 batch
 保留重放机会。`Channel<T>` 没有内建的等价确认、checkpoint 或重放机制。
