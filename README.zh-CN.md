@@ -75,9 +75,28 @@ Manual Commit 的计时包含每批读取后的 `CommitAsync`。
 
 ### 内存分配
 
+以下数值均表示每次 benchmark operation 处理 8,192 条消息产生的累计托管分配量（allocated bytes），不是峰值驻留内存。
+
+#### 写入分配量
+
 Producer 每次处理 8,192 条约分配 55 KiB，Channel `WriteAsync` 在 unbounded / bounded 下分别约为 135 / 68 KiB。
-单消费者消费时，BufferQueue 在 BatchSize 1 / 100 下分别约分配 193 / 36.5 KiB，Auto / Manual 结果接近；
-Channel `ReadAllAsync` 约分配 0.93 KiB。这些是累计分配量，不是峰值内存，详见[分配量图表](docs/benchmarks/memory-queues.zh-CN.md#内存分配)。
+
+![unbounded 写入内存分配](docs/benchmarks/memory-producer-unbounded-allocations.zh-CN.svg)
+
+![bounded 写入内存分配](docs/benchmarks/memory-producer-bounded-allocations.zh-CN.svg)
+
+#### 消费分配量
+
+单消费者消费时，BufferQueue 在 BatchSize 1 / 100 下分别约分配 193 / 36.5 KiB，Auto Commit / Manual Commit 结果接近；
+Channel `ReadAllAsync` 约分配 0.93 KiB。图表同时展示 Auto / Manual，`ReadAllAsync` 是异步参考，`TryRead` 是同步参考。
+
+![unbounded 消费内存分配，1 个消费者](docs/benchmarks/memory-unbounded-1-consumer-allocations.zh-CN.svg)
+
+![unbounded 消费内存分配，12 个消费者](docs/benchmarks/memory-unbounded-12-consumers-allocations.zh-CN.svg)
+
+![bounded 消费内存分配，1 个消费者](docs/benchmarks/memory-bounded-1-consumer-allocations.zh-CN.svg)
+
+![bounded 消费内存分配，12 个消费者](docs/benchmarks/memory-bounded-12-consumers-allocations.zh-CN.svg)
 
 详细的 benchmark 配置、签名和结果解释参见[内存队列 benchmark 说明](docs/benchmarks/memory-queues.zh-CN.md)。
 
