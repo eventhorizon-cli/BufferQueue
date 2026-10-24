@@ -1,21 +1,40 @@
-%%{init: {"theme":"base", "flowchart":{"htmlLabels":true,"curve":"linear","nodeSpacing":55,"rankSpacing":70}, "themeVariables":{"background":"#ffffff","fontFamily":"PingFang SC, Arial, Microsoft YaHei, sans-serif","fontSize":"18px","primaryTextColor":"#172b4d","lineColor":"#475467","primaryColor":"#f8fafc","primaryBorderColor":"#d0d5dd","edgeLabelBackground":"#ffffff"}}}%%
+---
+config:
+  theme: base
+  themeVariables:
+    background: "#ffffff"
+    fontFamily: "'PingFang SC', Arial, 'Microsoft YaHei', sans-serif"
+    fontSize: 20px
+    primaryTextColor: "#303b44"
+    lineColor: "#475467"
+    clusterBkg: "#ffffff"
+    clusterBorder: "#98a2b3"
+---
+%% The SVG is the stable layout. Group 2 sits between the partition and Group 1 columns to avoid crossing assignment paths.
 flowchart LR
     P[Producer] --> Q[BufferQueue / Topic]
-    Q --> P0[Partition 0]
-    Q --> P1[Partition 1]
-    P0 -. 分配 .-> C1[Consumer Group 1 / Consumer 1]
-    P1 -. 分配 .-> C2[Consumer Group 1 / Consumer 2]
-    P0 -. 分配 .-> C3[Consumer Group 2 / Consumer 3]
+    subgraph Topic[Partitions]
+        P0[Partition 0]
+        P1[Partition 1]
+    end
+    Q --> P0
+    Q --> P1
+    subgraph G1[Consumer Group 1]
+        C1[Consumer 1]
+        C2[Consumer 2]
+    end
+    subgraph G2[Consumer Group 2]
+        C3[Consumer 3]
+    end
+    P0 -. 分配 .-> C1
+    P1 -. 分配 .-> C2
+    P0 -. 分配 .-> C3
     P1 -. 分配 .-> C3
-    class P,Q core
-    class P0 partitionBlue
-    class P1 partitionPurple
-    class C1 consumerBlue
-    class C2 consumerPurple
-    class C3 consumerGreen
-    classDef core fill:#f8fafc,stroke:#d0d5dd,color:#172b4d,stroke-width:1.5px
-    classDef partitionBlue fill:#eef4ff,stroke:#2459b8,color:#172b4d,stroke-width:1.5px
-    classDef partitionPurple fill:#f5f0ff,stroke:#7c3aed,color:#172b4d,stroke-width:1.5px
-    classDef consumerBlue fill:#eef4ff,stroke:#2459b8,color:#172b4d,stroke-width:1.5px
-    classDef consumerPurple fill:#f5f0ff,stroke:#7c3aed,color:#172b4d,stroke-width:1.5px
-    classDef consumerGreen fill:#edf7f1,stroke:#2f855a,color:#172b4d,stroke-width:1.5px
+    class P,C1,C2,C3 client
+    class Q gateway
+    class P0,P1 storage
+    linkStyle 3,4,5,6 stroke:#75529b
+    classDef gateway fill:#eaf2ff,stroke:#3567a7,color:#1d3b66,stroke-width:1.5px
+    classDef core fill:#edf1f5,stroke:#596773,color:#303b44,stroke-width:1.5px
+    classDef storage fill:#fff4d6,stroke:#8a6a1d,color:#4d3b0e,stroke-width:1.5px
+    classDef client fill:#e9f6f1,stroke:#2f6f5e,color:#173f35,stroke-width:1.5px

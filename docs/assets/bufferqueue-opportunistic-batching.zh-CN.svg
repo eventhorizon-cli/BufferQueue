@@ -1,24 +1,24 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1720" height="780" viewBox="0 0 1720 780" role="img" aria-labelledby="title description">
+<svg xmlns="http://www.w3.org/2000/svg" width="1720" height="800" viewBox="0 0 1720 800" role="img" aria-labelledby="title description">
 <title id="title">BufferQueue 机会式批量消费</title><desc id="description">Producer 追加数据并发出唤醒提示；Consumer 只拉取当前已经排队的数据，只有所有分区为空时才等待通知。</desc>
 <defs>
   <marker id="arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto" markerUnits="strokeWidth"><path d="M0 0 L9 4.5 L0 9 Z" fill="#475467"/></marker>
-  <marker id="blue-arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto" markerUnits="strokeWidth"><path d="M0 0 L9 4.5 L0 9 Z" fill="#2459b8"/></marker>
-  <marker id="purple-arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto" markerUnits="strokeWidth"><path d="M0 0 L9 4.5 L0 9 Z" fill="#7c3aed"/></marker>
-  <marker id="green-arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto" markerUnits="strokeWidth"><path d="M0 0 L9 4.5 L0 9 Z" fill="#2f855a"/></marker>
+  <marker id="blue-arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto" markerUnits="strokeWidth"><path d="M0 0 L9 4.5 L0 9 Z" fill="#3567a7"/></marker>
+  <marker id="purple-arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto" markerUnits="strokeWidth"><path d="M0 0 L9 4.5 L0 9 Z" fill="#75529b"/></marker>
+  <marker id="green-arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto" markerUnits="strokeWidth"><path d="M0 0 L9 4.5 L0 9 Z" fill="#2f6f5e"/></marker>
   <style>
-    text { font-family: Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; fill:#172b4d; text-anchor:middle; font-size:21px; }
+    text { font-family: Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; fill:#303b44; text-anchor:middle; font-size:21px; }
     .node { stroke-width:2; }
-    .client { fill:#edf7f1; stroke:#2f855a; }
-    .core { fill:#f8fafc; stroke:#98a2b3; }
-    .router { fill:#eef4ff; stroke:#2459b8; }
-    .partition { fill:#eef4ff; stroke:#2459b8; }
-    .handler { fill:#f5f0ff; stroke:#7c3aed; }
-    .store { fill:#fff8e6; stroke:#b56313; }
-    .wait { fill:#eef4ff; stroke:#2459b8; }
+    .client { fill:#e9f6f1; stroke:#2f6f5e; }
+    .core { fill:#edf1f5; stroke:#596773; }
+    .router { fill:#eaf2ff; stroke:#3567a7; }
+    .partition { fill:#eaf2ff; stroke:#3567a7; }
+    .handler { fill:#f4edfb; stroke:#75529b; }
+    .store { fill:#fff4d6; stroke:#8a6a1d; }
+    .wait { fill:#eaf2ff; stroke:#3567a7; }
     .edge { fill:none; stroke:#475467; stroke-width:2.2; marker-end:url(#arrow); stroke-linejoin:round; }
-    .data { fill:none; stroke:#2459b8; stroke-width:2.6; marker-end:url(#blue-arrow); stroke-linejoin:round; }
-    .notify { fill:none; stroke:#7c3aed; stroke-width:2.4; stroke-dasharray:8 6; marker-end:url(#purple-arrow); stroke-linejoin:round; }
-    .assign { fill:none; stroke:#2f855a; stroke-width:2.4; stroke-dasharray:8 6; marker-end:url(#green-arrow); stroke-linejoin:round; }
+    .data { fill:none; stroke:#3567a7; stroke-width:2.6; marker-end:url(#blue-arrow); stroke-linejoin:round; }
+    .notify { fill:none; stroke:#75529b; stroke-width:2.4; stroke-dasharray:8 6; marker-end:url(#purple-arrow); stroke-linejoin:round; }
+    .assign { fill:none; stroke:#2f6f5e; stroke-width:2.4; stroke-dasharray:8 6; marker-end:url(#green-arrow); stroke-linejoin:round; }
     .label { font-size:21px; }
     .note { font-size:20px; fill:#475467; }
     .small { font-size:19px; }
@@ -27,4 +27,4 @@
     .group-title { font-size:24px; font-weight:700; text-anchor:start; }
   </style>
 </defs>
-<rect width="1720" height="780" fill="white"/><rect class="node client" x="30" y="270" width="310" height="120" rx="8"/><text x="185.0" y="313.0" class="">Producer 追加数据</text><text x="185.0" y="347.0" class="">写入选定 Partition</text><rect class="node router" x="440" y="270" width="330" height="120" rx="8"/><text x="605.0" y="313.0" class="">Partition 中已有数据</text><text x="605.0" y="347.0" class="">发送 wake-up hint</text><rect class="node wait" x="440" y="500" width="330" height="110" rx="8"/><text x="605.0" y="538.0" class="wait-copy">等待 pending-data 通知</text><text x="605.0" y="572.0" class="wait-copy">仅在所有 Partition 为空时等待</text><rect class="node core" x="850" y="55" width="310" height="110" rx="8"/><text x="1005.0" y="93.0" class="">扫描已分配 Partition</text><text x="1005.0" y="127.0" class="">round-robin</text><path class="node core" d="M1005 235 L1180 345 L1005 455 L830 345 Z"/><text x="1005" y="328" class="">尝试拉取下一批</text><text x="1005" y="362" class="">有数据？</text><rect class="node handler" x="1260" y="270" width="400" height="120" rx="8"/><text x="1460.0" y="313.0" class="">机会式批量消费</text><text x="1460.0" y="347.0" class="">最多 BatchSize 条已排队数据</text><path class="data" d="M340 330 H440"/><path class="notify" d="M605 390 V500"/><path class="notify" d="M770 555 H805 V345 H830"/><path class="edge" d="M1005 165 V235"/><path class="edge" d="M1180 345 H1260"/><text x="1220" y="325" class="label">是</text><path class="edge" d="M1460 270 V105 H1160"/><text x="1470" y="82" class="label">当前 batch 处理完成后继续扫描</text><path class="edge" d="M1005 455 V680 H605 V610"/><text x="940" y="708" class="label">否 · 所有已分配 Partition 都没有数据</text><text x="850" y="735" class="note">通知版本检查避免 scan-to-wait 竞态</text><rect x="30" y="45" width="390" height="150" rx="12" fill="#f8fafc" stroke="#98a2b3" stroke-width="2"/><text x="60" y="82" class="group-title">图例</text><path class="data" d="M65 125 H170"/><text x="190" y="125" class="small left">实线 = 数据路径</text><path class="notify" d="M65 165 H170"/><text x="190" y="165" class="small left">虚线 = 唤醒提示</text></svg>
+<rect width="1720" height="800" fill="white"/><rect class="node client" x="30" y="270" width="310" height="120" rx="8"/><text x="185.0" y="313.0" class="">Producer 追加数据</text><text x="185.0" y="347.0" class="">写入选定 Partition</text><rect class="node router" x="440" y="270" width="330" height="120" rx="8"/><text x="605.0" y="313.0" class="">Partition 中已有数据</text><text x="605.0" y="347.0" class="">发送 wake-up hint</text><rect class="node wait" x="440" y="500" width="330" height="110" rx="8"/><text x="605.0" y="538.0" class="wait-copy">等待 pending-data 通知</text><text x="605.0" y="572.0" class="wait-copy">仅在所有 Partition 为空时等待</text><rect class="node core" x="850" y="55" width="310" height="110" rx="8"/><text x="1005.0" y="93.0" class="">扫描已分配 Partition</text><text x="1005.0" y="127.0" class="">round-robin</text><path class="node core" d="M1005 235 L1180 345 L1005 455 L830 345 Z"/><text x="1005" y="328" class="">尝试拉取下一批</text><text x="1005" y="362" class="">有数据？</text><rect class="node handler" x="1260" y="270" width="400" height="120" rx="8"/><text x="1460.0" y="313.0" class="">机会式批量消费</text><text x="1460.0" y="347.0" class="">最多 BatchSize 条已排队数据</text><path class="data" d="M340 330 H440"/><path class="notify" d="M605 390 V500"/><path class="notify" d="M770 555 H805 V345 H830"/><path class="edge" d="M1005 165 V235"/><path class="edge" d="M1180 345 H1260"/><text x="1220" y="325" class="label">是</text><path class="edge" d="M1460 270 V105 H1160"/><text x="1470" y="82" class="label">当前 batch 处理完成后继续扫描</text><path class="edge" d="M1005 455 V680 H605 V610"/><text x="940" y="710" class="label">否 · 所有已分配 Partition 都没有数据</text><text x="850" y="760" class="note">通知版本检查避免 scan-to-wait 竞态</text><rect x="30" y="45" width="390" height="150" rx="12" fill="#f8fafc" stroke="#98a2b3" stroke-width="2"/><text x="60" y="82" class="group-title">图例</text><path class="data" d="M65 125 H170"/><text x="190" y="125" class="small left">实线 = 数据路径</text><path class="notify" d="M65 165 H170"/><text x="190" y="165" class="small left">虚线 = 唤醒提示</text></svg>
