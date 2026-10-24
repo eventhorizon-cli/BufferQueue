@@ -18,16 +18,16 @@ task scheduling are inside the timed method. The primary Channel comparison uses
 `ReadOnlyMemory<int>` batch calls. Bounded capacity is sufficient for the complete workload, so this measurement does
 not include producer backpressure waiting.
 
-| Mode | Method | Mean (us) | Allocated (KB) |
+| Mode | Method | Mean (µs) | Allocated (KiB) |
 |---|---|---:|---:|
-| unbounded | `Channel.WriteAsync(item)` | 324.900 | 135.47 KB |
-| unbounded | `Channel.TryWrite(item)` (sync reference) | 281.590 | 134.53 KB |
-| unbounded | `BufferQueue.ProduceAsync(item)` | 321.910 | 54.96 KB |
-| unbounded | `BufferQueue.ProduceAsync(ReadOnlyMemory<int>)` | 36.420 | 54.90 KB |
-| bounded | `Channel.WriteAsync(item)` | 393.650 | 68.27 KB |
-| bounded | `Channel.TryWrite(item)` (sync reference) | 293.020 | 67.33 KB |
-| bounded | `BufferQueue.ProduceAsync(item)` | 350.020 | 55.13 KB |
-| bounded | `BufferQueue.ProduceAsync(ReadOnlyMemory<int>)` | 36.020 | 55.08 KB |
+| unbounded | `Channel.WriteAsync(item)` | 337.960 | 135.47 |
+| unbounded | `Channel.TryWrite(item)` | 287.757 | 134.53 |
+| unbounded | `BufferQueue.ProduceAsync(item)` | 331.357 | 54.96 |
+| unbounded | `BufferQueue.ProduceAsync(ReadOnlyMemory<int>)` | 37.201 | 54.90 |
+| bounded | `Channel.WriteAsync(item)` | 391.972 | 68.27 |
+| bounded | `Channel.TryWrite(item)` | 302.205 | 67.33 |
+| bounded | `BufferQueue.ProduceAsync(item)` | 343.133 | 55.13 |
+| bounded | `BufferQueue.ProduceAsync(ReadOnlyMemory<int>)` | 37.588 | 55.08 |
 
 ![Unbounded producer APIs](memory-producer-unbounded.svg)
 
@@ -84,91 +84,92 @@ partitions. Channel readers count locally and the result is aggregated after all
 BufferQueue counts each assigned consumer's batches and validates both its assigned count and the aggregate total.
 There is no business work per item. The measured time includes the task scheduling used to run the readers.
 
-The Manual Commit rows were measured separately on the same `e615da8` production baseline after adding the benchmark
-method. They use one launch, six warmup iterations, and fifteen measured iterations on the stated .NET 10 / Apple M2
-Max environment; each async batch is followed by `CommitAsync`. The existing Auto Commit and Channel rows remain the
-checked-in baseline workload.
+All producer, Auto Commit, Manual Commit, and Channel rows were rerun on checkout `e63d152`, which combines the
+singleton-enumerator and partial-array optimizations. The [run record](memory-queues-run.json) identifies the exact
+source and job configuration. Manual Commit calls `CommitAsync` after every batch. BufferQueue uses each batch's
+`Count()` rather than enumerating its items; neither business processing nor application-side item enumeration is
+included. The [foreach measurements](batch-enumeration.md) and [sparse-batch measurements](partial-batch-allocation.md)
+measure those separate workloads.
 
 ### unbounded
 
-Channel reference (fixed `BatchSize = 1` representative):
+Channel references use the fixed `BatchSize=1` rows; BatchSize does not control Channel:
 
-| Consumers | Channel TryRead (us) | Channel ReadAllAsync (us) | TryRead allocated (B) | ReadAllAsync allocated (B) |
+| Consumers | TryRead (µs) | ReadAllAsync (µs) | TryRead allocated (B) | ReadAllAsync allocated (B) |
 |---:|---:|---:|---:|---:|
-| 1 | 139.000 | 513.130 | 592 B | 952 B |
-| 12 | 3,446.620 | 3,381.500 | 2,656 B | 4,952 B |
+| 1 | 157.512 | 552.609 | 592 | 952 |
+| 12 | 3,656.109 | 3,411.669 | 2,656 | 4,880 |
 
-BufferQueue `ConsumeAsync` with `AutoCommit = true`:
+BufferQueue `ConsumeAsync`, `AutoCommit=true`:
 
-| BatchSize | Consumers | Mean (us) | Allocated (KB) |
+| BatchSize | Consumers | Mean (µs) | Allocated (KiB) |
 |---:|---:|---:|---:|
-| 1 | 1 | 1,037.650 | 193.32 KB |
-| 1 | 12 | 1,953.220 | 198.77 KB |
-| 10 | 1 | 201.040 | 53.45 KB |
-| 10 | 12 | 289.340 | 58.89 KB |
-| 50 | 1 | 56.280 | 38.45 KB |
-| 50 | 12 | 67.700 | 43.89 KB |
-| 100 | 1 | 39.070 | 36.48 KB |
-| 100 | 12 | 43.780 | 41.92 KB |
-| 1000 | 1 | 20.910 | 48.85 KB |
-| 1000 | 12 | 31.770 | 54.23 KB |
+| 1 | 1 | 1,099.643 | 193.34 |
+| 1 | 12 | 1,875.452 | 198.78 |
+| 10 | 1 | 206.557 | 52.77 |
+| 10 | 12 | 271.154 | 58.22 |
+| 50 | 1 | 60.115 | 37.30 |
+| 50 | 12 | 61.096 | 42.75 |
+| 100 | 1 | 42.929 | 35.34 |
+| 100 | 12 | 50.456 | 40.72 |
+| 1000 | 1 | 26.591 | 33.65 |
+| 1000 | 12 | 34.381 | 39.03 |
 
-BufferQueue `ConsumeAsync` with `AutoCommit = false` and `CommitAsync` after each batch:
+BufferQueue `ConsumeAsync`, `AutoCommit=false` with `CommitAsync` after each batch:
 
-| BatchSize | Consumers | Mean (us) | Allocated (KB) |
+| BatchSize | Consumers | Mean (µs) | Allocated (KiB) |
 |---:|---:|---:|---:|
-| 1 | 1 | 1,108.690 | 193.34 KB |
-| 1 | 12 | 2,247.950 | 198.78 KB |
-| 10 | 1 | 244.890 | 53.46 KB |
-| 10 | 12 | 260.880 | 58.91 KB |
-| 50 | 1 | 58.970 | 38.46 KB |
-| 50 | 12 | 66.070 | 43.91 KB |
-| 100 | 1 | 43.190 | 36.49 KB |
-| 100 | 12 | 44.490 | 41.94 KB |
-| 1000 | 1 | 26.830 | 48.87 KB |
-| 1000 | 12 | 33.010 | 54.31 KB |
+| 1 | 1 | 1,120.218 | 193.34 |
+| 1 | 12 | 2,120.025 | 198.78 |
+| 10 | 1 | 237.301 | 52.77 |
+| 10 | 12 | 284.029 | 58.22 |
+| 50 | 1 | 63.995 | 37.30 |
+| 50 | 12 | 66.911 | 42.75 |
+| 100 | 1 | 48.254 | 35.34 |
+| 100 | 12 | 51.163 | 40.72 |
+| 1000 | 1 | 27.331 | 33.65 |
+| 1000 | 12 | 35.608 | 39.09 |
 
 ### bounded
 
-`bounded` uses a BufferQueue capacity of 8,192 and a Channel capacity of 8,192. The queues are prefetched before the
-timed method, so this is a drain benchmark and does not measure producer waiting for capacity.
+BufferQueue and Channel capacities are both 8,192. Queues are prefilled; producer backpressure is not measured.
 
-Channel reference (fixed `BatchSize = 1` representative):
+Channel references use the fixed `BatchSize=1` rows; BatchSize does not control Channel:
 
-| Consumers | Channel TryRead (us) | Channel ReadAllAsync (us) | TryRead allocated (B) | ReadAllAsync allocated (B) |
+| Consumers | TryRead (µs) | ReadAllAsync (µs) | TryRead allocated (B) | ReadAllAsync allocated (B) |
 |---:|---:|---:|---:|---:|
-| 1 | 131.060 | 480.810 | 592 B | 952 B |
-| 12 | 1,036.560 | 2,760.870 | 2,656 B | 4,952 B |
+| 1 | 139.754 | 528.048 | 592 | 952 |
+| 12 | 1,033.320 | 2,669.361 | 2,656 | 4,952 |
 
-BufferQueue `ConsumeAsync` with `AutoCommit = true`:
+BufferQueue `ConsumeAsync`, `AutoCommit=true`:
 
-| BatchSize | Consumers | Mean (us) | Allocated (KB) |
+| BatchSize | Consumers | Mean (µs) | Allocated (KiB) |
 |---:|---:|---:|---:|
-| 1 | 1 | 1,296.740 | 193.32 KB |
-| 1 | 12 | 1,811.020 | 198.77 KB |
-| 10 | 1 | 248.920 | 53.45 KB |
-| 10 | 12 | 329.410 | 58.89 KB |
-| 50 | 1 | 63.740 | 38.45 KB |
-| 50 | 12 | 75.650 | 43.89 KB |
-| 100 | 1 | 42.920 | 36.48 KB |
-| 100 | 12 | 48.370 | 41.92 KB |
-| 1000 | 1 | 33.180 | 48.85 KB |
-| 1000 | 12 | 33.840 | 54.30 KB |
+| 1 | 1 | 1,353.710 | 193.34 |
+| 1 | 12 | 1,847.269 | 198.78 |
+| 10 | 1 | 248.727 | 52.77 |
+| 10 | 12 | 325.134 | 58.22 |
+| 50 | 1 | 71.242 | 37.30 |
+| 50 | 12 | 77.631 | 42.75 |
+| 100 | 1 | 49.041 | 35.34 |
+| 100 | 12 | 46.269 | 40.72 |
+| 1000 | 1 | 27.448 | 33.65 |
+| 1000 | 12 | 37.191 | 39.03 |
 
-BufferQueue `ConsumeAsync` with `AutoCommit = false` and `CommitAsync` after each batch:
+BufferQueue `ConsumeAsync`, `AutoCommit=false` with `CommitAsync` after each batch:
 
-| BatchSize | Consumers | Mean (us) | Allocated (KB) |
+| BatchSize | Consumers | Mean (µs) | Allocated (KiB) |
 |---:|---:|---:|---:|
-| 1 | 1 | 1,393.820 | 193.34 KB |
-| 1 | 12 | 2,118.930 | 198.78 KB |
-| 10 | 1 | 281.260 | 53.46 KB |
-| 10 | 12 | 332.750 | 58.91 KB |
-| 50 | 1 | 72.730 | 38.46 KB |
-| 50 | 12 | 84.620 | 43.91 KB |
-| 100 | 1 | 49.200 | 36.49 KB |
-| 100 | 12 | 53.830 | 41.94 KB |
-| 1000 | 1 | 29.230 | 48.87 KB |
-| 1000 | 12 | 38.020 | 54.31 KB |
+| 1 | 1 | 1,390.612 | 193.34 |
+| 1 | 12 | 2,284.660 | 198.78 |
+| 10 | 1 | 261.925 | 52.77 |
+| 10 | 12 | 322.325 | 58.22 |
+| 50 | 1 | 73.574 | 37.30 |
+| 50 | 12 | 77.823 | 42.75 |
+| 100 | 1 | 52.502 | 35.34 |
+| 100 | 12 | 50.216 | 40.78 |
+| 1000 | 1 | 29.387 | 33.65 |
+| 1000 | 12 | 38.730 | 39.09 |
 
 ### Single-reader Channel comparison
 
@@ -177,26 +178,26 @@ The BufferQueue row still uses 12 partitions and one consumer.
 
 Channel reference (fixed `BatchSize = 1` representative):
 
-| Default TryRead (us) | Default ReadAllAsync (us) | SingleReader TryRead (us) | SingleReader ReadAllAsync (us) |
+| Default TryRead (µs) | Default ReadAllAsync (µs) | SingleReader TryRead (µs) | SingleReader ReadAllAsync (µs) |
 |---:|---:|---:|---:|
-| 143.240 | 509.780 | 77.910 | 393.280 |
+| 156.689 | 546.949 | 87.412 | 416.228 |
 
 BufferQueue `ConsumeAsync` with `AutoCommit = true`:
 
-| BatchSize | Mean (us) | Allocated (KB) |
+| BatchSize | Mean (µs) | Allocated (KiB) |
 |---:|---:|---:|
-| 1 | 1,078.010 | 192.64 KB |
-| 10 | 207.230 | 52.77 KB |
-| 50 | 50.720 | 37.77 KB |
-| 100 | 36.190 | 35.80 KB |
-| 1000 | 17.060 | 48.17 KB |
+| 1 | 1,078.955 | 192.64 |
+| 10 | 205.803 | 52.08 |
+| 50 | 56.551 | 36.61 |
+| 100 | 42.820 | 34.64 |
+| 1000 | 22.325 | 32.95 |
 
 The Channel methods do not consume `BatchSize`-sized batches; the parameter changes only the BufferQueue method.
 `SingleReader = true` is a caller promise that at most one reader consumes the Channel; it is not the 12-consumer
 configuration.
 
-For one consumer at `BatchSize = 10`, the asynchronous unbounded BufferQueue row is 201.040 us versus the fixed
-Channel `ReadAllAsync` reference at 513.130 us; the bounded values are 248.920 us versus 480.810 us. This is one
+For one consumer at `BatchSize = 10`, the asynchronous unbounded BufferQueue row is 206.557 µs versus the fixed
+Channel `ReadAllAsync` reference at 552.609 µs; the bounded values are 248.727 µs versus 528.048 µs. This is one
 measured configuration, not a claim that BufferQueue is faster at every batch size or consumer count. Comparing it
 with `TryRead` would compare an asynchronous BufferQueue path with the synchronous reference.
 
@@ -220,8 +221,8 @@ IAsyncEnumerable<T> ReadAllAsync(CancellationToken cancellationToken = default);
 IAsyncEnumerable<IEnumerable<T>> ConsumeAsync(CancellationToken cancellationToken = default);
 ```
 
-Channel yields one item per iteration; BufferQueue yields one batch. `ReadAllAsync` drains a completed channel rather
-than collecting items into one batch. `ChannelReader<T>.ReadAsync` is a separate single-item `ValueTask<T>` comparison,
+Channel yields one item per iteration; BufferQueue yields one batch. `ReadAllAsync` continues until the channel
+completes and is drained; it does not collect all items into one batch. `ChannelReader<T>.ReadAsync` is a separate single-item `ValueTask<T>` comparison,
 and `TryRead` is a synchronous reference rather than the primary asynchronous baseline.
 
 ## Memory Allocation
@@ -251,7 +252,8 @@ BatchSize only affects BufferQueue, and the Auto/Manual curves are nearly overla
 
 ## Read-path Optimization Measurements
 
-These focused comparisons are kept separate from the README chart data. Both use the same baseline that already
+These earlier focused comparisons are retained separately from the refreshed README data; they were not rerun here.
+Both use the same historical baseline that already
 included the Frozen reader lookup experiment, minimum-reader scan changes, the published segment-range check, and the
 producer lock-handoff fix. The second comparison does not include the first comparison's code change.
 
@@ -316,36 +318,28 @@ independent while checking their combined read-path behavior.
 
 ## Reproduction
 
-Benchmark source files:
+Benchmark sources:
 
+- [Producer](../../tests/BufferQueue.Benchmarks/ChannelVsMemoryBufferQueueProduceBenchmark.cs)
 - [Unbounded consume](../../tests/BufferQueue.Benchmarks/UnboundedChannelVsMemoryBufferQueueConsumeBenchmark.cs)
 - [Bounded consume](../../tests/BufferQueue.Benchmarks/BoundedChannelVsMemoryBufferQueueConsumeBenchmark.cs)
 - [Single-reader consume](../../tests/BufferQueue.Benchmarks/SingleReaderChannelVsMemoryBufferQueueConsumeBenchmark.cs)
-- [Memory commit modes](../../tests/BufferQueue.Benchmarks/MemoryCommitModeBenchmark.cs)
-- [Sparse available-item path](../../tests/BufferQueue.Benchmarks/MemorySparseBatchBenchmark.cs)
 
-The main consume and producer result set can be reproduced with separate quoted filters:
+Run the producer and consumer classes separately and sequentially:
 
-```shell
-dotnet run --project tests/BufferQueue.Benchmarks -c Release -- --filter '*UnboundedChannelVsMemoryBufferQueueConsumeBenchmark*' --warmupCount 6 --iterationCount 15 --launchCount 1
-dotnet run --project tests/BufferQueue.Benchmarks -c Release -- --filter '*BoundedChannelVsMemoryBufferQueueConsumeBenchmark*' --warmupCount 6 --iterationCount 15 --launchCount 1
-dotnet run --project tests/BufferQueue.Benchmarks -c Release -- --filter '*SingleReaderChannelVsMemoryBufferQueueConsumeBenchmark*' --warmupCount 6 --iterationCount 15 --launchCount 1
-dotnet run --project tests/BufferQueue.Benchmarks -c Release -- --filter '*ChannelVsMemoryBufferQueueProduceBenchmark*' --warmupCount 6 --iterationCount 15 --launchCount 1
+```sh
+dotnet run --project tests/BufferQueue.Benchmarks -c Release -- --filter 'BufferQueue.Benchmarks.ChannelVsMemoryBufferQueueProduceBenchmark.*' --exporters json
+dotnet run --project tests/BufferQueue.Benchmarks -c Release -- --filter 'BufferQueue.Benchmarks.UnboundedChannelVsMemoryBufferQueueConsumeBenchmark.*' --warmupCount 6 --iterationCount 20 --launchCount 1 --exporters json
+dotnet run --project tests/BufferQueue.Benchmarks -c Release -- --filter 'BufferQueue.Benchmarks.BoundedChannelVsMemoryBufferQueueConsumeBenchmark.*' --warmupCount 6 --iterationCount 20 --launchCount 1 --exporters json
+dotnet run --project tests/BufferQueue.Benchmarks -c Release -- --filter 'BufferQueue.Benchmarks.SingleReaderChannelVsMemoryBufferQueueConsumeBenchmark.*' --warmupCount 6 --iterationCount 20 --launchCount 1 --exporters json
 ```
 
-Focused comparisons used:
+The producer's fixed job uses one launch, six warmups and fifteen measured iterations. The three consumer jobs
+use one launch, six warmups and twenty measured iterations; `IterationSetup` requires invocation count and unroll
+factor one. The [run record](memory-queues-run.json) retains source fingerprints, exact configuration and result counts.
+All 113 rows were refreshed on combined checkout `e63d152b388a99069602a76131b9589bfd8b472c`.
 
-```shell
-dotnet run --project tests/BufferQueue.Benchmarks -c Release -- --filter '*MemoryCommitModeBenchmark*'
-dotnet run --project tests/BufferQueue.Benchmarks -c Release -- --filter '*MemorySparseBatchBenchmark*'
-```
-
-The consume job used one launch, six warmups, 15 measured iterations, and invocation count one. The focused jobs used
-one launch, six warmups, 20 measured iterations, and invocation count one. The producer benchmark used its fixed job
-configuration. The environment was .NET SDK 10.0.100, .NET 10.0.0 Arm64, BenchmarkDotNet 0.15.8, macOS 27.0.1.
-The source checkout was based on `e0a06318a7a09c194578a072432a68d1adf42311` with the local benchmark and read-path
-changes applied.
-
-BenchmarkDotNet reported short-iteration and environment-priority warnings on this machine. The numbers are useful
-for trends and regression checks, but they are not an end-to-end production throughput guarantee. The raw CSV keeps
-the error and standard-deviation columns for readers who need to judge variance.
+BenchmarkDotNet reported short-iteration and environment-priority warnings. The CSV retains error and standard
+deviation; `Error` is the half-width of the reported 99.9% confidence interval. Consumer task scheduling, especially
+with twelve readers, adds variance. These measurements do not establish production throughput or backpressure latency.
+The historical routing and read-path experiments above retain their original measurements and configurations.

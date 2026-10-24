@@ -39,7 +39,7 @@ The timed operation includes queue creation and task scheduling. Bounded capacit
 so this measures writing into available capacity, not waiting for space.
 
 For single-item async writes, BufferQueue and Channel `WriteAsync` take similar time when unbounded; BufferQueue takes
-about 11% less time when bounded. BufferQueue batch writes take about 89–91% less time than Channel single-item writes,
+about 12% less time when bounded. BufferQueue batch writes take about 89–90% less time than Channel single-item writes,
 reflecting the different number of API calls.
 
 ### Consumption Benchmarks
@@ -69,8 +69,8 @@ acknowledgement, checkpoint, or replay.
 
 In this prefilled workload, compared with `Channel.ReadAllAsync`, BufferQueue with Auto Commit shows:
 
-- **1 consumer, BatchSize = 1:** elapsed time is about 2.0–2.7× Channel's; Channel is faster for this single-item case.
-- **1 consumer, larger batches:** BatchSize = 10 reduces elapsed time by about 48–61%; BatchSize = 50–100 reduces it by
+- **1 consumer, BatchSize = 1:** elapsed time is about 2.0–2.6× Channel's; Channel is faster for this single-item case.
+- **1 consumer, larger batches:** BatchSize = 10 reduces elapsed time by about 53–63%; BatchSize = 50–100 reduces it by
   about 87–92%. These ranges cover both bounded and unbounded results.
 - **12 consumers:** BufferQueue has lower mean elapsed time at all five measured batch sizes in both modes. Channel
   readers share one queue, while BufferQueue consumers read assigned partitions, so the comparison also reflects that concurrency difference.
@@ -81,7 +81,8 @@ ensure a full batch under sparse traffic; these results measure draining a backl
 ### Allocations
 
 The charts show cumulative managed allocations per 8,192-item operation, not peak memory usage.
-Consumption measurements count batches with `Count()`; per-item enumeration and application processing are excluded.
+Consumption measurements use each batch's `Count()`; per-item enumeration and application processing are excluded.
+The queues are prefilled, but batches can still be partial at partition tails, where allocation is reduced.
 
 #### Production Allocations
 
@@ -103,7 +104,7 @@ These charts include Auto Commit and Manual Commit alongside Channel `ReadAllAsy
 
 ![Bounded consumption allocations, 12 consumers](docs/benchmarks/memory-bounded-12-consumers-allocations.svg)
 
-For one-consumer draining, BufferQueue allocates about 193 KiB at BatchSize 1 and 36.5 KiB at BatchSize 100, with
+For one-consumer draining, BufferQueue allocates about 193 / 35.3 / 33.6 KiB at BatchSize 1 / 100 / 1000, with
 similar Auto / Manual results; Channel `ReadAllAsync` allocates about 0.93 KiB.
 
 See [memory queue benchmark details](docs/benchmarks/memory-queues.md) for the complete setup, signatures, and results.

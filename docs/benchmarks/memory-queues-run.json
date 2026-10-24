@@ -1,0 +1,169 @@
+{
+  "schemaVersion": 1,
+  "commit": "e63d152b388a99069602a76131b9589bfd8b472c",
+  "integratedPullRequests": [
+    60,
+    61,
+    62
+  ],
+  "source": {
+    "pattern": "src/**/*.cs",
+    "fileCount": 48,
+    "sha256": "23ce3e435a2cedb099a7b3b918ed4b8fbbbe04c18c5c58aff94d7fc2ab3ed38a"
+  },
+  "harness": {
+    "patterns": [
+      "tests/BufferQueue.Benchmarks/**/*.cs",
+      "tests/BufferQueue.Benchmarks/*.csproj"
+    ],
+    "fileCount": 22,
+    "sha256": "79130ca3e11670532474030d764f46a41a168b395565e42462e9d7163badb144"
+  },
+  "configuration": {
+    "configuration": "Release",
+    "targetFramework": "net10.0",
+    "benchmarkDotNet": "0.15.8",
+    "runtime": ".NET 10.0.0 (10.0.0, 10.0.25.52411)",
+    "architecture": "Arm64",
+    "os": "macOS 27.0.1 (26A434) [Darwin 27.0.0]",
+    "dotnetSdk": "10.0.100",
+    "memoryDiagnoser": true,
+    "producer": {
+      "filter": "BufferQueue.Benchmarks.ChannelVsMemoryBufferQueueProduceBenchmark.*",
+      "launchCount": 1,
+      "warmupCount": 6,
+      "iterationCount": 15,
+      "invocationCount": null
+    },
+    "consumers": {
+      "filters": {
+        "unbounded": "BufferQueue.Benchmarks.UnboundedChannelVsMemoryBufferQueueConsumeBenchmark.*",
+        "bounded": "BufferQueue.Benchmarks.BoundedChannelVsMemoryBufferQueueConsumeBenchmark.*",
+        "singleReader": "BufferQueue.Benchmarks.SingleReaderChannelVsMemoryBufferQueueConsumeBenchmark.*"
+      },
+      "launchCount": 1,
+      "warmupCount": 6,
+      "iterationCount": 20,
+      "invocationCount": 1,
+      "batchSizes": [
+        1,
+        10,
+        50,
+        100,
+        1000
+      ],
+      "messageSize": 8192,
+      "consumerCounts": [
+        1,
+        12
+      ],
+      "unrollFactor": 1
+    },
+    "hardwareVerification": {
+      "model": "Apple M2 Max",
+      "physicalCores": 12,
+      "logicalCores": 12,
+      "benchmarkDotNetProcessorName": "Unknown processor"
+    }
+  },
+  "completed": {
+    "producer": 8,
+    "unbounded": 40,
+    "bounded": 40,
+    "singleReader": 25,
+    "total": 113
+  },
+  "retainedMeasurementAndOutlierSummary": {
+    "producer": {
+      "benchmarkType": "ChannelVsMemoryBufferQueueProduceBenchmark",
+      "rows": 8,
+      "expectedIterations": 15,
+      "retainedMeasurements": {
+        "min": 13,
+        "max": 15,
+        "total": 115
+      },
+      "outliers": {
+        "iterationsRemoved": 5,
+        "reportedOutlierValues": 7
+      },
+      "warnings": {
+        "shortIterationCount": 0,
+        "highPriorityPermissionCount": 8,
+        "sysctlPermissionWarnings": 0
+      }
+    },
+    "unbounded": {
+      "benchmarkType": "UnboundedChannelVsMemoryBufferQueueConsumeBenchmark",
+      "rows": 40,
+      "expectedIterations": 20,
+      "retainedMeasurements": {
+        "min": 17,
+        "max": 20,
+        "total": 770
+      },
+      "outliers": {
+        "iterationsRemoved": 30,
+        "reportedOutlierValues": 22
+      },
+      "warnings": {
+        "shortIterationCount": 40,
+        "highPriorityPermissionCount": 40,
+        "sysctlPermissionWarnings": 0
+      }
+    },
+    "bounded": {
+      "benchmarkType": "BoundedChannelVsMemoryBufferQueueConsumeBenchmark",
+      "rows": 40,
+      "expectedIterations": 20,
+      "retainedMeasurements": {
+        "min": 16,
+        "max": 20,
+        "total": 776
+      },
+      "outliers": {
+        "iterationsRemoved": 24,
+        "reportedOutlierValues": 10
+      },
+      "warnings": {
+        "shortIterationCount": 40,
+        "highPriorityPermissionCount": 40,
+        "sysctlPermissionWarnings": 0
+      }
+    },
+    "single-reader": {
+      "benchmarkType": "SingleReaderChannelVsMemoryBufferQueueConsumeBenchmark",
+      "rows": 25,
+      "expectedIterations": 20,
+      "retainedMeasurements": {
+        "min": 17,
+        "max": 20,
+        "total": 479
+      },
+      "outliers": {
+        "iterationsRemoved": 21,
+        "reportedOutlierValues": 4
+      },
+      "warnings": {
+        "shortIterationCount": 24,
+        "highPriorityPermissionCount": 25,
+        "sysctlPermissionWarnings": 0
+      }
+    }
+  },
+  "uncertainty": {
+    "confidenceInterval": "99.9%",
+    "errorField": "BenchmarkDotNet Statistics.ConfidenceInterval.Margin",
+    "shortIterationWarnings": "These consume operations are below BenchmarkDotNet's 100 ms recommendation; retain reported Error/StdDev and treat point estimates as trend data."
+  },
+  "warnings": {
+    "runnerWarnings": "High-priority setup was denied in sandbox; consume iterations were short; sysctl exporter access was denied where reported."
+  },
+  "results": {
+    "file": "memory-queues-results.csv",
+    "rows": 113,
+    "allocatedBytesColumn": "Allocated_B",
+    "timeUnit": "microseconds"
+  },
+  "fingerprintFormat": "SHA-256 of sorted Git-tracked paths only, each encoded as UTF-8 path + NUL + file bytes + NUL; generated bin/obj files excluded."
+}
