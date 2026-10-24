@@ -145,13 +145,13 @@ Channel 方法不会消费 `BatchSize` 大小的 batch；该参数只改变 Buff
 
 以一个 consumer、`BatchSize = 10` 为例，异步 unbounded BufferQueue 为 201.040 us，固定 Channel `ReadAllAsync`
 参考值为 513.130 us；bounded 对应为 248.920 us 和 480.810 us。这是一个实测配置，不能据此声称 BufferQueue
-在所有 batch size 或 consumer 数量下都更快。拿它和 `TryRead` 比较，会把异步 BufferQueue 路径与同步参考路径混在一起。
+在所有 batch size 或 consumer 数量下都更快。与 `TryRead` 对比时，应按 async 与 sync 接口的对比解读。
 
 图表阅读说明：横轴将各档 BatchSize 配置等距排列，间距不代表数值差；耗时纵轴使用对数刻度。
 点和线表示 mean，误差线或区间使用 BenchmarkDotNet 报告的 `Error`。
 Channel baseline 固定为代表性的 `BatchSize = 1`，与 BufferQueue 的 `BatchSize` 无关。
 
-消费图表同时展示两种 async BufferQueue 模式。Manual Commit 使用 `AutoCommit = false`，每个 batch 后调用
+消费图表同时展示两种 async BufferQueue 模式，以 `ReadAllAsync` 作为 Channel 主要对比，灰色 `TryRead` 线作为同步参考。Manual Commit 使用 `AutoCommit = false`，每个 batch 后调用
 `CommitAsync`；Channel 没有内建的等价确认、checkpoint 或重放机制。
 
 ## Producer 对比
@@ -215,7 +215,7 @@ dotnet run -c Release --project tests/BufferQueue.Benchmarks/BufferQueue.Benchma
 这些图将 BenchmarkDotNet 的 allocation 显示统一转换为 `KiB/op`（`1 KiB = 1,024 B`）。消费测试从 12 个 partition
 中消费预填充的 8,192 条消息，分别使用 1 个和 12 个 consumer；`BatchSize` 横轴按分类配置等距显示，纵轴使用对数刻度。
 队列和 consumer 的 setup 不计入测量 allocation。数值表示每次消费 8,192 条消息的 benchmark operation 分配的托管内存，
-不是峰值驻留内存，也不是单条消息 allocation。Channel 参考取自与 `BatchSize = 1` 一起记录的结果，BatchSize 只影响 BufferQueue；Auto/Manual 曲线基本重合。
+不是峰值驻留内存，也不是单条消息 allocation。两条 Channel 参考线均取自与 `BatchSize = 1` 一起记录的结果，BatchSize 只影响 BufferQueue；Auto/Manual 曲线基本重合。
 
 ![unbounded，1 个 consumer](memory-unbounded-1-consumer-allocations.zh-CN.svg)
 

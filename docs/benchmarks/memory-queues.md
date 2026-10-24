@@ -157,7 +157,8 @@ distance. The time axis is logarithmic. Points and lines are means, while error 
 reported `Error`. Channel baselines are fixed at representative `BatchSize = 1` and do not depend on BufferQueue's
 `BatchSize`.
 
-The consumer charts show both async BufferQueue modes. Manual Commit uses the same `ConsumeAsync` workload with
+The consumer charts show both async BufferQueue modes, with `ReadAllAsync` as the primary Channel comparison and
+`TryRead` as a gray synchronous reference. Manual Commit uses the same `ConsumeAsync` workload with
 `AutoCommit = false` and calls `CommitAsync` after each batch; Channel has no built-in acknowledgement, checkpoint, or
 replay equivalent.
 
@@ -224,7 +225,7 @@ dotnet run -c Release --project tests/BufferQueue.Benchmarks/BufferQueue.Benchma
 These charts normalize BenchmarkDotNet's allocation display to `KiB/op` (`1 KiB = 1,024 B`). Consumption runs drain
 8,192 prefetched items from 12 partitions with 1 or 12 consumers; `BatchSize` values are categorical, and the y-axis
 is logarithmic. Queue and consumer setup is excluded from the measured allocation. The values are managed memory per
-8,192-item benchmark operation, not peak resident memory or per-item allocation. The Channel reference uses the row recorded alongside `BatchSize = 1`;
+8,192-item benchmark operation, not peak resident memory or per-item allocation. Both Channel references use the rows recorded alongside `BatchSize = 1`;
 BatchSize only affects BufferQueue, and the Auto/Manual curves are nearly overlapping.
 
 ![unbounded, 1 consumer](memory-unbounded-1-consumer-allocations.svg)
