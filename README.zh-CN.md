@@ -38,7 +38,7 @@ IAsyncEnumerable<IEnumerable<T>> ConsumeAsync(CancellationToken cancellationToke
 ```
 
 `ReadAllAsync` 逐条返回消息，直到 Channel 完成，并不是一次返回整批数据。
-BufferQueue 启用 `AutoCommit = true`，`Channel<T>.TryRead` 作为同步参考。测试消费预填充队列中的 `8,192` 条 `int` 消息，
+下面的主要汇总使用 BufferQueue `AutoCommit = true`；图表也包含单独测量的 Manual Commit 系列。`Channel<T>.TryRead` 作为同步参考。测试消费预填充队列中的 `8,192` 条 `int` 消息，
 BufferQueue 使用 `12` 个 partition，consumer 数量为 `1` 或 `12`。`BatchSize` 只影响 BufferQueue。
 
 测试环境：Apple M2 Max（12 核），macOS 27.0.1 / Arm64，.NET 10.0.0，BenchmarkDotNet 0.15.8（Release）。
@@ -66,8 +66,27 @@ BufferQueue 使用 `12` 个 partition，consumer 数量为 `1` 或 `12`。`Batch
 
 ![bounded 队列消费基准测试，12 个消费者](docs/benchmarks/memory-bounded-12-consumers.zh-CN.svg)
 
+Manual Commit 的计时包含每批读取后的 `CommitAsync`。
+
 **手动提交（Manual Commit）是 BufferQueue 的功能优势**：应用可以先成功处理 batch，再调用 `CommitAsync`，未提交的 batch
 保留重放机会。`Channel<T>` 没有内建的等价确认、checkpoint 或重放机制。
+
+### Producer API
+
+![unbounded Producer API](docs/benchmarks/memory-producer-unbounded.zh-CN.svg)
+
+![bounded Producer API](docs/benchmarks/memory-producer-bounded.zh-CN.svg)
+
+这些 Producer 图表比较实测的 API 形式：异步 Channel `WriteAsync`、作为同步参考的 Channel `TryWrite`，以及
+异步 BufferQueue `ProduceAsync` 的单条和 `ReadOnlyMemory<int>` batch 调用。计时方法会创建 Queue，并启动 12 个
+`Task.Run` producer task 写入 8,192 条数据。bounded capacity 足够容纳完整 workload，因此不测 producer 等待背压。
+
+单条 async 写入时，unbounded 下 BufferQueue 与 Channel `WriteAsync` 耗时接近，bounded 下 BufferQueue 耗时约少 11%。
+BufferQueue batch 写入比 Channel 单条写入耗时约少 89–91%，其中也体现了 API 调用次数的差异。
+
+每次处理 8,192 条的分配量也有取舍：Producer 中 BufferQueue 约分配 55 KiB，Channel `WriteAsync` 在 unbounded / bounded
+下分别约为 135 / 68 KiB。单消费者消费时，BufferQueue 在 BatchSize 1 / 100 下分别约分配 193 / 36.5 KiB，Auto / Manual
+结果接近；Channel `ReadAllAsync` 约分配 0.93 KiB。这是累计分配量，不是峰值内存，详见[分配量图表](docs/benchmarks/memory-queues.zh-CN.md#内存分配)。
 
 详细的 benchmark 配置和结果解释参见[内存队列 benchmark 说明](docs/benchmarks/memory-queues.zh-CN.md)。
 

@@ -3,13 +3,13 @@
 [English](memory-queues.md)
 
 这份报告记录根 README 图表背后的完整基准测试。汇总文件是
-[memory-queues-results.csv](memory-queues-results.csv)，包含 6 行 producer 结果和 3 个消费 benchmark 类的 85
+[memory-queues-results.csv](memory-queues-results.csv)，包含 8 行 producer 结果和 3 个消费 benchmark 类的 105
 行结果。CSV 保留 mean、error、standard deviation、allocation 以及每个配置；下面的表格为便于阅读主要展示
 mean 和 allocation。
 
 ## 主要消费对比
 
-主要对比选择 `ChannelReader<T>.ReadAllAsync` 和启用 `AutoCommit = true` 的 `IBufferPullConsumer<T>.ConsumeAsync`，
+主要对比选择 `ChannelReader<T>.ReadAllAsync` 和 BufferQueue `AutoCommit = true` 的 `IBufferPullConsumer<T>.ConsumeAsync`，
 因为它们的方法签名都是异步流：
 
 ```csharp
@@ -34,29 +34,48 @@ complete Channel writer，确保 `ReadAllAsync` 有明确结束点。每个 cons
 reader 本地计数，所有 reader 完成后再汇总。BufferQueue 按分配给每个 consumer 的 batch 计数，并校验每个分配计数
 和总数。每条消息没有业务处理；计时包含运行 reader 的 task scheduling。
 
+Manual Commit 行是在相同的 `e615da8` 生产基线之上单独测量的，新增 benchmark 方法后使用一次 launch、6 次 warmup、
+15 次测量迭代，并在说明的 .NET 10 / Apple M2 Max 环境中运行；每个 async batch 后调用 `CommitAsync`。已有的
+Auto Commit 和 Channel 行仍作为汇总基线。
+
 ### unbounded
 
 Channel reference（固定的 `BatchSize = 1` 代表值）：
 
-| Consumers | Channel TryRead (us) | Channel ReadAllAsync (us) | TryRead allocation | ReadAllAsync allocation |
+| Consumers | Channel TryRead (us) | Channel ReadAllAsync (us) | TryRead allocation (B) | ReadAllAsync allocation (B) |
 |---:|---:|---:|---:|---:|
 | 1 | 139.000 | 513.130 | 592 B | 952 B |
 | 12 | 3,446.620 | 3,381.500 | 2,656 B | 4,952 B |
 
 BufferQueue `ConsumeAsync`（`AutoCommit = true`）：
 
-| BatchSize | Consumers | Mean (us) | Allocation |
+| BatchSize | Consumers | Mean (us) | Allocated (KB) |
 |---:|---:|---:|---:|
-| 1 | 1 | 1,037.650 | 197,960 B |
-| 1 | 12 | 1,953.220 | 203,536 B |
-| 10 | 1 | 201.040 | 54,728 B |
-| 10 | 12 | 289.340 | 60,304 B |
-| 50 | 1 | 56.280 | 39,368 B |
-| 50 | 12 | 67.700 | 44,944 B |
-| 100 | 1 | 39.070 | 37,352 B |
-| 100 | 12 | 43.780 | 42,928 B |
-| 1000 | 1 | 20.910 | 50,024 B |
-| 1000 | 12 | 31.770 | 55,536 B |
+| 1 | 1 | 1,037.650 | 193.32 KB |
+| 1 | 12 | 1,953.220 | 198.77 KB |
+| 10 | 1 | 201.040 | 53.45 KB |
+| 10 | 12 | 289.340 | 58.89 KB |
+| 50 | 1 | 56.280 | 38.45 KB |
+| 50 | 12 | 67.700 | 43.89 KB |
+| 100 | 1 | 39.070 | 36.48 KB |
+| 100 | 12 | 43.780 | 41.92 KB |
+| 1000 | 1 | 20.910 | 48.85 KB |
+| 1000 | 12 | 31.770 | 54.23 KB |
+
+BufferQueue `ConsumeAsync`（`AutoCommit = false`，每个 batch 后调用 `CommitAsync`）：
+
+| BatchSize | Consumers | Mean (us) | Allocated (KB) |
+|---:|---:|---:|---:|
+| 1 | 1 | 1,108.690 | 193.34 KB |
+| 1 | 12 | 2,247.950 | 198.78 KB |
+| 10 | 1 | 244.890 | 53.46 KB |
+| 10 | 12 | 260.880 | 58.91 KB |
+| 50 | 1 | 58.970 | 38.46 KB |
+| 50 | 12 | 66.070 | 43.91 KB |
+| 100 | 1 | 43.190 | 36.49 KB |
+| 100 | 12 | 44.490 | 41.94 KB |
+| 1000 | 1 | 26.830 | 48.87 KB |
+| 1000 | 12 | 33.010 | 54.31 KB |
 
 ### bounded
 
@@ -65,25 +84,40 @@ BufferQueue `ConsumeAsync`（`AutoCommit = true`）：
 
 Channel reference（固定的 `BatchSize = 1` 代表值）：
 
-| Consumers | Channel TryRead (us) | Channel ReadAllAsync (us) | TryRead allocation | ReadAllAsync allocation |
+| Consumers | Channel TryRead (us) | Channel ReadAllAsync (us) | TryRead allocation (B) | ReadAllAsync allocation (B) |
 |---:|---:|---:|---:|---:|
 | 1 | 131.060 | 480.810 | 592 B | 952 B |
 | 12 | 1,036.560 | 2,760.870 | 2,656 B | 4,952 B |
 
 BufferQueue `ConsumeAsync`（`AutoCommit = true`）：
 
-| BatchSize | Consumers | Mean (us) | Allocation |
+| BatchSize | Consumers | Mean (us) | Allocated (KB) |
 |---:|---:|---:|---:|
-| 1 | 1 | 1,296.740 | 197,960 B |
-| 1 | 12 | 1,811.020 | 203,536 B |
-| 10 | 1 | 248.920 | 54,728 B |
-| 10 | 12 | 329.410 | 60,304 B |
-| 50 | 1 | 63.740 | 39,368 B |
-| 50 | 12 | 75.650 | 44,944 B |
-| 100 | 1 | 42.920 | 37,352 B |
-| 100 | 12 | 48.370 | 42,928 B |
-| 1000 | 1 | 33.180 | 50,024 B |
-| 1000 | 12 | 33.840 | 55,600 B |
+| 1 | 1 | 1,296.740 | 193.32 KB |
+| 1 | 12 | 1,811.020 | 198.77 KB |
+| 10 | 1 | 248.920 | 53.45 KB |
+| 10 | 12 | 329.410 | 58.89 KB |
+| 50 | 1 | 63.740 | 38.45 KB |
+| 50 | 12 | 75.650 | 43.89 KB |
+| 100 | 1 | 42.920 | 36.48 KB |
+| 100 | 12 | 48.370 | 41.92 KB |
+| 1000 | 1 | 33.180 | 48.85 KB |
+| 1000 | 12 | 33.840 | 54.30 KB |
+
+BufferQueue `ConsumeAsync`（`AutoCommit = false`，每个 batch 后调用 `CommitAsync`）：
+
+| BatchSize | Consumers | Mean (us) | Allocated (KB) |
+|---:|---:|---:|---:|
+| 1 | 1 | 1,393.820 | 193.34 KB |
+| 1 | 12 | 2,118.930 | 198.78 KB |
+| 10 | 1 | 281.260 | 53.46 KB |
+| 10 | 12 | 332.750 | 58.91 KB |
+| 50 | 1 | 72.730 | 38.46 KB |
+| 50 | 12 | 84.620 | 43.91 KB |
+| 100 | 1 | 49.200 | 36.49 KB |
+| 100 | 12 | 53.830 | 41.94 KB |
+| 1000 | 1 | 29.230 | 48.87 KB |
+| 1000 | 12 | 38.020 | 54.31 KB |
 
 ### Single-reader Channel 对比
 
@@ -98,13 +132,13 @@ Channel reference（固定的 `BatchSize = 1` 代表值）：
 
 BufferQueue `ConsumeAsync`（`AutoCommit = true`）：
 
-| BatchSize | Mean (us) | Allocation |
+| BatchSize | Mean (us) | Allocated (KB) |
 |---:|---:|---:|
-| 1 | 1,078.010 | 197,264 B |
-| 10 | 207.230 | 54,032 B |
-| 50 | 50.720 | 38,672 B |
-| 100 | 36.190 | 36,656 B |
-| 1000 | 17.060 | 49,328 B |
+| 1 | 1,078.010 | 192.64 KB |
+| 10 | 207.230 | 52.77 KB |
+| 50 | 50.720 | 37.77 KB |
+| 100 | 36.190 | 35.80 KB |
+| 1000 | 17.060 | 48.17 KB |
 
 Channel 方法不会消费 `BatchSize` 大小的 batch；该参数只改变 BufferQueue 方法。`SingleReader = true` 是调用方
 保证最多只有一个 reader 消费 Channel，不是 12-consumer 配置。
@@ -117,20 +151,30 @@ Channel 方法不会消费 `BatchSize` 大小的 batch；该参数只改变 Buff
 点和线表示 mean，误差线或区间使用 BenchmarkDotNet 报告的 `Error`。
 Channel baseline 固定为代表性的 `BatchSize = 1`，与 BufferQueue 的 `BatchSize` 无关。
 
+消费图表同时展示两种 async BufferQueue 模式。Manual Commit 使用 `AutoCommit = false`，每个 batch 后调用
+`CommitAsync`；Channel 没有内建的等价确认、checkpoint 或重放机制。
+
 ## Producer 对比
 
-Producer benchmark 使用 12 个并发 producer task（`Environment.ProcessorCount`）写入 8,192 个 `int`。batch 方法发送一个
-`ReadOnlyMemory<int>` batch；single-item 方法逐条发送。两者是不同的 API 形态，batch 行不代表 single-item
-producer 具有相同工作量。
+Producer benchmark 使用 12 个并发 `Task.Run` producer task 写入 8,192 个 `int`。Queue 创建和 task scheduling
+都在计时方法内。Channel 的主比较使用异步 `WriteAsync`，同步 `TryWrite` 作为参考；BufferQueue 的 item 和
+`ReadOnlyMemory<int>` batch 都使用异步 `ProduceAsync`。bounded capacity 足够容纳完整 workload，因此这里不测
+producer 等待背压的路径。
 
-| Mode | Method | Mean (us) | Allocation |
+| Mode | Method | Mean (us) | Allocated (KB) |
 |---|---|---:|---:|
-| unbounded | Channel_Produce_Concurrent | 291.690 | 134.53 KB |
-| unbounded | MemoryBufferQueue_Produce_Concurrent | 338.260 | 54.96 KB |
-| unbounded | MemoryBufferQueue_Produce_ReadOnlyMemoryBatch_Concurrent | 38.330 | 54.90 KB |
-| bounded | Channel_Produce_Concurrent | 305.510 | 67.33 KB |
-| bounded | MemoryBufferQueue_Produce_Concurrent | 339.820 | 55.13 KB |
-| bounded | MemoryBufferQueue_Produce_ReadOnlyMemoryBatch_Concurrent | 35.880 | 55.08 KB |
+| unbounded | `Channel.WriteAsync(item)` | 324.900 | 135.47 KB |
+| unbounded | `Channel.TryWrite(item)` (sync reference) | 281.590 | 134.53 KB |
+| unbounded | `BufferQueue.ProduceAsync(item)` | 321.910 | 54.96 KB |
+| unbounded | `BufferQueue.ProduceAsync(ReadOnlyMemory<int>)` | 36.420 | 54.90 KB |
+| bounded | `Channel.WriteAsync(item)` | 393.650 | 68.27 KB |
+| bounded | `Channel.TryWrite(item)` (sync reference) | 293.020 | 67.33 KB |
+| bounded | `BufferQueue.ProduceAsync(item)` | 350.020 | 55.13 KB |
+| bounded | `BufferQueue.ProduceAsync(ReadOnlyMemory<int>)` | 36.020 | 55.08 KB |
+
+![unbounded Producer API](memory-producer-unbounded.zh-CN.svg)
+
+![bounded Producer API](memory-producer-bounded.zh-CN.svg)
 
 源码：[ChannelVsMemoryBufferQueueProduceBenchmark.cs](../../tests/BufferQueue.Benchmarks/ChannelVsMemoryBufferQueueProduceBenchmark.cs)。
 
@@ -165,6 +209,30 @@ dotnet run -c Release --project tests/BufferQueue.Benchmarks/BufferQueue.Benchma
 ```bash
 dotnet run -c Release --project tests/BufferQueue.Benchmarks/BufferQueue.Benchmarks.csproj -- --filter '*StringPartitionRoutingBenchmark*'
 ```
+
+## 内存分配
+
+这些图将 BenchmarkDotNet 的 allocation 显示统一转换为 `KiB/op`（`1 KiB = 1,024 B`）。消费测试从 12 个 partition
+中消费预填充的 8,192 条消息，分别使用 1 个和 12 个 consumer；`BatchSize` 横轴按分类配置等距显示，纵轴使用对数刻度。
+队列和 consumer 的 setup 不计入测量 allocation。数值表示每次消费 8,192 条消息的 benchmark operation 分配的托管内存，
+不是峰值驻留内存，也不是单条消息 allocation。Channel 参考取自与 `BatchSize = 1` 一起记录的结果，BatchSize 只影响 BufferQueue；Auto/Manual 曲线基本重合。
+
+![unbounded，1 个 consumer](memory-unbounded-1-consumer-allocations.zh-CN.svg)
+
+![unbounded，12 个 consumer](memory-unbounded-12-consumers-allocations.zh-CN.svg)
+
+![bounded，1 个 consumer](memory-bounded-1-consumer-allocations.zh-CN.svg)
+
+![bounded，12 个 consumer](memory-bounded-12-consumers-allocations.zh-CN.svg)
+
+
+Producer allocation 的计时包含 queue/channel creation 和 producer task scheduling。测试使用 12 个 task 写入 8,192 条消息；
+`Channel WriteAsync` 是 async baseline，`Channel TryWrite` 是同步参考，BufferQueue 的两个 bar 分别表示逐条和 batch producer API。
+这些数值不是峰值驻留内存，也不是单条消息 allocation。
+
+![unbounded producer](memory-producer-unbounded-allocations.zh-CN.svg)
+
+![bounded producer](memory-producer-bounded-allocations.zh-CN.svg)
 
 ## Read-path 优化测量
 

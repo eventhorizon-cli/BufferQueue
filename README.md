@@ -39,7 +39,8 @@ IAsyncEnumerable<IEnumerable<T>> ConsumeAsync(CancellationToken cancellationToke
 ```
 
 `ReadAllAsync` yields items individually until the channel completes; it does not collect them into one batch.
-BufferQueue uses `AutoCommit = true`; `Channel<T>.TryRead` is a synchronous reference. The workload drains prefilled queues
+The primary summary below uses BufferQueue `AutoCommit = true`; the charts also include a separately measured Manual Commit
+series. The detail report retains `Channel<T>.TryRead` as a synchronous reference. The workload drains prefilled queues
 with `8,192` `int` messages, `12` BufferQueue partitions, and `1` or `12` consumers. `BatchSize` affects BufferQueue only.
 
 Benchmark environment: Apple M2 Max (12 cores), macOS 27.0.1 / Arm64, .NET 10.0.0, BenchmarkDotNet 0.15.8 (Release).
@@ -67,9 +68,31 @@ ensure a full batch under sparse traffic; these results measure draining a backl
 
 ![Bounded queue benchmark, 12 consumers](docs/benchmarks/memory-bounded-12-consumers.svg)
 
+Manual Commit measurements include `CommitAsync` after every returned batch.
+
 **Manual Commit is a BufferQueue feature advantage:** an application can process a batch successfully before calling
 `CommitAsync`, preserving a replay opportunity for an uncommitted batch. `Channel<T>` has no built-in equivalent
 acknowledgement, checkpoint, or replay.
+
+### Producer APIs
+
+![Unbounded producer APIs](docs/benchmarks/memory-producer-unbounded.svg)
+
+![Bounded producer APIs](docs/benchmarks/memory-producer-bounded.svg)
+
+These producer charts compare the measured API shapes: asynchronous Channel `WriteAsync`, synchronous Channel
+`TryWrite` as a reference, and asynchronous BufferQueue `ProduceAsync` item and `ReadOnlyMemory<int>` batch calls.
+The timed method creates the queue and starts 12 `Task.Run` producer tasks to write 8,192 values. Bounded capacity is
+large enough for the workload, so producer backpressure waiting is not measured.
+
+For single-item async writes, BufferQueue and Channel `WriteAsync` take similar time when unbounded; BufferQueue takes
+about 11% less time when bounded. BufferQueue batch writes take about 89–91% less time than Channel single-item writes,
+reflecting the different number of API calls.
+
+Allocation per 8,192-item operation also differs: production allocates about 55 KiB for BufferQueue versus
+135 / 68 KiB for Channel `WriteAsync` (unbounded / bounded). For one-consumer draining, BufferQueue allocates about
+193 KiB at BatchSize 1 and 36.5 KiB at BatchSize 100, with similar Auto / Manual results; Channel `ReadAllAsync`
+allocates about 0.93 KiB. These are allocated bytes, not peak memory; see the [allocation charts](docs/benchmarks/memory-queues.md#memory-allocation).
 
 See [memory queue benchmark details](docs/benchmarks/memory-queues.md) for the benchmark setup and interpretation.
 
