@@ -135,7 +135,10 @@ semantic, persistence format, or consumer lifecycle.
   solution and project inputs.
 - Build and test both supported target frameworks. Keep the two test projects independently visible in CI so core and
   MMF failures are easy to identify.
-- Release tags use `v<semver>`. A publication workflow must validate the tag, build and test before packing, upload
+- Release tags use `core-v<semver>` for BufferQueue, `mmf-v<semver>` for MemoryMappedFile, or `v<semver>` for both.
+  Tags must point to a commit already on `main`; reject unmerged-branch tags. Derive versions from tags, never commit
+  version numbers to project files. Follow [package release guidance](docs/releases.md) for MMF dependency versions.
+  A publication workflow must validate the tag, build and test before packing, upload
   package artifacts, verify expected package files, and use only `NUGET_API_KEY` for NuGet publication.
 - Preserve package metadata and package README inclusion when changing the packaging workflow.
 
