@@ -29,6 +29,22 @@ Use MemoryMappedFile mode when produced data and committed consumer offsets need
 
 ## Comparison with Common In-Memory Queues
 
+| Aspect | `System.Threading.Channels` | BufferQueue |
+|---|---|---|
+| Focus | In-process asynchronous producer/consumer handoff | Batch processing with partitions, consumer groups, and tracked progress |
+| Batch APIs | Item-based reads/writes; applications can assemble batches | Batch production and consumption; reads return up to BatchSize available items |
+| Multiple consumers | Readers compete for items from one queue | Partitions are assigned within a group; different groups consume independently |
+| Acknowledgement and replay | Reading removes an item; no built-in processing acknowledgement or replay | Auto Commit or **Manual Commit**; an uncommitted batch can be delivered again |
+| Ordering | FIFO reads; parallel processing may finish out of order | Ordering within each partition; no global order across partitions |
+| Capacity and backpressure | bounded / unbounded; bounded supports waiting or dropping items | Memory supports bounded / unbounded, waiting or failing; capacity follows the slowest group's committed progress |
+| Persistence | No built-in persistence | Memory is in-process; the optional MemoryMappedFile package persists data and committed progress locally |
+
+Channel suits a shared work queue when per-item handoff is sufficient. BufferQueue adds batch APIs and independent
+consumer progress when processing needs explicit acknowledgement or multiple consumer groups.
+The benchmarks below measure Memory storage with one consumer group; they do not measure MemoryMappedFile or
+establish how much overhead each additional feature contributes. See [Channel documentation](https://learn.microsoft.com/en-us/dotnet/core/extensions/channels)
+and the [BufferQueue consumer model](docs/design/consumer-model.md) for the respective semantics.
+
 The primary comparison uses `ReadAllAsync` because both APIs return asynchronous streams consumed with `await foreach`:
 
 ```csharp
