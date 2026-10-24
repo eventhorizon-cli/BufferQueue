@@ -18,7 +18,7 @@ public sealed class MemoryConsumptionConcurrencyTests
         {
             foreach (var keyed in new[] { false, true })
             {
-                foreach (var batchSize in new[] { 1, 5 })
+                foreach (var batchSize in new[] { 1, 5, 1000 })
                 {
                     // Smaller segments exercise recycling most aggressively for single-item pulls;
                     // the larger batch uses the other segment layout.
