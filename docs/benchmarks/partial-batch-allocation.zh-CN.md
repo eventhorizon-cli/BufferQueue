@@ -76,8 +76,8 @@ CSV 保留 `candidate-v1` 和 `reverse-confirmation-v1` 数据。V1 在 batch re
 
 针对性测试覆盖：稀疏分配不随配置上限增加、引用类型快照在 append/replay/commit/回收后的稳定性、精确释放 bounded 容量，
 以及 segment 大小 2／3 时跨 `ulong` 回绕。混合 producer、两个 group 的并发矩阵也增加 BatchSize=1000，覆盖
-bounded/unbounded、round-robin/keyed 路由。提交与唤醒的同步机制不变。
-最终格式、restore、Release 构建和完整测试在 .NET 8／10 均通过：每个框架 292 个 core、133 个 MMF，共 850 次测试。
+bounded/unbounded、round-robin/keyed 路由。另有确定性测试覆盖等待登记前释放容量的交接，以及跨 segment 部分批次的集合边界。提交与唤醒的同步机制不变。
+最终格式、restore、Release 构建和完整测试在 .NET 8／10 均通过：每个框架 294 个 core、133 个 MMF，共 854 次测试。
 
 ## 复现
 
