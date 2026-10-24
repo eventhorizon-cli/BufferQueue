@@ -397,12 +397,35 @@ internal sealed class MemoryBufferPartition<T>
         public MemoryBufferPartitionOffset ReadPosition => _readPosition;
 
         public bool TryRead(int batchSize, [NotNullWhen(true)] out IEnumerable<T>? items)
+            => batchSize == 1 ? TryReadSingle(out items) : TryReadBatch(batchSize, out items);
+
+        private bool TryReadSingle([NotNullWhen(true)] out IEnumerable<T>? items)
+        {
+            var readPosition = _readPosition;
+            var currentSegment = _currentSegment;
+            while (currentSegment.EndOffset < readPosition && currentSegment.NextSegment is { } nextSegment)
+            {
+                currentSegment = nextSegment;
+            }
+
+            if (!currentSegment.TryGet(readPosition, 1, out var segmentItems))
+            {
+                items = null;
+                return false;
+            }
+
+            // Copy before committing: the producer may recycle this slot as soon as progress advances.
+            items = new SingleItemBatch<T>(segmentItems.Array![segmentItems.Offset]);
+            _lastReadCount = 1;
+            return true;
+        }
+
+        private bool TryReadBatch(int batchSize, [NotNullWhen(true)] out IEnumerable<T>? items)
         {
             var remainingCount = batchSize;
             var readPosition = _readPosition;
             var currentSegment = _currentSegment;
             T[]? result = null;
-            T singleItem = default!;
             var copiedCount = 0;
 
             while (true)
@@ -419,17 +442,9 @@ internal sealed class MemoryBufferPartition<T>
                     readPosition += (ulong)length;
                     remainingCount -= length;
 
-                    if (batchSize == 1)
-                    {
-                        singleItem = segmentItems.Array![segmentItems.Offset];
-                        copiedCount = 1;
-                    }
-                    else
-                    {
-                        result ??= new T[batchSize];
-                        Array.Copy(segmentItems.Array!, segmentItems.Offset, result, copiedCount, length);
-                        copiedCount += length;
-                    }
+                    result ??= new T[batchSize];
+                    Array.Copy(segmentItems.Array!, segmentItems.Offset, result, copiedCount, length);
+                    copiedCount += length;
                 }
                 else
                 {
@@ -460,12 +475,6 @@ internal sealed class MemoryBufferPartition<T>
             }
 
             _lastReadCount = batchSize - remainingCount;
-            if (batchSize == 1)
-            {
-                items = new SingleItemBatch<T>(singleItem);
-                return true;
-            }
-
             items = _lastReadCount == result!.Length
                 ? result
                 : new SnapshotBatch<T>(result, _lastReadCount);

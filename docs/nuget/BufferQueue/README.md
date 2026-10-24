@@ -173,6 +173,8 @@ history.
 For a bounded Memory topic in `Wait` mode, writes wait when capacity is unavailable. Start consumption and commit
 progress to release capacity instead of waiting for writes beyond the available capacity to finish first.
 
+Memory pulls with `BatchSize = 1` use a dedicated read path with Auto Commit or Manual Commit; returned values remain stable after segment recycling.
+
 This example uses manual commit, so progress advances only after the batch has
 been processed successfully:
 

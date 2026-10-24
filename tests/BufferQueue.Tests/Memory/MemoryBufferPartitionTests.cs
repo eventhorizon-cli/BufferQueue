@@ -180,6 +180,51 @@ public class MemoryBufferPartitionTests
         Assert.Equal(new[] { 0 }, items);
     }
 
+    [Theory]
+    [InlineData(false, 1)]
+    [InlineData(false, 16)]
+    [InlineData(true, 1)]
+    [InlineData(true, 16)]
+    public async Task Single_Item_Pull_From_Empty_Queue_Remains_Stable_Across_Recycling(
+        bool bounded,
+        int batchSize)
+    {
+        const int segmentSize = 1;
+        var partition = new MemoryBufferPartition<int>(0, segmentSize);
+        var options = new MemoryBufferQueueOptions
+        {
+            TopicName = "single-item-boundary",
+            PartitionNumber = 1,
+            SegmentSize = segmentSize,
+            BoundedCapacity = bounded ? 2UL : null,
+            FullMode = BufferQueueFullMode.Fail
+        };
+        var producer = new MemoryBufferProducer<int>(options, [partition]);
+        const string groupName = "single-item-group";
+
+        // Initialize the reader while the partition is empty.
+        Assert.False(partition.TryPull(groupName, batchSize, out _));
+
+        IEnumerable<int>? firstBatch = null;
+        for (var item = 0; item < 6; item++)
+        {
+            Assert.True(await producer.TryProduceAsync(item));
+            Assert.True(partition.TryPull(groupName, batchSize, out var batch));
+            Assert.Equal(new[] { item }, batch);
+
+            // The delivery remains replayable until the explicit commit.
+            Assert.True(partition.TryPull(groupName, batchSize, out var replayedBatch));
+            Assert.Equal(batch, replayedBatch);
+            firstBatch ??= batch;
+
+            partition.Commit(groupName);
+            Assert.False(partition.TryPull(groupName, batchSize, out _));
+        }
+
+        Assert.Equal(new[] { 0 }, firstBatch);
+        Assert.True(GetSegments(partition)[0].StartOffset > new MemoryBufferPartitionOffset(0));
+    }
+
     [Fact]
     public void Repeatable_Pull_If_Not_Commit()
     {
