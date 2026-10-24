@@ -54,14 +54,16 @@ The partition appends to its tail segment. When the tail is full, it creates a n
 recycles an old segment that every consumer group has fully consumed.
 
 For default round-robin routing, a short topic-level coordinator serializes partition selection and
-batch-range reservation. After its complete bounded-capacity admission succeeds, a batch reserves
-one contiguous selection range, visits each partition's strided slice, and appends that slice under
-the partition's own append lock. This avoids materializing a `List<T>` for every partition. A
-single round-robin write remains on the coordinator-only path when no round-robin batch is
-appending; while a batch is appending, it also takes its target partition lock. Consumer state
-changes use the same coordinator, so they cannot overlap an unsynchronized append. Partition-key
-routing selects a partition before taking that partition's append lock. Appends within one
-partition remain serialized.
+batch-range reservation in both bounded and unbounded modes. After its complete bounded-capacity
+admission succeeds, a batch reserves one contiguous selection range, visits each partition's
+strided slice, and appends that slice under the partition's own append lock. This avoids
+materializing a `List<T>` for every partition. Concurrent single-item and batch appends targeting
+the same partition remain serialized. When no batch is active, a single-item append uses only the
+coordinator. Otherwise, it retains the coordinator while acquiring and holding its target partition
+lock, so it cannot race the coordinator-only path after that batch ends. The active-batch count is updated atomically because
+batch completion occurs outside the coordinator. Consumer state changes use the same coordinator,
+so they cannot overlap an unsynchronized append. Partition-key routing selects a partition before
+taking that partition's append lock. Appends within one partition remain serialized.
 
 After storing the item, the selected partition publishes its new readable cursor with a release
 write. Consumers read the published range without taking an append lock, so they cannot observe a

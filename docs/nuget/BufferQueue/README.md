@@ -76,6 +76,8 @@ batch runs its selector for every item and preserves equal-key input order in
 the selected partition. Ordering remains per partition rather than global
 across the batch.
 
+Memory topics support concurrent single-item and batch production in both bounded and unbounded modes; writes targeting the same partition remain serialized.
+
 In Memory storage, a default round-robin batch reserves its complete selection
 range before appending the input slices for each selected partition. This keeps
 per-item routing unchanged while allowing those slices to append under their

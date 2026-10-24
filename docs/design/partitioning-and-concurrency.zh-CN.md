@@ -76,7 +76,7 @@ MMF 日志仍可读取，但同 key 的新消息可能进入其他 partition，�
 
 同一批次中被路由到不同 partition 的数据不具备全局顺序保证。Queue 仍然只保证每个 partition 内的顺序。
 
-有界 Memory topic 处于 `Wait` 模式时，超过配置容量的输入批次会被切成连续的容量大小切片。每个切片仍按
+bounded Memory topic 处于 `Wait` 模式时，超过配置容量的输入批次会被切成连续的容量大小切片。每个切片仍按
 单条数据路由，因此 round-robin 会跨切片继续轮转；相同 PartitionKey 在其选定 partition 内仍保持输入顺序。
 
 ## 单进程并发
@@ -85,11 +85,13 @@ Queue 的设计目标是在一个进程内并发生产和消费：
 
 - Producer 默认通过 round-robin counter 选择 partition，或通过配置的 PartitionKey selector 选择。
   Selector 实现必须能安全地被并发调用。
-- Memory 模式中，默认 round-robin 的 partition 选择和批量范围预留使用短时的 topic 级协调锁。每个已接纳
-  的批量或批量切片都会先一次性取得完整容量，再保留选择范围，并在每个 partition 的 append lock 内追加
-  对应切片。存在活跃批量 append 时，单条 round-robin 写入也会取得目标 partition 的锁；Consumer 的状态
-  变更使用同一个协调锁。PartitionKey 路由先选择 partition，再获取该 partition 的 append lock。同一
-  partition 的 append 仍然串行。
+- Memory 模式中，默认 round-robin 的 partition 选择和批量范围预留在 bounded 和 unbounded 模式下都使用短时的
+  topic 级协调锁。每个已接纳的批量或批量切片都会先一次性取得完整容量，再保留选择范围，并在每个 partition 的
+  append lock 内追加对应切片。并发的单条和批量 append 如果指向同一个 partition，仍然会串行执行。单条写入的
+  fallback 在获取和持有目标 partition lock 时会继续持有协调锁，因此活跃批量结束后，已经选定的单条写入不会与
+  只使用协调锁的路径竞争。由于批量 append 的完成发生在协调锁之外，活跃批量计数的增加和减少使用原子操作。
+  Consumer 的状态变更使用同一个协调锁。PartitionKey 路由先选择 partition，再获取该 partition 的 append lock。
+  同一 partition 的 append 仍然串行。
 - Memory partition 只会在写入 item 后发布可读 segment cursor，因此 consumer 不会读到未写入 slot，
   读取时也不需要获取 append lock。
 - Consumer group 的创建受 queue-level lock 保护。

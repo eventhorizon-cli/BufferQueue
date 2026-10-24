@@ -62,6 +62,8 @@ round-robin 路由。Selector 必须是确定性的，并且能安全地被并�
 partition。按 key 路由时，会为批次中的每条数据调用 selector；相同 key 的数据在选定 partition 内保持
 输入顺序。顺序保证只在 partition 内成立，不提供跨 partition 的批次全局顺序。
 
+Memory topic 支持在 bounded 和 unbounded 模式下并发进行单条和批量生产；指向同一个 partition 的写入仍会串行执行。
+
 在 Memory 存储中，默认 round-robin 批量会先保留完整的选择范围，再向每个选中的 partition 追加对应的数据
 切片。这样不改变逐条路由规则，同时让各切片可以在自己的 partition 锁内追加。
 

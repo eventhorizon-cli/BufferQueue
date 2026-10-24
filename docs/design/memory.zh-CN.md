@@ -46,12 +46,13 @@ Memory 数据和 consumer offset 只在当前进程生命周期内存在。进�
 Partition 会向 tail segment 追加数据。Tail 已满时，它会创建新 segment，或者复用一个已被所有 consumer
 group 完全消费的旧 segment。
 
-默认 round-robin 路由使用一个短时的 topic 级协调锁，串行执行 partition 选择和批量选择范围的预留。整批容量
-接纳成功后，批量会保留一段连续的选择范围，按步长访问每个 partition 对应的数据切片，并在该 partition 自己的
-append lock 内追加，因此无需为每个 partition 物化一个 `List<T>`。没有活跃的 round-robin 批量 append 时，
-单条写入仍只使用协调锁；与批量 append 交错时，还会取得目标 partition 的锁。Consumer 的状态变更也使用
-同一个协调锁，避免与未同步的 append 重叠。PartitionKey 路由会先选择 partition，再获取对应的 append lock。
-同一 partition 内的 append 仍然串行。
+默认 round-robin 路由在 bounded 和 unbounded 模式下都使用一个短时的 topic 级协调锁，串行执行 partition 选择和
+批量选择范围的预留。整批容量接纳成功后，批量会保留一段连续的选择范围，按步长访问每个 partition 对应的数据切片，
+并在该 partition 自己的 append lock 内追加，因此无需为每个 partition 物化一个 `List<T>`。并发的单条和批量 append
+如果指向同一个 partition，仍然会串行执行。没有活跃批量时，单条写入只使用协调锁；否则，在获取和持有目标
+partition lock 时也会继续持有协调锁，因此活跃批量结束后，它不会与只使用协调锁的路径竞争。由于批量 append 的完成发生在协调锁之外，
+活跃批量计数的增加和减少使用原子操作。Consumer 的状态变更也使用同一个协调锁，避免与未同步的 append 重叠。
+PartitionKey 路由会先选择 partition，再获取对应的 append lock。同一 partition 内的 append 仍然串行。
 
 选中的 partition 写入 item 后，使用 release write 发布新的可读 cursor。Consumer 读取已发布区间时不获取
 append lock，因此不会读到尚未写入的 slot。Enqueue 成功后，partition 会通知所有已注册 consumer。
