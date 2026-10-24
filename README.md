@@ -24,7 +24,7 @@ BufferQueue currently provides two storage modes:
 The following sections compare Memory BufferQueue with `System.Threading.Channels`: production first, then consumption.
 MemoryMappedFile is not included.
 
-Benchmark environment: Apple M2 Max (12 cores), macOS 27.0.1 / Arm64, .NET 10.0.0, BenchmarkDotNet 0.15.8 (Release).
+Benchmark environment: Apple M2 Max (12 cores), macOS 27.0.1 / Arm64, .NET 10.0.0, runtime-provided `System.Threading.Channels` 10.0.0, BenchmarkDotNet 0.15.8 (Release).
 
 ### Production Benchmarks
 

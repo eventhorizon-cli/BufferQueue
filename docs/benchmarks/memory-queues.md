@@ -8,7 +8,9 @@ three consume benchmark classes. The CSV retains the measured mean, error, stand
 configuration used for the charts; the tables below keep the comparison readable by showing mean time and allocation.
 
 Unless noted otherwise, the measurements in this report use Apple M2 Max (12 cores), macOS 27.0.1 / Arm64,
-.NET 10.0.0, and BenchmarkDotNet 0.15.8 in Release mode.
+.NET 10.0.0, the runtime-provided `System.Threading.Channels` assembly 10.0.0.0 (file version 10.0.25.52411),
+and BenchmarkDotNet 0.15.8 in Release mode. The benchmark project has no separate `System.Threading.Channels`
+package reference, so these Channel rows use the framework assembly shipped with the tested runtime.
 
 ## Producer Comparison
 

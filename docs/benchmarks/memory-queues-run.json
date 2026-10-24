@@ -25,6 +25,13 @@
     "benchmarkDotNet": "0.15.8",
     "runtime": ".NET 10.0.0 (10.0.0, 10.0.25.52411)",
     "architecture": "Arm64",
+    "channel": {
+      "assembly": "System.Threading.Channels",
+      "assemblyVersion": "10.0.0.0",
+      "fileVersion": "10.0.25.52411",
+      "informationalVersion": "10.0.0+b0f34d51fccc69fd334253924abd8d6853fad7aa",
+      "source": "Microsoft.NETCore.App 10.0.0 runtime; no separate benchmark package reference"
+    },
     "os": "macOS 27.0.1 (26A434) [Darwin 27.0.0]",
     "dotnetSdk": "10.0.100",
     "memoryDiagnoser": true,
