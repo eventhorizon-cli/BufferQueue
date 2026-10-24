@@ -121,7 +121,7 @@ await producer.ProduceAsync(eventsFromAnEnumerable, cancellationToken);
 能避免非数组 `IEnumerable<T>` 在提交前产生的物化。`IEnumerable<T>` 重载用于方便调用；当输入不是数组时，
 会先物化为数组，再提交整个批次。单条和 `ReadOnlyMemory<T>` 的 `ProduceAsync` 都是核心接口方法，不是扩展方法。
 
-MemoryMappedFile topic 没有有界容量。它与 Memory 存储使用相同的、支持取消的 `IBufferProducer<T>` API，
+MemoryMappedFile topic 没有 bounded 容量。它与 Memory 存储使用相同的、支持取消的 `IBufferProducer<T>` API，
 但 `TryProduceAsync` 和 `ProduceAsync` 都不会等待容量，也没有 `FullMode` 配置。批次中的每条数据仍会根据配置的
 flush 策略单独路由并持久化为一条记录。
 
@@ -389,7 +389,7 @@ checkpoint，已有 consumer group 目录中缺少 `consumer.offset`，以及保
 ## 重要限制
 
 - MemoryMappedFile 不提供多进程 writer 协调。
-- MemoryMappedFile 目前不支持有界容量。
+- MemoryMappedFile 目前不支持 bounded 容量。
 - 已有 topic 不要调小 `PartitionNumber`。
 - 不要修改持久化 topic 的 key selector 或按 key 路由行为。
 - 序列化后的单条记录必须能放入一个 segment。

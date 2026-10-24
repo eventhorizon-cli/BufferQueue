@@ -19,12 +19,12 @@ consumer offset。它是面向一个 active queue 实例的本地持久化缓冲
 - `0` 表示不保留任何可回收的已消费 segment。
 - 正数表示保留最新的对应数量的可回收 segment。
 
-MMF 不支持有界容量，也不协调多个进程的 writer。它保证单个 partition 内顺序，而不保证跨 partition
+MMF 不支持 bounded 容量，也不协调多个进程的 writer。它保证单个 partition 内顺序，而不保证跨 partition
 全局顺序。持久化 topic 在重启前后必须保持兼容的 PartitionKey 路由行为和
 `PartitionNumber`；参见 [Partition 与并发](partitioning-and-concurrency.zh-CN.md)。
 
 MMF 与 Memory 存储一样实现 `IBufferProducer<T>` 的四个核心方法，每个方法都接收可选的
-`CancellationToken`。MMF 是无界的，因此 `TryProduceAsync` 和 `ProduceAsync` 都不会等待容量，
+`CancellationToken`。MMF 是 unbounded 的，因此 `TryProduceAsync` 和 `ProduceAsync` 都不会等待容量，
 也没有 `BufferQueueFullMode` 配置。接收 `IEnumerable<T>` 的批量便捷重载仍然是扩展方法；对于非数组输入，
 它们会先物化，再调用核心的 `ReadOnlyMemory<T>` 方法。
 

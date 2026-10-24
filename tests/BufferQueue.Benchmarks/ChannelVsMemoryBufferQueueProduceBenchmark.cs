@@ -33,8 +33,8 @@ public class ChannelVsMemoryBufferQueueProduceBenchmark
         _chunks = Enumerable.Range(0, MessageSize).Chunk(chunkSize).ToArray();
     }
 
-    [Benchmark(Baseline = true)]
-    public async Task Channel_Produce_Concurrent()
+    [Benchmark]
+    public async Task Channel_TryWrite_Concurrent()
     {
         var channel = Mode == CapacityMode.Bounded
             ? Channel.CreateBounded<int>(new BoundedChannelOptions(MessageSize)
@@ -48,7 +48,36 @@ public class ChannelVsMemoryBufferQueueProduceBenchmark
         {
             foreach (var item in chunk)
             {
-                writer.TryWrite(item);
+                if (!writer.TryWrite(item))
+                {
+                    throw new InvalidOperationException("Channel TryWrite unexpectedly failed.");
+                }
+            }
+        })).ToArray();
+
+        await Task.WhenAll(tasks);
+    }
+
+    [Benchmark(Baseline = true)]
+    public async Task Channel_WriteAsync_Concurrent()
+    {
+        var channel = Mode == CapacityMode.Bounded
+            ? Channel.CreateBounded<int>(new BoundedChannelOptions(MessageSize)
+            {
+                SingleReader = false,
+                SingleWriter = false,
+            })
+            : Channel.CreateUnbounded<int>();
+        var writer = channel.Writer;
+        var tasks = _chunks.Select(chunk => Task.Run(async () =>
+        {
+            foreach (var item in chunk)
+            {
+                var valueTask = writer.WriteAsync(item);
+                if (!valueTask.IsCompletedSuccessfully)
+                {
+                    await valueTask;
+                }
             }
         })).ToArray();
 

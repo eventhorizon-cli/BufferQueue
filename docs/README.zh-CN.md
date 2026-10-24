@@ -15,7 +15,7 @@
 | [架构与注册](design/architecture.zh-CN.md) | 公共模型、项目边界、共享队列抽象、依赖注入、扩展点和测试覆盖。 |
 | [Consumer 模型与投递](design/consumer-model.zh-CN.md) | Pull 和 push consumer、异步唤醒、提交、作用域和 at-least-once 行为。 |
 | [Partition 与并发](design/partitioning-and-concurrency.zh-CN.md) | Consumer group、partition 分配、key 路由、顺序保证和单进程并发规则。 |
-| [Memory 存储](design/memory.zh-CN.md) | 分段内存存储、写入和读取路径、segment 复用与有界容量。 |
+| [Memory 存储](design/memory.zh-CN.md) | 分段内存存储、写入和读取路径、segment 复用与 bounded 容量。 |
 | [MemoryMappedFile 存储](design/memory-mapped-file.zh-CN.md) | 持久化 segment 布局、序列化、flush 边界、恢复、checkpoint 和保留策略。 |
 
 ## 阅读顺序

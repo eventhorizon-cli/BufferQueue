@@ -14,7 +14,7 @@ public class SingleReaderChannelVsMemoryBufferQueueConsumeBenchmark
 
     [Params(8192)] public int MessageSize { get; set; }
 
-    [Params(1, 10, 100, 1000)] public int BatchSize { get; set; }
+    [Params(1, 10, 50, 100, 1000)] public int BatchSize { get; set; }
 
     [IterationSetup]
     public void Setup()
@@ -41,6 +41,8 @@ public class SingleReaderChannelVsMemoryBufferQueueConsumeBenchmark
             producer.ProduceAsync(i).GetAwaiter().GetResult();
         }
 
+        _defaultChannel.Writer.TryComplete();
+        _singleReaderChannel.Writer.TryComplete();
         _memoryBufferQueueConsumers = memoryBufferQueue.CreateConsumers(
             new BufferPullConsumerOptions
             {
@@ -52,40 +54,70 @@ public class SingleReaderChannelVsMemoryBufferQueueConsumeBenchmark
             ConsumerCount);
     }
 
+    [Benchmark]
+    public void Channel_Default_TryRead()
+    {
+        ValidateTotal(ConsumeChannelTryRead(_defaultChannel), MessageSize);
+    }
+
     [Benchmark(Baseline = true)]
-    public void Channel_Default()
+    public Task Channel_Default_ReadAllAsync() =>
+        ConsumeChannelReadAllAsync(_defaultChannel, MessageSize);
+
+    [Benchmark]
+    public void Channel_SingleReader_TryRead()
     {
-        ConsumeChannel(_defaultChannel);
+        ValidateTotal(ConsumeChannelTryRead(_singleReaderChannel), MessageSize);
     }
 
     [Benchmark]
-    public void Channel_SingleReader()
-    {
-        ConsumeChannel(_singleReaderChannel);
-    }
+    public Task Channel_SingleReader_ReadAllAsync() =>
+        ConsumeChannelReadAllAsync(_singleReaderChannel, MessageSize);
 
     [Benchmark]
-    public void MemoryBufferQueue_Consume()
-    {
-        ConsumeMemoryBufferQueue(_memoryBufferQueueConsumers);
-    }
+    public Task BufferQueue_ConsumeAsync_AutoCommit() =>
+        ConsumeMemoryBufferQueueAsync(_memoryBufferQueueConsumers, MessageSize);
 
-    private void ConsumeChannel(Channel<int> channel)
+    private static int[] ConsumeChannelTryRead(Channel<int> channel)
     {
-        var remaining = MessageSize;
-        var task = Task.Run(() =>
-        {
-            var reader = channel.Reader;
-            while (Volatile.Read(ref remaining) > 0 && reader.TryRead(out _))
+        var tasks = Enumerable.Range(0, ConsumerCount)
+            .Select(_ => Task.Run(() =>
             {
-                Interlocked.Decrement(ref remaining);
-            }
-        });
+                var reader = channel.Reader;
+                var consumedCount = 0;
+                while (reader.TryRead(out _))
+                {
+                    consumedCount++;
+                }
 
-        task.Wait();
+                return consumedCount;
+            }))
+            .ToArray();
+
+        return Task.WhenAll(tasks).GetAwaiter().GetResult();
     }
 
-    private void ConsumeMemoryBufferQueue(IEnumerable<IBufferPullConsumer<int>> consumers)
+    private static async Task ConsumeChannelReadAllAsync(Channel<int> channel, int expectedTotal)
+    {
+        var tasks = Enumerable.Range(0, ConsumerCount)
+            .Select(_ => Task.Run(async () =>
+            {
+                var consumedCount = 0;
+                await foreach (var _ in channel.Reader.ReadAllAsync())
+                {
+                    consumedCount++;
+                }
+
+                return consumedCount;
+            }))
+            .ToArray();
+
+        ValidateTotal(await Task.WhenAll(tasks), expectedTotal);
+    }
+
+    private static async Task ConsumeMemoryBufferQueueAsync(
+        IEnumerable<IBufferPullConsumer<int>> consumers,
+        int expectedTotal)
     {
         var consumer = consumers.Single();
         var task = Task.Run(async () =>
@@ -94,13 +126,29 @@ public class SingleReaderChannelVsMemoryBufferQueueConsumeBenchmark
             await foreach (var items in consumer.ConsumeAsync())
             {
                 consumedCount += items.Count();
-                if (consumedCount >= MessageSize)
+                if (consumedCount >= expectedTotal)
                 {
                     break;
                 }
             }
+
+            return consumedCount;
         });
 
-        task.Wait();
+        var consumedCount = await task;
+        if (consumedCount != expectedTotal)
+        {
+            throw new InvalidOperationException(
+                $"Consumed {consumedCount} items; expected {expectedTotal}.");
+        }
+    }
+
+    private static void ValidateTotal(IReadOnlyCollection<int> counts, int expectedTotal)
+    {
+        if (counts.Sum() != expectedTotal)
+        {
+            throw new InvalidOperationException(
+                $"Consumed {counts.Sum()} items; expected {expectedTotal}.");
+        }
     }
 }

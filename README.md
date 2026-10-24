@@ -12,7 +12,7 @@ Design docs: [English](./docs/README.md) | [简体中文](./docs/README.zh-CN.md
 
 BufferQueue is a high-performance buffer queue implementation written in .NET, which supports multi-threaded concurrent operations.
 The packages target .NET 8 and .NET 10.
-New data arriving while a consumer becomes idle wakes consumption without requiring another write.
+A consumer entering an idle wait is awakened when new data becomes available.
 
 BufferQueue currently provides two storage modes:
 
@@ -29,185 +29,105 @@ Use MemoryMappedFile mode when produced data and committed consumer offsets need
 
 ## Comparison with Common In-Memory Queues
 
-**BufferQueue keeps memory-mode writes close to `Channel<T>` and provides high-performance batch production and consumption.**
+| Aspect | `System.Threading.Channels` | BufferQueue |
+|---|---|---|
+| Focus | In-process asynchronous producer/consumer handoff | Batch processing with partitions, consumer groups, and tracked progress |
+| Batch APIs | Item-based reads/writes; applications can assemble batches | Batch production and consumption; reads return up to BatchSize available items |
+| Multiple consumers | Readers compete for items from one queue | Partitions are assigned within a group; different groups consume independently |
+| Acknowledgement and replay | Reading removes an item; no built-in processing acknowledgement or replay | Auto Commit or **Manual Commit**; an uncommitted batch can be delivered again |
+| Ordering | FIFO reads; parallel processing may finish out of order | Ordering within each partition; no global order across partitions |
+| Capacity and backpressure | bounded / unbounded; bounded supports waiting or dropping items | Memory supports bounded / unbounded, waiting or failing; capacity follows the slowest group's committed progress |
+| Persistence | No built-in persistence | Memory is in-process; the optional MemoryMappedFile package persists data and committed progress locally |
 
-The project includes BenchmarkDotNet benchmarks that compare BufferQueue in Memory mode with `Channel<T>` and `BlockingCollection<T>` for concurrent producing and consuming. The tables below summarize the `Channel<T>` comparison results.
+Channel suits a shared work queue when per-item handoff is sufficient. BufferQueue adds batch APIs and independent
+consumer progress when processing needs explicit acknowledgement or multiple consumer groups.
+The benchmarks below measure Memory storage with one consumer group; they do not measure MemoryMappedFile or
+establish how much overhead each additional feature contributes. See [Channel documentation](https://learn.microsoft.com/en-us/dotnet/core/extensions/channels)
+and the [BufferQueue consumer model](docs/design/consumer-model.md) for the respective semantics.
 
-Summary:
+The primary comparison uses `ReadAllAsync` because both APIs return asynchronous streams consumed with `await foreach`:
 
-The consuming performance summary and tables below use `AutoCommit = true`; no Manual Commit timing is included.
-
-- Producing one item at a time: BufferQueue's elapsed time is about `19%` higher than `Channel<T>` in Unbounded mode and `18%` higher in Bounded mode.
-- Producing `ReadOnlyMemory<T>` batches: the Memory path is about `8.59x` faster than its single-item path in Unbounded mode and `9.05x` faster in Bounded mode; it is about `7.22x` and `7.64x` faster than `Channel<T>`, respectively.
-- One consumer: with the default Channel, `Channel<T>` is faster at `BatchSize = 1` and `10`, while BufferQueue is faster at `100` and `1000`. At `1000`, BufferQueue is about `6.85x` faster in Unbounded mode and `7.26x` faster in Bounded mode.
-- Twelve consumers: in Unbounded mode BufferQueue is about `1.58x`, `12.30x`, `39.61x`, and `80.62x` faster at `BatchSize = 1`, `10`, `100`, and `1000`. In Bounded mode, `Channel<T>` is about `1.01x` faster at `1`, while BufferQueue is about `6.79x`, `44.95x`, and `61.11x` faster at `10`, `100`, and `1000`.
-- Single-reader Channel: enabling `SingleReader = true` lowers the one-consumer Channel mean to about `0.66x-0.69x` of the default Channel. BufferQueue is slower at `BatchSize = 1` and `10`, then faster at `100` and `1000` in this isolated comparison.
-- **Manual Commit is a BufferQueue feature advantage:** an application can process a batch successfully before calling `CommitAsync`, preserving a replay opportunity for an uncommitted batch. `Channel<T>` has no built-in equivalent acknowledgement, checkpoint, or replay.
-- Memory allocation: BufferQueue allocates less in producing scenarios; `Channel<T>` allocates less in consuming scenarios.
-
-The producing rows below were rerun on `2026-10-23` against the runtime from main commit `a7ab752`. The consuming rows were rerun
-on the same date using the current working tree based on main commit `ddf5834`, including the Memory reader-scan optimization and wrapping single-`ulong` offsets.
-The in-memory queue comparisons use `MessageSize = 8192`.
-The producing rows run both capacity modes in the same `Fixed` job with `LaunchCount = 1`,
-`WarmupCount = 6`, and `IterationCount = 15`. The consuming benchmarks use the default job and, because they use
-`IterationSetup`, run with `InvocationCount = 1` and `UnrollFactor = 1`. Both benchmark groups run on .NET 10.
-
-Both producing and consuming benchmarks use `int` messages: the 8,192 integers from `0` through `8191`.
-`MessageSize = 8192` means the number of messages, not the byte size of each message. The producing benchmark splits
-this sequence across `12` concurrent tasks. The single-item path loops over each task's chunk; the batch path passes
-that chunk once through `producer.ProduceAsync(chunk.AsMemory())`. The consuming benchmarks prefill the queues with
-the same sequence before measurement begins.
-
-The Bounded BufferQueue producer rows use the default `Wait` mode with capacity equal to `MessageSize`. They measure
-the capacity-available admission path and do not include time spent waiting for a full queue. These producer results
-cover Memory mode only; MemoryMappedFile production was not run for this comparison.
-
-`IterationSetup` is outside the measured operation, which only drains the queues concurrently. Channel calls
-`TryRead` for each item, while BufferQueue returns up to `BatchSize` items at a time with
-`AutoCommit = true`; each successful pull advances the consumer group immediately. All consuming results in this section,
-including bounded and unbounded runs with `Consumers = 1` and `12`, the SingleReader comparison, and the reader-scan
-allocation comparison before and after the optimization, use this setting. The measured drain therefore includes commit
-cost, while no per-item business processing is included. `BatchSize` only affects BufferQueue and is an
-upper bound. With `MessageSize = 8192` and `Consumers = 12`, `BatchSize = 1000` usually lets each consumer drain its
-approximately 682 or 683 assigned items in one batch. With `Consumers = 1`, the same consumer drains all
-`12` partitions, still returning at most one partition's items per pull. The tables show the source's `1`, `10`,
-`100`, and `1000` batch-size tiers.
-
-The consuming iterations are short; BenchmarkDotNet reported minimum-iteration-time and multimodal-distribution
-warnings. The run also could not obtain high process priority. These results show this workload's measured trend,
-not an end-to-end application throughput guarantee. Ratios in the tables are calculated from the displayed means. The
-MemoryMappedFile queue comparisons use `MessageSize = 1024` and a short-run job to keep their file-backed runs brief.
-
-Producer concurrency and the partition count come from `Environment.ProcessorCount`, which was `12` for this run.
-Producing uses `12` tasks sharing one `Channel<T>` writer or one BufferQueue producer over `12` partitions.
-Consuming tests `Consumers = 1` and `12`: the same number of Channel reader tasks or BufferQueue consumers,
-with BufferQueue retaining `12` partitions in both cases.
-
-Manual Commit (`AutoCommit = false`) lets an application finish processing a batch before advancing its consumer group's
-position with `CommitAsync`. An uncommitted batch remains eligible for replay, allowing processing to be attempted again
-after a failure. Memory mode keeps this progress for the lifetime of the process. `Channel<T>` removes an item when
-`TryRead` succeeds and has no built-in consumer-group checkpoint, manual acknowledgement, or replay of unacknowledged
-items. An application using Channel must implement those capabilities separately.
-
-Producing:
-
-| Mode | `MessageSize` | `Producers` | `Channel<T>` Mean | BufferQueue single-item Mean | BufferQueue `ReadOnlyMemory<T>` batch Mean | Result |
-| --- | ---: | ---: | ---: | ---: | ---: | --- |
-| Unbounded | 8192 | 12 | `296.15 μs` | `352.65 μs` | `41.04 μs` | Batch is `8.59x` faster than single-item and `7.22x` faster than `Channel<T>` |
-| Bounded | 8192 | 12 | `306.59 μs` | `363.24 μs` | `40.12 μs` | Batch is `9.05x` faster than single-item and `7.64x` faster than `Channel<T>` |
-
-### Round-Robin Batch Writes
-
-The default Memory round-robin batch path now reserves one contiguous selection range, then appends each
-partition's strided slice under that partition's lock. The input is still routed once per item and does not receive a
-global order across partitions.
-
-Consuming:
-
-| Mode | `MessageSize` | `BatchSize` | `Consumers` | `Channel<T>` Mean | BufferQueue (Memory, Auto Commit) Mean | Result |
-| --- | ---: | ---: | ---: | ---: | ---: | --- |
-| Unbounded | 8192 | 1 | 1 | `161.16 μs` | `1,200.48 μs` | `Channel<T>` is about `7.45x` faster under these parameters |
-| Bounded | 8192 | 1 | 1 | `192.41 μs` | `1,539.02 μs` | `Channel<T>` is about `8.00x` faster under these parameters |
-| Unbounded | 8192 | 10 | 1 | `166.89 μs` | `205.20 μs` | `Channel<T>` is about `1.23x` faster under these parameters |
-| Bounded | 8192 | 10 | 1 | `196.01 μs` | `252.03 μs` | `Channel<T>` is about `1.29x` faster under these parameters |
-| Unbounded | 8192 | 100 | 1 | `158.75 μs` | `41.49 μs` | BufferQueue is about `3.83x` faster under these parameters |
-| Bounded | 8192 | 100 | 1 | `191.79 μs` | `42.45 μs` | BufferQueue is about `4.52x` faster under these parameters |
-| Unbounded | 8192 | 1000 | 1 | `163.12 μs` | `23.81 μs` | BufferQueue is about `6.85x` faster under these parameters |
-| Bounded | 8192 | 1000 | 1 | `184.97 μs` | `25.47 μs` | BufferQueue is about `7.26x` faster under these parameters |
-| Unbounded | 8192 | 1 | 12 | `3,228.43 μs` | `2,044.47 μs` | BufferQueue is about `1.58x` faster under these parameters |
-| Bounded | 8192 | 1 | 12 | `2,028.88 μs` | `2,048.48 μs` | `Channel<T>` is about `1.01x` faster under these parameters |
-| Unbounded | 8192 | 10 | 12 | `3,174.30 μs` | `258.04 μs` | BufferQueue is about `12.30x` faster under these parameters |
-| Bounded | 8192 | 10 | 12 | `2,087.85 μs` | `307.28 μs` | BufferQueue is about `6.79x` faster under these parameters |
-| Unbounded | 8192 | 100 | 12 | `2,322.14 μs` | `58.63 μs` | BufferQueue is about `39.61x` faster under these parameters |
-| Bounded | 8192 | 100 | 12 | `2,205.18 μs` | `49.06 μs` | BufferQueue is about `44.95x` faster under these parameters |
-| Unbounded | 8192 | 1000 | 12 | `2,944.09 μs` | `36.52 μs` | BufferQueue is about `80.62x` faster under these parameters |
-| Bounded | 8192 | 1000 | 12 | `2,124.94 μs` | `34.77 μs` | BufferQueue is about `61.11x` faster under these parameters |
-
-### Single-Reader Channel Comparison
-
-The main consuming table uses the default Channel and has no `SingleReader` specialization. This isolated unbounded benchmark
-prefills each queue with the same `8192` integers and uses one consumer; BufferQueue still has `12` partitions. Its specialized Channel is
-created with `new UnboundedChannelOptions { SingleReader = true, SingleWriter = false, AllowSynchronousContinuations = false }`.
-`SingleReader = true` is a caller promise that no more than one reader accesses the channel concurrently; it does not enforce
-that limit, so this Channel is not a valid replacement for the `Consumers = 12` case. In .NET 10, `CreateBounded` does not
-select a different implementation based on `SingleReader` or `SingleWriter`.
-Channel measurements use one `Task.Run` that performs item-by-item `TryRead` with `Volatile.Read` and
-`Interlocked.Decrement`. BufferQueue uses one `Task.Run` with async `foreach`, Auto Commit, and the selected batch size;
-`BatchSize` affects BufferQueue only. The benchmark isolates the Channel option rather than changing the main table's
-default Channel configuration.
-
-| `BatchSize` | Channel default Mean | Channel `SingleReader = true` Mean | BufferQueue (Auto Commit) Mean | SingleReader speedup over default | Result vs SingleReader |
-| ---: | ---: | ---: | ---: | ---: | ---: |
-| 1 | `159.78 μs` | `109.38 μs` | `1,221.76 μs` | `1.46x` | Channel is about `11.17x` faster |
-| 10 | `163.43 μs` | `107.50 μs` | `215.96 μs` | `1.52x` | Channel is about `2.01x` faster |
-| 100 | `165.59 μs` | `109.71 μs` | `41.06 μs` | `1.51x` | BufferQueue is about `2.67x` faster |
-| 1000 | `161.96 μs` | `111.09 μs` | `23.23 μs` | `1.46x` | BufferQueue is about `4.78x` faster |
-
-The specialized Channel is about `1.46x-1.52x` faster than the default Channel in this one-reader run. BufferQueue takes
-about `11.17x` the specialized Channel's time at `BatchSize = 1` and `2.01x` at `10`, then is about `2.67x`
-faster at `100` and `4.78x` faster at `1000`. The official .NET 10.0 implementations are
-[Channel.cs](https://github.com/dotnet/runtime/blob/v10.0.0/src/libraries/System.Threading.Channels/src/System/Threading/Channels/Channel.cs)
-and [ChannelOptions.cs](https://github.com/dotnet/runtime/blob/v10.0.0/src/libraries/System.Threading.Channels/src/System/Threading/Channels/ChannelOptions.cs).
-
-Benchmark platform for the latest benchmark runs:
-
-| Item | Value |
-| --- | --- |
-| CPU | Apple M2 Max, `12` logical / `12` physical cores |
-| OS | macOS `27.0.1` (`26A434`) |
-| RID | `osx-arm64` |
-| .NET SDK | `10.0.100` |
-| .NET runtime | `10.0.0`, `arm64` |
-| BenchmarkDotNet | `0.15.8` |
-| Channel | `System.Threading.Channels 10.0.0` from the .NET `10.0.0` shared framework; assembly version `10.0.0.0`; no separate NuGet package |
-| Benchmark target | `net10.0` |
-
-Run the full benchmark with:
-
-```shell
-dotnet run -c Release --project tests/BufferQueue.Benchmarks/BufferQueue.Benchmarks.csproj
+```csharp
+// ChannelReader<T>: one item per iteration
+IAsyncEnumerable<T> ReadAllAsync(CancellationToken cancellationToken = default);
+// IBufferPullConsumer<T>: one batch per iteration
+IAsyncEnumerable<IEnumerable<T>> ConsumeAsync(CancellationToken cancellationToken = default);
 ```
 
-Reproduce the producing and consuming comparisons above with:
+`ReadAllAsync` yields items individually until the channel completes; it does not collect them into one batch.
+The primary summary below uses BufferQueue `AutoCommit = true`; the charts also include a separately measured Manual Commit
+series. The charts also show `Channel<T>.TryRead` as a gray synchronous reference. The workload drains prefilled queues
+with `8,192` `int` messages, `12` BufferQueue partitions, and `1` or `12` consumers. `BatchSize` affects BufferQueue only.
 
-```shell
-dotnet run -c Release --project tests/BufferQueue.Benchmarks/BufferQueue.Benchmarks.csproj -- --filter '*ChannelVsMemoryBufferQueue*'
-```
+Benchmark environment: Apple M2 Max (12 cores), macOS 27.0.1 / Arm64, .NET 10.0.0, BenchmarkDotNet 0.15.8 (Release).
 
-Run only the single-reader Channel comparison with:
+In this prefilled workload, compared with `Channel.ReadAllAsync`, BufferQueue with Auto Commit shows:
 
-```shell
-dotnet run -c Release --project tests/BufferQueue.Benchmarks/BufferQueue.Benchmarks.csproj -- --filter '*SingleReaderChannelVsMemoryBufferQueueConsumeBenchmark*'
-```
+- **1 consumer, BatchSize = 1:** elapsed time is about 2.0–2.7× Channel's; Channel is faster for this single-item case.
+- **1 consumer, larger batches:** BatchSize = 10 reduces elapsed time by about 48–61%; BatchSize = 50–100 reduces it by
+  about 87–92%. These ranges cover both bounded and unbounded results.
+- **12 consumers:** BufferQueue has lower mean elapsed time at all five measured batch sizes in both modes. Channel
+  readers share one queue, while BufferQueue consumers read assigned partitions, so the comparison also reflects that concurrency difference.
 
-Run only the System.Text.Json, MessagePack, and unmanaged MMF serializer comparison with:
+Batching provides the clearest benefit when messages are already available. A larger configured BatchSize does not
+ensure a full batch under sparse traffic; these results measure draining a backlog, not per-message delivery latency.
 
-```shell
-dotnet run -c Release --project tests/BufferQueue.Benchmarks/BufferQueue.Benchmarks.csproj -- --filter '*MemoryMappedFileSerializer*'
-```
+### Unbounded
 
-### Opportunistic Batching
+![Unbounded queue benchmark, 1 consumer](docs/benchmarks/memory-unbounded-1-consumer.svg)
+
+![Unbounded queue benchmark, 12 consumers](docs/benchmarks/memory-unbounded-12-consumers.svg)
+
+### Bounded
+
+![Bounded queue benchmark, 1 consumer](docs/benchmarks/memory-bounded-1-consumer.svg)
+
+![Bounded queue benchmark, 12 consumers](docs/benchmarks/memory-bounded-12-consumers.svg)
+
+Manual Commit measurements include `CommitAsync` after every returned batch.
+
+**Manual Commit is a BufferQueue feature advantage:** an application can process a batch successfully before calling
+`CommitAsync`, preserving a replay opportunity for an uncommitted batch. `Channel<T>` has no built-in equivalent
+acknowledgement, checkpoint, or replay.
+
+### Producer APIs
+
+![Unbounded producer APIs](docs/benchmarks/memory-producer-unbounded.svg)
+
+![Bounded producer APIs](docs/benchmarks/memory-producer-bounded.svg)
+
+These producer charts compare the measured API shapes: asynchronous Channel `WriteAsync`, synchronous Channel
+`TryWrite` as a reference, and asynchronous BufferQueue `ProduceAsync` item and `ReadOnlyMemory<int>` batch calls.
+The timed method creates the queue and starts 12 `Task.Run` producer tasks to write 8,192 values. Bounded capacity is
+large enough for the workload, so producer backpressure waiting is not measured.
+
+For single-item async writes, BufferQueue and Channel `WriteAsync` take similar time when unbounded; BufferQueue takes
+about 11% less time when bounded. BufferQueue batch writes take about 89–91% less time than Channel single-item writes,
+reflecting the different number of API calls.
+
+Allocation per 8,192-item operation also differs: production allocates about 55 KiB for BufferQueue versus
+135 / 68 KiB for Channel `WriteAsync` (unbounded / bounded). For one-consumer draining, BufferQueue allocates about
+193 KiB at BatchSize 1 and 36.5 KiB at BatchSize 100, with similar Auto / Manual results; Channel `ReadAllAsync`
+allocates about 0.93 KiB. These are allocated bytes, not peak memory; see the [allocation charts](docs/benchmarks/memory-queues.md#memory-allocation).
+
+See [memory queue benchmark details](docs/benchmarks/memory-queues.md) for the benchmark setup and interpretation.
+
+## Opportunistic Batching
 
 BufferQueue forms batches from data that is already available when a consumer scans a partition. A pull returns up
 to `BatchSize` items from one readable partition. Items already queued in the same partition may be combined
 opportunistically into that batch; the consumer does not hold the first item for a fixed collection window. Low
 traffic can therefore produce a one-item batch, while a burst can produce a larger batch from the same partition.
 
-A producer appends an item and sends a wake-up hint to registered consumers. The shared consumer scans its assigned
-partitions in round-robin order. After a successful pull it returns the batch to the caller and resumes the scan when
-the caller continues enumeration. A push handler completes its current batch before the next pull. Only when every
-assigned partition is empty does the consumer wait for a pending-data notification. The notification version is checked across the scan-to-wait transition so data
-that arrives at that boundary causes another pull attempt instead of a missed wake-up.
-
 With `AutoCommit`, the consumer commits immediately after a successful pull. With manual commit, it returns the batch
 to the caller and advances only after `CommitAsync`; an uncommitted batch may be delivered again. Push consumers use
-the same pull and wake-up path underneath.
+the same delivery and commit semantics.
 
 ![BufferQueue opportunistic batch consumption](docs/assets/bufferqueue-opportunistic-batching.svg)
 
-The diagram shows the normal pull loop and omits cancellation and shutdown branches. “Opportunistic” describes when
-items are collected into a batch; it is not a business-level merge or deduplication guarantee. Batch composition
-depends on enqueue timing, partition routing, `BatchSize`, and consumer scheduling.
+“Opportunistic” describes when items are collected into a batch; it is not a business-level merge or deduplication
+guarantee. Batch composition depends on enqueue timing, partition routing, `BatchSize`, and consumer scheduling. See
+[Consumer model](docs/design/consumer-model.md) for delivery and wake-up details.
 
 ## Functional Design
 
@@ -231,8 +151,8 @@ depends on enqueue timing, partition routing, `BatchSize`, and consumer scheduli
 
 ### Partitioned Concurrency
 
-Memory-mode consumers use a lock-free design. Consumer groups can read concurrently and advance their progress
-independently without blocking one another.
+Memory-mode published-slot reads avoid the append lock, so consumer groups can read independently. Consumer
+registration, commits, and segment recycling still use the partition's synchronization.
 
 ### Multi-Partition Design
 
@@ -241,7 +161,7 @@ Each topic can have multiple partitions, each of which has an independent consum
 The producer writes data to each partition in a round-robin manner by default. A topic can instead enable
 partition-key routing so items with equal keys are written to the same partition.
 
-**The number of consumers must not exceed the number of partitions, and the partitions will be evenly distributed to each customer in the group**.
+**The number of consumers must not exceed the number of partitions, and partitions are assigned as evenly as possible within the group**.
 
 When a consumer is assigned multiple partitions, it consumes in a round-robin manner.
 
@@ -249,9 +169,10 @@ Different consumption groups' consumption progress is recorded on each partition
 
 ![BufferQueue partitions and consumer groups](docs/assets/Partition.svg)
 
-### Dynamically Adjust Buffer Size
+### Segmented Memory
 
-Supports dynamically adjusting the buffer size to adapt to scenarios where the production and consumption speeds are constantly changing.
+Memory mode stores records in fixed-size segments. Unbounded topics allocate additional segments as needed; bounded
+topics enforce their configured total capacity and release it as all consumer groups commit.
 
 ## Usage Example
 
@@ -320,45 +241,15 @@ continues to use round-robin routing. The selector must be deterministic and saf
 In Memory mode, concurrent producers can append to different key-selected partitions in parallel; appends to the
 same partition remain serialized.
 
-String routing uses XXH3-64 with seed zero over the complete UTF-16LE key, including suffixes, with
-no legacy mapping mode. Empty strings are accepted; null keys are rejected. Routing preserves code
-units without Unicode normalization. It hashes directly without managed allocations on little-endian
-machines when the key fits in a byte span. Long keys can use hardware SIMD; short keys use specialized
-scalar paths. All paths produce the same mapping. Existing MMF data remains readable, but upgrading
-from prefix routing can move new messages for a key to another partition, so ordering across that
-upgrade is not preserved.
+String routing hashes the complete UTF-16 key deterministically. Empty strings are accepted, null keys are rejected,
+and code units are used without Unicode normalization. On supported little-endian .NET targets, the mapping is stable
+across restarts; MMF topics are not intended to move between platforms with different byte order. Existing MMF data
+remains readable after a routing implementation change, but new messages for a key may use another partition, so
+per-key ordering across that upgrade is not preserved. See [Partitioning and concurrency](docs/design/partitioning-and-concurrency.md)
+for the routing contract and persistence constraints.
 
-### Partition-Key Routing Benchmark
-
-The following [`MemoryBufferPartitionerBenchmark`](tests/BufferQueue.Benchmarks/MemoryBufferPartitionerBenchmark.cs)
-measures the complete Memory-mode producer path with `8` partitions and `8,192` messages repeated `832` times,
-`6` warmup iterations, and `15` measured iterations. Results are per produced item on macOS 27.0.1,
-ARM64, and .NET 10.0.0; no path allocated managed memory. String keys contain `7` UTF-16 code units;
-complete-key hashing takes more time as keys get longer.
-
-| Routing | Mean | Relative to round robin |
-| --- | ---: | ---: |
-| Round robin | `13.40 ns` | `1.00x` |
-| `int` key | `12.03 ns` | `0.90x` |
-| `string` key (XXH3-64, complete UTF-16 key) | `12.94 ns` | `0.97x` |
-| Custom message, numeric `CustomerId` key | `11.19 ns` | `0.83x` |
-
-Run this producer benchmark with:
-
-```bash
-dotnet run -c Release --project tests/BufferQueue.Benchmarks/BufferQueue.Benchmarks.csproj -- --filter '*MemoryBufferPartitionerBenchmark*'
-```
-
-The separate [`StringPartitionRoutingBenchmark`](tests/BufferQueue.Benchmarks/StringPartitionRoutingBenchmark.cs)
-measures only string routing for prebuilt keys of `4`, `9`, `64`, `120`, `121`, `256`, and `1024` UTF-16 code units across `8` partitions.
-The `120`/`121` cases straddle XXH3's long-input threshold of `240` bytes.
-It uses one launch, `6` warmup iterations, and `10` measured iterations with a target iteration time of `100 ms`.
-Its results are per routing call and exclude queue writes; the table above comes from the producer benchmark.
-Run the key-length benchmark with:
-
-```bash
-dotnet run -c Release --project tests/BufferQueue.Benchmarks/BufferQueue.Benchmarks.csproj -- --filter '*StringPartitionRoutingBenchmark*'
-```
+See the [retained partition-key routing benchmark](docs/benchmarks/memory-queues.md#partition-key-routing-benchmark)
+for the historical measurements, methodology, and reproduction commands.
 
 ### MemoryMappedFile Mode Registration
 
@@ -482,32 +373,17 @@ One serializer instance is shared by the topic partitions and can be called conc
 
 Batch flushing reduces the number of explicit flushes, but a partial tail batch is not guaranteed to have been explicitly flushed when there is no subsequent production, segment rollover, or consumer commit. Applications that require every successful produce call to be an explicit durability boundary should use the default `Immediate` strategy.
 
-MemoryMappedFile data is stored by topic and partition:
+MemoryMappedFile stores records and producer/consumer checkpoints under the configured data directory, with group names
+escaped when used as path components. Consumer creation persists an initial offset for every assigned partition, so
+slow, uncommitted, offline, or obsolete groups can prevent retention. Stop the queue and remove an obsolete group's
+escaped offsets directory before deleting that group's retained state.
 
-```text
-{DataDirectory}/{TopicName}/partition-{PartitionId:D5}/
-```
-
-For example:
-
-```text
-/var/lib/bufferqueue/topic-foo/partition-00000/00000000000000000000.log
-/var/lib/bufferqueue/topic-foo/partition-00000/producer.offset
-/var/lib/bufferqueue/topic-foo/partition-00000/earliest.offset
-/var/lib/bufferqueue/topic-foo/partition-00000/offsets/group-foo/consumer.offset
-```
-
-Consumer group names are used directly as offset directory names when they are valid folder names. Invalid path-component characters are percent-encoded. For example, group `orders/worker 1` is stored under:
-
-```text
-offsets/orders%2Fworker 1/consumer.offset
-```
-
-`earliest.offset` is an 8-byte little-endian checkpoint containing the earliest retained segment boundary. New consumer groups start there. Consumer creation persists an initial offset for every assigned partition, so a group that has not pulled from a partition still participates in retention. Slow, uncommitted, offline, and obsolete groups prevent deletion until their checkpoints advance. Removing an obsolete group requires stopping the queue and deleting its entire `offsets/{escaped-group-name}/` directory.
-
-During recovery, a missing `producer.offset` is scanned forward from `earliest.offset`, or from `0` when no retention checkpoint exists. A producer offset that is behind the actual log is also scanned forward. Because `producer.offset` advances only after the corresponding log data has been flushed successfully, it can safely lag complete records that reached the log after the last checkpoint. Corrupted, ahead-of-log, non-record-boundary offsets, and missing segment files inside the retained range fail fast instead of being recreated or silently resetting progress. In `Batch` mode, an unflushed partial tail batch may be absent after an abnormal termination.
-
-When recovering an existing MemoryMappedFile topic, do not reduce `PartitionNumber`. Historical records stored in removed partitions would no longer have a partition reader and could not be consumed, so startup fails fast with an `InvalidDataException` if existing partition directories exceed the configured partition count.
+Recovery scans missing or stale producer checkpoints
+forward from the retained boundary, but fails fast for corrupted, ahead-of-log, non-record-boundary checkpoints or
+missing retained segments. In `Batch` mode, an unflushed partial tail may be absent after abnormal termination. Do
+not reduce `PartitionNumber` for an existing topic; startup fails if existing partition directories exceed the
+configured count. See [Memory-mapped-file storage](docs/design/memory-mapped-file.md) for the layout, retention, and
+recovery rules.
 
 ### Consumer Groups
 
