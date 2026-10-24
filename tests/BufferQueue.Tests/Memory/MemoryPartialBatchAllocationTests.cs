@@ -97,4 +97,35 @@ public sealed class MemoryPartialBatchAllocationTests
         Assert.Equal(new[] { 2, 3, 4, 5 }, batches.Current);
         Assert.Equal(new[] { 0, 1 }, held);
     }
+
+    [Fact]
+    public void Cross_Segment_Partial_Batch_Exposes_Only_Delivered_Items()
+    {
+        var partition = new MemoryBufferPartition<int>(0, 3);
+        foreach (var value in new[] { 10, 11, 12, 13, 14 })
+        {
+            partition.Enqueue(value);
+        }
+
+        Assert.True(partition.TryPull("Group", 10, out var items));
+        var list = Assert.IsAssignableFrom<IReadOnlyList<int>>(items);
+        Assert.Equal(5, list.Count);
+        Assert.Equal(10, list[0]);
+        Assert.Equal(14, list[4]);
+        Assert.Throws<ArgumentOutOfRangeException>(() => list[-1]);
+        Assert.Throws<ArgumentOutOfRangeException>(() => list[5]);
+        Assert.Equal(new[] { 10, 11, 12, 13, 14 }, list);
+
+        var collection = Assert.IsAssignableFrom<ICollection<int>>(items);
+        Assert.True(collection.IsReadOnly);
+        Assert.True(collection.Contains(14));
+        Assert.False(collection.Contains(0));
+        var copy = Enumerable.Repeat(-1, 7).ToArray();
+        collection.CopyTo(copy, 1);
+        Assert.Equal(new[] { -1, 10, 11, 12, 13, 14, -1 }, copy);
+        Assert.Throws<NotSupportedException>(() => collection.Add(15));
+        Assert.Throws<NotSupportedException>(() => collection.Remove(10));
+        Assert.Throws<NotSupportedException>(() => collection.Clear());
+    }
+
 }

@@ -86,8 +86,8 @@ V1 measurements are not silently discarded or presented as the final implementat
 Focused tests cover sparse allocation independent of configured maximum, retained reference snapshots across
 append/replay/commit/recycling, exact bounded capacity release, and segment sizes two/three across `ulong` wrap.
 The mixed-producer/two-group concurrency matrix also runs BatchSize 1,000 with bounded/unbounded and round-robin/keyed
-routing. Commit and wake-up synchronization are unchanged. Final format/restore/Release-build/full-solution checks pass
-on .NET 8 and .NET 10: 292 core and 133 MMF tests per framework, 850 executions in total.
+routing. Additional contracts cover capacity released before waiter registration and the collection boundaries of cross-segment partial snapshots. Commit and wake-up synchronization are unchanged. Final format/restore/Release-build/full-solution checks pass
+on .NET 8 and .NET 10: 294 core and 133 MMF tests per framework, 854 executions in total.
 
 ## Reproduce
 
