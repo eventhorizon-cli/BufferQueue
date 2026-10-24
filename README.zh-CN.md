@@ -36,8 +36,8 @@ BufferQueue 当前提供两种存储模式：
 
 计时包含队列创建和任务调度。bounded 容量足够容纳全部数据，因此测量的是有可用容量时的写入成本，不包含等待空间的耗时。
 
-单条 async 写入时，unbounded 下 BufferQueue 与 Channel `WriteAsync` 耗时接近，bounded 下 BufferQueue 耗时约少 11%。
-BufferQueue batch 写入比 Channel 单条写入耗时约少 89–91%，其中也体现了 API 调用次数的差异。
+单条 async 写入时，unbounded 下 BufferQueue 与 Channel `WriteAsync` 耗时接近，bounded 下 BufferQueue 耗时约少 12%。
+BufferQueue batch 写入比 Channel 单条写入耗时约少 89–90%，其中也体现了 API 调用次数的差异。
 
 ### 消费性能
 
@@ -64,8 +64,8 @@ Manual Commit 的计时包含每批读取后的 `CommitAsync`。
 
 在这组预填充队列测试中，启用 Auto Commit 的 BufferQueue 与 `Channel.ReadAllAsync` 相比：
 
-- **1 个消费者，BatchSize = 1**：耗时约为 Channel 的 2.0–2.7 倍，逐条消费场景仍是 Channel 更快。
-- **1 个消费者，增大 batch**：BatchSize = 10 时耗时减少约 48–61%；BatchSize = 50–100 时减少约 87–92%。
+- **1 个消费者，BatchSize = 1**：耗时约为 Channel 的 2.0–2.6 倍，逐条消费场景仍是 Channel 更快。
+- **1 个消费者，增大 batch**：BatchSize = 10 时耗时减少约 53–63%；BatchSize = 50–100 时减少约 87–92%。
   这些范围涵盖 bounded 和 unbounded 两种模式。
 - **12 个消费者**：两种模式下，BufferQueue 在五档实测 BatchSize 的平均耗时都更低。Channel 的消费者共享一个队列，
   BufferQueue 的消费者读取各自分配的分区，因此结果也反映了两者并发组织方式的差异。
@@ -77,6 +77,7 @@ Manual Commit 的计时包含每批读取后的 `CommitAsync`。
 
 以下数值均表示每次 benchmark operation 处理 8,192 条消息产生的累计托管分配量（allocated bytes），不是峰值驻留内存。
 消费测量使用 `Count()` 统计批次中的条数，不包含逐条枚举和业务处理的分配。
+测试消费预填充数据；分区尾部仍可能取不满 batch，这种情况下也会减少内存分配。
 
 #### 写入分配量
 
@@ -88,7 +89,7 @@ Producer 每次处理 8,192 条约分配 55 KiB，Channel `WriteAsync` 在 unbou
 
 #### 消费分配量
 
-单消费者消费时，BufferQueue 在 BatchSize 1 / 100 下分别约分配 193 / 36.5 KiB，Auto Commit / Manual Commit 结果接近；
+单消费者消费时，BufferQueue 在 BatchSize 1 / 100 / 1000 下分别约分配 193 / 35.3 / 33.6 KiB，Auto Commit / Manual Commit 结果接近；
 Channel `ReadAllAsync` 约分配 0.93 KiB。图表同时展示 Auto / Manual，`ReadAllAsync` 是异步参考，`TryRead` 是同步参考。
 
 ![unbounded 消费内存分配，1 个消费者](docs/benchmarks/memory-unbounded-1-consumer-allocations.zh-CN.svg)
