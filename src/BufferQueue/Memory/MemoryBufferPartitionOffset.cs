@@ -6,6 +6,7 @@ namespace BufferQueue.Memory;
 // Generation is unnecessary: only positions in the currently retained window need ordering.
 // One ulong reduces the offset from 16 to 8 bytes and removes generation carry/borrow branches.
 // Retained segments and reader positions must span fewer than 2^63 items for ordering to be valid.
+// Even one byte per retained item would require 8 EiB of memory to reach that span.
 // This is not a total order over arbitrary ulong values or offsets from different partitions.
 [DebuggerDisplay("Index = {Index}")]
 internal readonly record struct MemoryBufferPartitionOffset(ulong Index)
@@ -18,7 +19,7 @@ internal readonly record struct MemoryBufferPartitionOffset(ulong Index)
     public static bool operator <(MemoryBufferPartitionOffset left, MemoryBufferPartitionOffset right)
         => unchecked((long)(left.Index - right.Index)) < 0;
 
-    // Forward item count, not another position. Callers ensure left is at or after right in the live window.
+    // Modular distance, not another position. Validate the forward range before using it as an item count.
     public static ulong operator -(MemoryBufferPartitionOffset left, MemoryBufferPartitionOffset right)
         => unchecked(left.Index - right.Index);
 

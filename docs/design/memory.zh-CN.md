@@ -23,6 +23,9 @@ live window 严格小于 `2^63` 个位置，比较结果就是明确的。live w
 reader position。Memory queue 不可能保留 `2^63` 条数据，因此跨越回绕点时，正常读取、提交、未提交批次重放、
 有界容量释放和 segment 复用都会继续工作。
 
+这里限制的是同时保留的 item 位置跨度，不是历史累计流量或字节数。即使每条 item 只占 1 字节，保留 `2^63` 条
+也需要 8 EiB（约 9.22 EB）内存，还没有计算 segment 的额外开销，因此这个范围足以覆盖实际的内存驻留窗口。
+
 原来的 `Generation` 字段用于记录 `Index` 已经回绕了多少次。Memory 存储只需要比较同一个 partition 当前仍保留的
 窗口内的位置，不会拿这些位置与已丢弃历史中的任意位置比较。慢速 group 会让未读 segment 继续驻留内存，因此它的
 落后距离也包含在同一个受内存限制的窗口内。回绕比较已经能满足这个需求，即使 `Index` 发生回绕，也不需要
@@ -64,6 +67,10 @@ append lock，因此不会读到尚未写入的 slot。Enqueue 成功后，parti
 - 当前 segment；
 - 当前 read position；
 - 上次读取数量。
+
+Consumer group 的成员变化并不频繁。私有的 `ReaderRegistry` 会在 group 注册或注销时，在现有的 append 同步机制下
+重新构建并原子发布不可变的 `FrozenDictionary` 查找快照。Reader 使用已发布的快照查找 group，不需要额外的查找锁。
+这个冻结快照只负责冻结 group 成员关系；Reader 的 committed position 仍由现有同步机制保护。
 
 `TryPull` 最多返回 `BatchSize` 条数据。只有调用 `Commit` 后，reader 的
 已提交位置才会推进。因此在 queue 实例仍存活期间，未提交 batch 可能再次交付。

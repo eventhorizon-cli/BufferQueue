@@ -1,6 +1,6 @@
 using System;
 using System.Collections;
-using System.Collections.Concurrent;
+using System.Collections.Frozen;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
@@ -19,10 +19,7 @@ internal sealed class MemoryBufferPartition<T>
     private volatile MemoryBufferSegment<T> _head;
     private volatile MemoryBufferSegment<T> _tail;
 
-    // At most one consumer per group can consume the same partition at the same time,
-    private readonly ConcurrentDictionary<string /* group name */, Reader> _consumerReaders;
-    // Registry changes and committed-position scans share the append lock.
-    private readonly List<Reader> _registeredReaders = [];
+    private readonly ReaderRegistry _readers = new();
     // The append lock serializes replacements. Published sets are never mutated, so notifications
     // can enumerate an older set without locking or copying it.
     private HashSet<IBufferPartitionConsumer<T>> _consumers;
@@ -53,7 +50,6 @@ internal sealed class MemoryBufferPartition<T>
         _segmentSize = segmentSize;
         PartitionId = id;
         _head = _tail = new(_segmentSize, default);
-        _consumerReaders = new();
         _consumers = [];
 
         _appendLock = appendLock;
@@ -112,10 +108,7 @@ internal sealed class MemoryBufferPartition<T>
                 consumers.Remove(consumer);
             }
 
-            if (_consumerReaders.TryRemove(consumer.GroupName, out var reader))
-            {
-                _registeredReaders.Remove(reader);
-            }
+            _readers.Remove(consumer.GroupName);
             // Notifications already using the old set may still call this consumer.
             Volatile.Write(ref _consumers, consumers);
             releasedCount = ReleaseCommittedCapacity();
@@ -204,7 +197,7 @@ internal sealed class MemoryBufferPartition<T>
 
     public bool TryPull(string groupName, int batchSize, [NotNullWhen(true)] out IEnumerable<T>? items)
     {
-        if (!_consumerReaders.TryGetValue(groupName, out var reader))
+        if (!_readers.TryGet(groupName, out var reader))
         {
             EnterAppendLock();
             try
@@ -226,7 +219,7 @@ internal sealed class MemoryBufferPartition<T>
         EnterAppendLock();
         try
         {
-            if (!_consumerReaders.TryGetValue(groupName, out var reader))
+            if (!_readers.TryGet(groupName, out var reader))
             {
                 throw new InvalidOperationException("Specified group name not found.");
             }
@@ -300,14 +293,13 @@ internal sealed class MemoryBufferPartition<T>
     private Reader GetOrCreateReader(string groupName)
     {
         Debug.Assert(Monitor.IsEntered(_appendLock));
-        if (_consumerReaders.TryGetValue(groupName, out var reader))
+        if (_readers.TryGet(groupName, out var reader))
         {
             return reader;
         }
 
         reader = CreateReader();
-        _consumerReaders[groupName] = reader;
-        _registeredReaders.Add(reader);
+        _readers.Add(groupName, reader);
         return reader;
     }
 
@@ -323,7 +315,7 @@ internal sealed class MemoryBufferPartition<T>
 
     private ulong ReleaseCommittedCapacity()
     {
-        if (_releaseCapacity == null || _registeredReaders.Count == 0)
+        if (_releaseCapacity == null || _readers.Count == 0)
         {
             return 0;
         }
@@ -341,24 +333,58 @@ internal sealed class MemoryBufferPartition<T>
 
     private MemoryBufferPartitionOffset MinConsumerReadPosition()
     {
-        MemoryBufferPartitionOffset? minReadPosition = null;
-        foreach (var reader in _registeredReaders)
+        Debug.Assert(Monitor.IsEntered(_appendLock) ||
+                     _appendCoordinator != null && Monitor.IsEntered(_appendCoordinator));
+        return _readers.Count == 0 ? _head.StartOffset : _readers.GetMinimumReadPosition();
+    }
+
+    // Mutations and progress scans require the partition's append synchronization; lookups may run concurrently.
+    private sealed class ReaderRegistry
+    {
+        // Only registration changes replace this snapshot. Published lookup tables are never mutated.
+        private FrozenDictionary<string, Reader> _byGroup = FrozenDictionary<string, Reader>.Empty;
+
+        public int Count => _byGroup.Count;
+
+        public FrozenDictionary<string, Reader> ReadersForDebugger => Volatile.Read(ref _byGroup);
+
+        public bool TryGet(string groupName, [NotNullWhen(true)] out Reader? reader)
+            => Volatile.Read(ref _byGroup).TryGetValue(groupName, out reader);
+
+        public void Add(string groupName, Reader reader)
         {
-            var readPosition = reader.ReadPosition;
-
-            if (minReadPosition == null)
+            var updated = new Dictionary<string, Reader>(_byGroup, StringComparer.Ordinal)
             {
-                minReadPosition = readPosition;
-                continue;
-            }
+                [groupName] = reader
+            };
+            Volatile.Write(ref _byGroup, updated.ToFrozenDictionary(StringComparer.Ordinal));
+        }
 
-            if (readPosition < minReadPosition)
+        public void Remove(string groupName)
+        {
+            var updated = new Dictionary<string, Reader>(_byGroup, StringComparer.Ordinal);
+            if (updated.Remove(groupName))
             {
-                minReadPosition = readPosition;
+                Volatile.Write(ref _byGroup, updated.ToFrozenDictionary(StringComparer.Ordinal));
             }
         }
 
-        return minReadPosition ?? _head.StartOffset;
+        public MemoryBufferPartitionOffset GetMinimumReadPosition()
+        {
+            var readers = _byGroup.Values;
+            Debug.Assert(readers.Length > 0);
+            var minimum = readers[0].ReadPosition;
+            for (var i = 1; i < readers.Length; i++)
+            {
+                var position = readers[i].ReadPosition;
+                if (position < minimum)
+                {
+                    minimum = position;
+                }
+            }
+
+            return minimum;
+        }
     }
 
     // One reader can only be used by one consumer at the same time.
@@ -534,7 +560,7 @@ internal sealed class MemoryBufferPartition<T>
 
         public HashSet<IBufferPartitionConsumer<T>> Consumers => Volatile.Read(ref partition._consumers);
 
-        public ConcurrentDictionary<string, Reader> ConsumerReaders => partition._consumerReaders;
+        public FrozenDictionary<string, Reader> ConsumerReaders => partition._readers.ReadersForDebugger;
 
         public MemoryBufferSegment<T>[] Segments
         {

@@ -26,6 +26,10 @@ retained segment data and all reader positions. A Memory queue cannot retain `2^
 normal reads, commits, replay of uncommitted batches, bounded-capacity release, and segment
 recycling continue across the wrap boundary.
 
+This limit counts simultaneously retained item positions, not cumulative traffic or bytes.
+Even at one byte per item, `2^63` retained items would require 8 EiB (about 9.22 EB) of memory,
+before accounting for segment overhead. It therefore covers the practical in-memory window.
+
 The former `Generation` field tracked how many times `Index` had wrapped. Memory storage only
 needs to order positions within the currently retained window of one partition; it does not
 compare them with arbitrary positions from discarded history. A slow group keeps its unread
@@ -77,6 +81,12 @@ Each consumer group has a reader for each partition. The reader keeps:
 - its current segment;
 - its current read position;
 - the last read count.
+
+Consumer-group membership changes infrequently. The private `ReaderRegistry` rebuilds and atomically
+publishes an immutable `FrozenDictionary` lookup snapshot under the existing append synchronization
+when a group is registered or unregistered. Readers use the published snapshot without another
+lookup lock. The frozen snapshot covers group membership only; reader committed positions remain
+protected by the existing synchronization.
 
 `TryPull` returns up to `BatchSize` items. The reader's committed position
 moves only when `Commit` is called. An uncommitted batch can therefore be delivered
