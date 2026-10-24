@@ -150,6 +150,8 @@ consumer 数量必须介于 1 和该 topic 的 partition 数量之间。创建�
 
 `BatchSize` 是上限：只有一条数据可用时，稀疏 pull 不会分配完整大小的 batch；segment 复用后，已返回的数据仍保持稳定，
 Auto Commit 和 Manual Commit 的行为相同。
+singleton batch 支持重复和彼此独立的交错枚举。每个 `foreach` 创建自己的紧凑 enumerator；
+commit 后保留 batch 不会暴露已复用的 segment 存储。
 
 下面的示例使用手动提交：只有整个批次处理成功后，消费进度才会推进。
 

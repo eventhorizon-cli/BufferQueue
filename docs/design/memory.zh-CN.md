@@ -80,6 +80,10 @@ Consumer group 的成员变化并不频繁。私有的 `ReaderRegistry` 会在 g
 都会返回独立的 singleton snapshot。`BatchSize = 1` 在 private reader 内使用专用路径，但仍复用相同的无锁 published-slot
 检查；commit 和容量释放的同步机制保持不变。
 
+每个 singleton snapshot 都为每次枚举创建独立的 enumerator。枚举可以交错、嵌套，或由不同线程独立执行；
+commit 和 segment 复用后 snapshot 仍保持有效。Reset 不受支持。Dispose 只停止当前枚举，不改变 snapshot 或其他
+enumerator。私有 singleton enumerator 只保存捕获的 item 和遍历状态，不持有 snapshot 对象。
+
 ## Segment 复用
 
 Memory 模式可以复用旧 segment。只有当所有 consumer group 都已经消费过某个 segment 的末尾后，该 segment

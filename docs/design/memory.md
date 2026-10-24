@@ -99,6 +99,12 @@ it returns an independent singleton snapshot for any configured `BatchSize`. `Ba
 dedicated path within the private reader; it shares the same lock-free published-slot checks, and
 commit and capacity-release synchronization are unchanged.
 
+Each singleton snapshot creates an independent enumerator for every enumeration. Enumerators may be
+interleaved, nested, or used independently on different threads; the snapshot remains valid after
+commit and segment recycling. Reset is unsupported. Disposing an enumerator stops that enumeration
+without changing the snapshot or other enumerators. The private singleton enumerator stores only
+the captured item and traversal state; it does not retain the snapshot object.
+
 ## Segment Recycling
 
 Memory mode can recycle old segments. A segment is eligible only after every consumer group has

@@ -1,3 +1,4 @@
+using System.Reflection;
 using BufferQueue.Memory;
 
 namespace BufferQueue.Tests.Memory;
@@ -162,6 +163,59 @@ public class MemoryBufferCapacityGateTests
         gate.Release();
 
         await waitingTask.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.False(gate.TryAcquire());
+    }
+
+    [Fact]
+    public async Task AcquireAsync_Handoffs_Capacity_Released_Before_Waiter_Registration()
+    {
+        var gate = new MemoryBufferCapacityGate(1);
+        Assert.True(gate.TryAcquire());
+
+        var syncRoot = typeof(MemoryBufferCapacityGate)
+            .GetField("_syncRoot", BindingFlags.Instance | BindingFlags.NonPublic)
+            ?.GetValue(gate)
+            ?? throw new InvalidOperationException("Could not find the capacity gate synchronization root.");
+        using var ready = new ManualResetEventSlim();
+        ValueTask acquisition = default;
+        Exception? acquisitionException = null;
+        var worker = new Thread(() =>
+        {
+            ready.Set();
+            try
+            {
+                acquisition = gate.AcquireAsync(1, default);
+            }
+            catch (Exception exception)
+            {
+                acquisitionException = exception;
+            }
+        })
+        {
+            IsBackground = true
+        };
+
+        bool blockedOnMonitor;
+        lock (syncRoot)
+        {
+            worker.Start();
+            var workerStarted = ready.Wait(TimeSpan.FromSeconds(10));
+            blockedOnMonitor = workerStarted && SpinWait.SpinUntil(
+                () => (worker.ThreadState & ThreadState.WaitSleepJoin) != 0,
+                TimeSpan.FromSeconds(10));
+
+            gate.Release();
+        }
+
+        Assert.True(worker.Join(TimeSpan.FromSeconds(10)));
+        Assert.True(blockedOnMonitor);
+        Assert.Null(acquisitionException);
+        Assert.True(acquisition.IsCompletedSuccessfully);
+        await acquisition;
+
+        Assert.False(gate.TryAcquire());
+        gate.Release();
+        Assert.True(gate.TryAcquire());
         Assert.False(gate.TryAcquire());
     }
 
