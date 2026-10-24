@@ -111,7 +111,7 @@ await producer.ProduceAsync(ordersFromAnEnumerable, cancellationToken);
 能避免非数组 `IEnumerable<T>` 在提交前产生的物化。`IEnumerable<T>` 重载用于方便调用；当输入不是数组时，
 会先物化为数组，再提交整个批次。单条和 `ReadOnlyMemory<T>` 的 `ProduceAsync` 都是核心接口方法，不是扩展方法。
 
-对于配置了有界容量的 Memory topic，`FullMode` 默认为 `Wait`：`ProduceAsync` 和 `TryProduceAsync` 都会异步
+对于配置了 bounded 容量的 Memory topic，`FullMode` 默认为 `Wait`：`ProduceAsync` 和 `TryProduceAsync` 都会异步
 等待容量可用；输入完整接纳后，`TryProduceAsync` 返回 `true`。生产代码应传入 `CancellationToken`，以便取消
 背压等待。需要立即拒绝写入时，可将 `FullMode` 设为 `Fail`：`ProduceAsync` 会抛出
 `BufferQueueFullException`，`TryProduceAsync` 返回 `false`。大小不超过配置容量的批次会整批接纳；超过容量的
@@ -143,10 +143,11 @@ consumer 数量必须介于 1 和该 topic 的 partition 数量之间。创建�
 先写入数据再创建 group，也支持 group 创建与生产并发进行。新 group 从各 partition 当前仍可读的最早位置开始，
 无法读取容量已经释放或 segment 已经回收的数据，因此不保证能读取该 topic 的完整历史。
 
-对于采用 `Wait` 模式的有界 Memory topic，容量不足时写入会等待。应启动消费并提交进度来释放容量，避免先等待
+对于采用 `Wait` 模式的 bounded Memory topic，容量不足时写入会等待。应启动消费并提交进度来释放容量，避免先等待
 超过可用容量的写入全部完成后才开始消费。
 
-Memory pull 在 `BatchSize = 1` 时使用专用读取路径，适用于 Auto Commit 和 Manual Commit；segment 复用后，已返回的数据仍保持稳定。
+`BatchSize` 是上限：只有一条数据可用时，稀疏 pull 不会分配完整大小的 batch；segment 复用后，已返回的数据仍保持稳定，
+Auto Commit 和 Manual Commit 的行为相同。
 
 下面的示例使用手动提交：只有整个批次处理成功后，消费进度才会推进。
 

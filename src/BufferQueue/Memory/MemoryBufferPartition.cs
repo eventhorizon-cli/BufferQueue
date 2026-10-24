@@ -426,6 +426,7 @@ internal sealed class MemoryBufferPartition<T>
             var readPosition = _readPosition;
             var currentSegment = _currentSegment;
             T[]? result = null;
+            T singleItem = default!;
             var copiedCount = 0;
 
             while (true)
@@ -442,9 +443,26 @@ internal sealed class MemoryBufferPartition<T>
                     readPosition += (ulong)length;
                     remainingCount -= length;
 
-                    result ??= new T[batchSize];
-                    Array.Copy(segmentItems.Array!, segmentItems.Offset, result, copiedCount, length);
-                    copiedCount += length;
+                    if (copiedCount == 0 && length == 1)
+                    {
+                        // Stage the first item until another published item requires a batch array.
+                        singleItem = segmentItems.Array![segmentItems.Offset];
+                        copiedCount = 1;
+                    }
+                    else
+                    {
+                        if (result == null)
+                        {
+                            result = new T[batchSize];
+                            if (copiedCount == 1)
+                            {
+                                result[0] = singleItem;
+                            }
+                        }
+
+                        Array.Copy(segmentItems.Array!, segmentItems.Offset, result, copiedCount, length);
+                        copiedCount += length;
+                    }
                 }
                 else
                 {
@@ -475,6 +493,12 @@ internal sealed class MemoryBufferPartition<T>
             }
 
             _lastReadCount = batchSize - remainingCount;
+            if (_lastReadCount == 1)
+            {
+                items = new SingleItemBatch<T>(singleItem);
+                return true;
+            }
+
             items = _lastReadCount == result!.Length
                 ? result
                 : new SnapshotBatch<T>(result, _lastReadCount);

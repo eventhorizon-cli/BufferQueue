@@ -173,7 +173,7 @@ history.
 For a bounded Memory topic in `Wait` mode, writes wait when capacity is unavailable. Start consumption and commit
 progress to release capacity instead of waiting for writes beyond the available capacity to finish first.
 
-Memory pulls with `BatchSize = 1` use a dedicated read path with Auto Commit or Manual Commit; returned values remain stable after segment recycling.
+`BatchSize` is an upper limit: sparse pulls avoid allocating a full-size batch when only one item is available, returned values remain stable after segment recycling, and the behavior is the same with Auto Commit and Manual Commit.
 
 This example uses manual commit, so progress advances only after the batch has
 been processed successfully:
