@@ -453,7 +453,17 @@ internal sealed class MemoryBufferPartition<T>
                     {
                         if (result == null)
                         {
-                            result = new T[batchSize];
+                            if (batchSize == 0)
+                            {
+                                items = null;
+                                return false;
+                            }
+
+                            // A successor published after this observation belongs to the next pull.
+                            var resultLength = remainingCount > 0 && currentSegment.NextSegment == null
+                                ? copiedCount + length
+                                : batchSize;
+                            result = new T[resultLength];
                             if (copiedCount == 1)
                             {
                                 result[0] = singleItem;
@@ -462,6 +472,12 @@ internal sealed class MemoryBufferPartition<T>
 
                         Array.Copy(segmentItems.Array!, segmentItems.Offset, result, copiedCount, length);
                         copiedCount += length;
+                        if (copiedCount == result.Length)
+                        {
+                            _lastReadCount = copiedCount;
+                            items = result;
+                            return true;
+                        }
                     }
                 }
                 else

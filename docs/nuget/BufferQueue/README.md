@@ -321,6 +321,7 @@ reclamation.
 - Consumers in the same group divide partitions between them.
 - Ordering is preserved within a partition, not globally across partitions.
 - `BatchSize` is an upper bound; a returned batch may contain fewer items.
+- Sparse Memory tail batches can use smaller snapshot arrays; returned batches remain valid after commits and segment recycling.
 - Manual commit provides at-least-once delivery; an uncommitted batch may be delivered again.
 - Auto commit advances progress after a successful pull, before application processing.
 - Consumer count is fixed when a group is created and cannot exceed the partition count.
