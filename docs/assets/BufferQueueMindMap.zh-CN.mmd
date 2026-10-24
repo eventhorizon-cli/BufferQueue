@@ -4,11 +4,13 @@ config:
   themeVariables:
     background: "#ffffff"
     fontFamily: "'PingFang SC', Arial, 'Microsoft YaHei', sans-serif"
-    fontSize: 22px
-    primaryTextColor: "#172b4d"
-    lineColor: "#a6b1c0"
+    fontSize: 20px
+    primaryTextColor: "#303b44"
+    lineColor: "#475467"
+    clusterBkg: "#ffffff"
+    clusterBorder: "#98a2b3"
 ---
-%% Topology: Q -> T1, T2, More; T1 -> Span, Metric, Log.
+%% The SVG is the stable layout; this graph preserves the same node and edge contract.
 flowchart LR
     Q[BufferQueue] --> T1[主题1]
     Q --> T2[主题2]
@@ -16,9 +18,10 @@ flowchart LR
     T1 --> Span[Span]
     T1 --> Metric[指标]
     T1 --> Log[日志]
-    class Q queue
-    class T1,T2,More topic
-    class Span,Metric,Log type
-    classDef queue fill:#eff4fb,stroke:#7c9fc9,color:#172b4d,stroke-width:1.8px
-    classDef topic fill:#f8fafc,stroke:#a6b1c0,color:#172b4d,stroke-width:1.8px
-    classDef type fill:#f5f0fa,stroke:#b29bcc,color:#172b4d,stroke-width:1.8px
+    class Q gateway
+    class T1,T2,More core
+    class Span,Metric,Log storage
+    classDef gateway fill:#eaf2ff,stroke:#3567a7,color:#1d3b66,stroke-width:1.5px
+    classDef core fill:#edf1f5,stroke:#596773,color:#303b44,stroke-width:1.5px
+    classDef storage fill:#fff4d6,stroke:#8a6a1d,color:#4d3b0e,stroke-width:1.5px
+    classDef client fill:#e9f6f1,stroke:#2f6f5e,color:#173f35,stroke-width:1.5px

@@ -1,47 +1,49 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="760" viewBox="0 0 1500 760" role="img" aria-labelledby="title description">
+<svg xmlns="http://www.w3.org/2000/svg" width="1240" height="540" viewBox="0 0 1240 540" role="img" aria-labelledby="title description">
 <title id="title">BufferQueue Partition 与 Consumer Group</title>
-<desc id="description">Producer 写入两个 Partition。Consumer Group 1 将两个 Partition 分别分配给两个 Consumer，Consumer Group 2 将两个 Partition 分配给一个 Consumer。</desc>
+<desc id="description">Producer 写入两个 Partition。Group 1 的两个 Consumer 各消费一个 Partition；Group 2 的 Consumer 3 消费两个 Partition。</desc>
+<!-- P -> Q -> P0/P1; P0 -> C1/C3; P1 -> C2/C3. All assignments terminate on consumer nodes. -->
 <defs>
-  <marker id="arrow-flow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#475467"/></marker>
-  <marker id="arrow-blue" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#7c9fc9"/></marker>
-  <marker id="arrow-purple" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#b29bcc"/></marker>
-  <style>
-    text { font-family: 'PingFang SC', Arial, 'Microsoft YaHei', sans-serif; fill:#172b4d; text-anchor:middle; }
-    .label { font-size:22px; }
-    .group-label { font-size:20px; font-weight:700; text-anchor:start; }
-    .producer, .queue { fill:#f8fafc; stroke:#d0d5dd; stroke-width:2; }
-    .partition-blue, .consumer-blue { fill:#eff4fb; stroke:#7c9fc9; stroke-width:2; }
-    .partition-purple, .consumer-purple { fill:#f5f0fa; stroke:#b29bcc; stroke-width:2; }
-    .consumer-green { fill:#eff7f2; stroke:#7cae9a; stroke-width:2; }
-    .group { fill:#ffffff; stroke:#d0d5dd; stroke-width:2; stroke-dasharray:7 6; }
-    .flow { fill:none; stroke:#475467; stroke-width:2.4; marker-end:url(#arrow-flow); stroke-linecap:round; stroke-linejoin:round; }
-    .assignment-blue { fill:none; stroke:#7c9fc9; stroke-width:2.2; stroke-dasharray:7 6; marker-end:url(#arrow-blue); stroke-linecap:round; stroke-linejoin:round; }
-    .assignment-purple { fill:none; stroke:#b29bcc; stroke-width:2.2; stroke-dasharray:7 6; marker-end:url(#arrow-purple); stroke-linecap:round; stroke-linejoin:round; }
-  </style>
+  <marker id="arrow" markerWidth="8" markerHeight="8" refX="8" refY="4" orient="auto" markerUnits="userSpaceOnUse"><path d="M0 0 L8 4 L0 8 Z" fill="#475467"/></marker>
+  <marker id="assignment-arrow" markerWidth="8" markerHeight="8" refX="8" refY="4" orient="auto" markerUnits="userSpaceOnUse"><path d="M0 0 L8 4 L0 8 Z" fill="#75529b"/></marker>
 </defs>
-<rect width="1500" height="760" fill="#ffffff"/>
-<rect class="producer" x="45" y="300" width="210" height="110" rx="8"/>
-<text class="label" x="150" y="355" dominant-baseline="middle">Producer</text>
-<path class="flow" d="M255 355 H320"/>
-<rect class="queue" x="320" y="170" width="560" height="380" rx="12"/>
-<text class="group-label" x="350" y="215">BufferQueue / Topic</text>
-<rect class="partition-blue" x="375" y="285" width="450" height="64" rx="8"/>
-<rect class="partition-purple" x="375" y="405" width="450" height="64" rx="8"/>
-<text class="label" x="600" y="317" dominant-baseline="middle">Partition 0</text>
-<text class="label" x="600" y="437" dominant-baseline="middle">Partition 1</text>
-<rect class="group" x="1010" y="75" width="405" height="335" rx="10"/>
-<text class="group-label" x="1040" y="115">Consumer Group 1</text>
-<rect class="consumer-blue" x="1110" y="160" width="220" height="70" rx="8"/>
-<rect class="consumer-purple" x="1110" y="275" width="220" height="70" rx="8"/>
-<text class="label" x="1220" y="195" dominant-baseline="middle">Consumer 1</text>
-<text class="label" x="1220" y="310" dominant-baseline="middle">Consumer 2</text>
-<rect class="group" x="1010" y="500" width="405" height="175" rx="10"/>
-<text class="group-label" x="1040" y="540">Consumer Group 2</text>
-<rect class="consumer-green" x="1110" y="575" width="220" height="70" rx="8"/>
-<text class="label" x="1220" y="610" dominant-baseline="middle">Consumer 3</text>
-<!-- 每条虚线分配路径都明确指向对应的 Consumer。 -->
-<path class="assignment-blue" d="M825 317 H930 V195 H1110"/>
-<path class="assignment-purple" d="M825 437 H900 V310 H1110"/>
-<path class="assignment-blue" d="M825 317 H860 V595 H1110"/>
-<path class="assignment-purple" d="M825 437 H900 V630 H1110"/>
+<style>
+  text { font-family:'PingFang SC', Arial, 'Microsoft YaHei', sans-serif; font-size:20px; text-anchor:middle; dominant-baseline:middle; fill:#303b44; }
+  .node { stroke-width:1.5; }
+  .gateway { fill:#eaf2ff; stroke:#3567a7; }
+  .core { fill:#edf1f5; stroke:#596773; }
+  .storage { fill:#fff4d6; stroke:#8a6a1d; }
+  .client { fill:#e9f6f1; stroke:#2f6f5e; }
+  .group { fill:white; stroke:#98a2b3; stroke-width:1.5; stroke-dasharray:6 5; }
+  .group-label { font-size:18px; font-weight:700; text-anchor:start; }
+  .flow { fill:none; stroke:#475467; stroke-width:1.7; marker-end:url(#arrow); stroke-linejoin:round; }
+  .assignment { fill:none; stroke:#75529b; stroke-width:1.7; stroke-dasharray:6 5; marker-end:url(#assignment-arrow); stroke-linejoin:round; }
+</style>
+<rect width="1240" height="540" fill="white"/>
+<rect x="460" y="100" width="260" height="350" rx="6" fill="white" stroke="#98a2b3" stroke-width="1.5"/>
+<text class="group-label" x="480" y="130">Partition</text>
+<rect class="group" x="1000" y="100" width="210" height="350" rx="6"/>
+<text class="group-label" x="1020" y="130">Consumer Group 1</text>
+<rect class="group" x="755" y="230" width="220" height="118" rx="6"/>
+<text class="group-label" x="775" y="255">Consumer Group 2</text>
+<path class="flow" d="M170 270 H215"/>
+<path class="flow" d="M415 255 H445 V190 H485"/>
+<path class="flow" d="M415 285 H435 V360 H485"/>
+<path class="assignment" d="M695 190 H1020"/>
+<path class="assignment" d="M695 360 H1020"/>
+<path class="assignment" d="M695 190 H735 V292 H780"/>
+<path class="assignment" d="M695 360 H735 V316 H780"/>
+<rect id="P" class="node client" x="30" y="240" width="140" height="60" rx="6"/>
+<text x="100" y="270" style="fill:#173f35">Producer</text>
+<rect id="Q" class="node gateway" x="215" y="240" width="200" height="60" rx="6"/>
+<text x="315" y="270" style="fill:#1d3b66">BufferQueue / Topic</text>
+<rect id="P0" class="node storage" x="485" y="160" width="210" height="60" rx="6"/>
+<text x="590" y="190" style="fill:#4d3b0e">Partition 0</text>
+<rect id="P1" class="node storage" x="485" y="330" width="210" height="60" rx="6"/>
+<text x="590" y="360" style="fill:#4d3b0e">Partition 1</text>
+<rect id="C1" class="node client" x="1020" y="160" width="170" height="60" rx="6"/>
+<text x="1105" y="190" style="fill:#173f35">Consumer 1</text>
+<rect id="C2" class="node client" x="1020" y="330" width="170" height="60" rx="6"/>
+<text x="1105" y="360" style="fill:#173f35">Consumer 2</text>
+<rect id="C3" class="node client" x="780" y="280" width="170" height="48" rx="6"/>
+<text x="865" y="304" style="fill:#173f35">Consumer 3</text>
 </svg>

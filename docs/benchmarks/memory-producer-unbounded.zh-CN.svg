@@ -1189,7 +1189,7 @@ L 226.396699 307.008
 L 226.396699 117.285283
 L 104.288727 117.285283
 z
-" clip-path="url(#pbe78dade4b)" style="fill: #7c9fc9; opacity: 0.9"/>
+" clip-path="url(#pbe78dade4b)" style="fill: #2459b8; opacity: 0.9"/>
    </g>
    <g id="patch_6">
     <path d="M 239.964252 307.008
@@ -1197,7 +1197,7 @@ L 362.072224 307.008
 L 362.072224 145.468054
 L 239.964252 145.468054
 z
-" clip-path="url(#pbe78dade4b)" style="fill: #a6b1c0; opacity: 0.9"/>
+" clip-path="url(#pbe78dade4b)" style="fill: #98a2b3; opacity: 0.9"/>
    </g>
    <g id="patch_7">
     <path d="M 375.639776 307.008
@@ -1205,7 +1205,7 @@ L 497.747748 307.008
 L 497.747748 120.99205
 L 375.639776 120.99205
 z
-" clip-path="url(#pbe78dade4b)" style="fill: #7cae9a; opacity: 0.9"/>
+" clip-path="url(#pbe78dade4b)" style="fill: #2f855a; opacity: 0.9"/>
    </g>
    <g id="patch_8">
     <path d="M 511.315301 307.008
@@ -1213,7 +1213,7 @@ L 633.423273 307.008
 L 633.423273 286.124242
 L 511.315301 286.124242
 z
-" clip-path="url(#pbe78dade4b)" style="fill: #d2a17e; opacity: 0.9"/>
+" clip-path="url(#pbe78dade4b)" style="fill: #b56313; opacity: 0.9"/>
    </g>
    <g id="text_13">
     <g id="patch_9">
@@ -1225,7 +1225,7 @@ z
 " style="fill: #ffffff; opacity: 0.9"/>
     </g>
     <!-- 338.0 -->
-    <g style="fill: #7c9fc9" transform="translate(153.354432 107.285283) scale(0.09 -0.09)">
+    <g style="fill: #2459b8" transform="translate(153.354432 107.285283) scale(0.09 -0.09)">
      <defs>
       <path id="PingFangSC-Regular-2e" d="M 845 762
 C 730 762 640 723 570 646
@@ -1256,7 +1256,7 @@ z
 " style="fill: #ffffff; opacity: 0.9"/>
     </g>
     <!-- 287.8 -->
-    <g style="fill: #a6b1c0" transform="translate(289.268316 135.468054) scale(0.09 -0.09)">
+    <g style="fill: #98a2b3" transform="translate(289.268316 135.468054) scale(0.09 -0.09)">
      <defs>
       <path id="PingFangSC-Regular-37" d="M 218 4570
 L 218 4090
@@ -1286,7 +1286,7 @@ z
 " style="fill: #ffffff; opacity: 0.9"/>
     </g>
     <!-- 331.4 -->
-    <g style="fill: #7cae9a" transform="translate(425.601262 110.99205) scale(0.09 -0.09)">
+    <g style="fill: #2f855a" transform="translate(425.601262 110.99205) scale(0.09 -0.09)">
      <use xlink:href="#PingFangSC-Regular-33"/>
      <use xlink:href="#PingFangSC-Regular-33" x="59.999985"/>
      <use xlink:href="#PingFangSC-Regular-31" x="119.999969"/>
@@ -1304,7 +1304,7 @@ z
 " style="fill: #ffffff; opacity: 0.9"/>
     </g>
     <!-- 37.2 -->
-    <g style="fill: #d2a17e" transform="translate(563.319365 276.124242) scale(0.09 -0.09)">
+    <g style="fill: #b56313" transform="translate(563.319365 276.124242) scale(0.09 -0.09)">
      <use xlink:href="#PingFangSC-Regular-33"/>
      <use xlink:href="#PingFangSC-Regular-37" x="59.999985"/>
      <use xlink:href="#PingFangSC-Regular-2e" x="114.699982"/>
@@ -3071,7 +3071,7 @@ L 93.832 55.31375
 L 93.832 49.71375
 L 77.832 49.71375
 z
-" style="fill: #7c9fc9; opacity: 0.9"/>
+" style="fill: #2459b8; opacity: 0.9"/>
    </g>
    <g id="text_20">
     <!-- Channel WriteAsync(item) -->
@@ -3193,7 +3193,7 @@ L 93.832 72.71375
 L 93.832 67.11375
 L 77.832 67.11375
 z
-" style="fill: #a6b1c0; opacity: 0.9"/>
+" style="fill: #98a2b3; opacity: 0.9"/>
    </g>
    <g id="text_21">
     <!-- Channel TryWrite(item)（sync） -->
@@ -3247,7 +3247,7 @@ L 244.38325 55.31375
 L 244.38325 49.71375
 L 228.38325 49.71375
 z
-" style="fill: #7cae9a; opacity: 0.9"/>
+" style="fill: #2f855a; opacity: 0.9"/>
    </g>
    <g id="text_22">
     <!-- BufferQueue ProduceAsync(item) -->
@@ -3373,7 +3373,7 @@ L 244.38325 72.71375
 L 244.38325 67.11375
 L 228.38325 67.11375
 z
-" style="fill: #d2a17e; opacity: 0.9"/>
+" style="fill: #b56313; opacity: 0.9"/>
    </g>
    <g id="text_23">
     <!-- BufferQueue ProduceAsync(ReadOnlyMemory) -->
