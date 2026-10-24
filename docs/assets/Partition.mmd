@@ -1,3 +1,4 @@
+%%{init: {"theme":"base", "flowchart":{"htmlLabels":true,"curve":"linear","nodeSpacing":55,"rankSpacing":70}, "themeVariables":{"background":"#ffffff","fontFamily":"Arial, PingFang SC, Microsoft YaHei, sans-serif","fontSize":"18px","primaryTextColor":"#172b4d","lineColor":"#475467","primaryColor":"#f8fafc","primaryBorderColor":"#d0d5dd","edgeLabelBackground":"#ffffff"}}}%%
 flowchart LR
     P[Producer] --> Q[BufferQueue / Topic]
     Q --> P0[Partition 0]
@@ -6,3 +7,15 @@ flowchart LR
     P1 -. assignment .-> C2[Consumer Group 1 / Consumer 2]
     P0 -. assignment .-> C3[Consumer Group 2 / Consumer 3]
     P1 -. assignment .-> C3
+    class P,Q core
+    class P0 partitionBlue
+    class P1 partitionPurple
+    class C1 consumerBlue
+    class C2 consumerPurple
+    class C3 consumerGreen
+    classDef core fill:#f8fafc,stroke:#d0d5dd,color:#172b4d,stroke-width:1.5px
+    classDef partitionBlue fill:#eff4fb,stroke:#7c9fc9,color:#172b4d,stroke-width:1.5px
+    classDef partitionPurple fill:#f5f0fa,stroke:#b29bcc,color:#172b4d,stroke-width:1.5px
+    classDef consumerBlue fill:#eff4fb,stroke:#7c9fc9,color:#172b4d,stroke-width:1.5px
+    classDef consumerPurple fill:#f5f0fa,stroke:#b29bcc,color:#172b4d,stroke-width:1.5px
+    classDef consumerGreen fill:#eff7f2,stroke:#7cae9a,color:#172b4d,stroke-width:1.5px

@@ -1,3 +1,14 @@
+---
+config:
+  theme: base
+  themeVariables:
+    background: "#ffffff"
+    fontFamily: "'PingFang SC', Arial, 'Microsoft YaHei', sans-serif"
+    fontSize: 22px
+    primaryTextColor: "#172b4d"
+    lineColor: "#a6b1c0"
+---
+%% Topology: Q -> T1, T2, More; T1 -> Span, Metric, Log.
 flowchart LR
     Q[BufferQueue] --> T1[主题1]
     Q --> T2[主题2]
@@ -5,3 +16,9 @@ flowchart LR
     T1 --> Span[Span]
     T1 --> Metric[指标]
     T1 --> Log[日志]
+    class Q queue
+    class T1,T2,More topic
+    class Span,Metric,Log type
+    classDef queue fill:#eff4fb,stroke:#7c9fc9,color:#172b4d,stroke-width:1.8px
+    classDef topic fill:#f8fafc,stroke:#a6b1c0,color:#172b4d,stroke-width:1.8px
+    classDef type fill:#f5f0fa,stroke:#b29bcc,color:#172b4d,stroke-width:1.8px
