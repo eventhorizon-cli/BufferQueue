@@ -5,19 +5,13 @@ using System.Threading.Tasks;
 
 namespace BufferQueue.Memory;
 
-internal sealed class MemoryBufferCapacityGate
+internal sealed class MemoryBufferCapacityGate(ulong capacity)
 {
     private readonly object _syncRoot = new();
-    private readonly ulong _capacity;
+    private readonly ulong _capacity = capacity;
     private readonly LinkedList<Waiter> _waiters = [];
     private int _hasWaiters;
-    private ulong _availableSlots;
-
-    public MemoryBufferCapacityGate(ulong capacity)
-    {
-        _capacity = capacity;
-        _availableSlots = capacity;
-    }
+    private ulong _availableSlots = capacity;
 
     public ulong Capacity => _capacity;
 

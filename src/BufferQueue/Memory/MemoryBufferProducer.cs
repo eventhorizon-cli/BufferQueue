@@ -562,14 +562,7 @@ internal sealed class MemoryBufferProducer<T>(
         foreach (var item in items)
         {
             var partitionIndex = SelectPartitionIndex(item);
-            var partitionItems = itemsByPartition[partitionIndex];
-            if (partitionItems == null)
-            {
-                partitionItems = [];
-                itemsByPartition[partitionIndex] = partitionItems;
-            }
-
-            partitionItems.Add(item);
+            (itemsByPartition[partitionIndex] ??= []).Add(item);
         }
 
         return itemsByPartition;

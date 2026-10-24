@@ -12,8 +12,7 @@ public static class MemoryMappedFileBufferOptionsBuilderExtensions
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(configure);
 
-        var options = new MemoryMappedFileBufferOptionsBuilder(builder.Services);
-        configure(options);
+        configure(new MemoryMappedFileBufferOptionsBuilder(builder.Services));
 
         return builder;
     }

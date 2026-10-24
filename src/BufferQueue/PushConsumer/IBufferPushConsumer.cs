@@ -1,6 +1,3 @@
 namespace BufferQueue.PushConsumer;
 
-public interface IBufferPushConsumer
-{
-
-}
+public interface IBufferPushConsumer;
