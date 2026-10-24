@@ -94,10 +94,17 @@ again while the queue instance remains alive.
 
 `BatchSize` is an upper limit. A pull continues opportunistically across published segments while
 items are available. The reader stages the first item without allocating the requested batch array
-and allocates that array only after a second available item is found. If only one item is available,
+and allocates a batch array only after a second available item is found. If only one item is available,
 it returns an independent singleton snapshot for any configured `BatchSize`. `BatchSize = 1` uses a
 dedicated path within the private reader; it shares the same lock-free published-slot checks, and
 commit and capacity-release synchronization are unchanged.
+
+When the first array allocation reaches a published tail with no visible next segment, the reader
+sizes that array to the items already observed and ends the pull at that boundary. A producer may
+publish more data immediately afterward; it remains available to the next pull. This avoids sizing
+a sparse tail's array to the configured maximum without a separate availability scan or producer
+counter. Cross-segment batches with a visible successor retain the requested-size allocation.
+Returned batches own their copies and remain valid after later appends, commits, and recycling.
 
 Each singleton snapshot creates an independent enumerator for every enumeration. Enumerators may be
 interleaved, nested, or used independently on different threads; the snapshot remains valid after

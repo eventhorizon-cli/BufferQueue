@@ -287,6 +287,7 @@ consumer 不会继续收到唤醒通知，也不会阻止 memory segment 回收�
 - 同一 group 中的 consumer 会分配不同 partition。
 - 顺序只在单个 partition 内得到保证，不保证跨 partition 的全局顺序。
 - `BatchSize` 是上限，实际返回的批次可能更小。
+- Memory 稀疏尾部的 batch 可以使用更小的快照数组；返回的 batch 在 commit 和 segment 复用后仍然有效。
 - 手动提交提供 at-least-once 投递；未提交的批次可能再次交付。
 - 自动提交会在成功拉取数据后、应用代码处理前推进进度。
 - consumer group 创建后，consumer 数量固定且不能超过 partition 数量。

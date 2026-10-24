@@ -76,9 +76,14 @@ Consumer group 的成员变化并不频繁。私有的 `ReaderRegistry` 会在 g
 已提交位置才会推进。因此在 queue 实例仍存活期间，未提交 batch 可能再次交付。
 
 `BatchSize` 是上限。只要还有已发布的数据，pull 就会跨越已发布的 segment 继续读取。Reader 会先暂存第一条数据，
-只有发现第二条可用数据后才分配请求大小的 batch array。如果当前只有一条数据可用，无论配置的 `BatchSize` 是多少，
+只有发现第二条可用数据后才分配 batch array。如果当前只有一条数据可用，无论配置的 `BatchSize` 是多少，
 都会返回独立的 singleton snapshot。`BatchSize = 1` 在 private reader 内使用专用路径，但仍复用相同的无锁 published-slot
 检查；commit 和容量释放的同步机制保持不变。
+
+首次分配数组时，如果已到达发布范围的末尾且没有可见的下一个 segment，reader 会按已观察到的 item 数量
+分配数组，并在该边界结束本次 pull。随后 producer 新发布的数据留给下一次 pull。这避免了稀疏尾部按配置
+上限分配数组，也不需要额外扫描可用范围或增加 producer 计数器。如果跨 segment 批次已经有可见后继，
+仍保留按请求大小分配的路径。返回的 batch 持有独立副本，在后续 append、commit 和 segment 回收后仍然有效。
 
 每个 singleton snapshot 都为每次枚举创建独立的 enumerator。枚举可以交错、嵌套，或由不同线程独立执行；
 commit 和 segment 复用后 snapshot 仍保持有效。Reset 不受支持。Dispose 只停止当前枚举，不改变 snapshot 或其他

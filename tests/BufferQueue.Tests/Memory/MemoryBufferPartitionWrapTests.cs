@@ -164,6 +164,26 @@ public sealed class MemoryBufferPartitionWrapTests
         Assert.Equal(8UL, partition.Capacity);
     }
 
+    [Theory]
+    [InlineData(2)]
+    [InlineData(3)]
+    public void Partial_Tail_Snapshot_Replays_Across_Wrap_And_Preserves_Later_Appends(int segmentSize)
+    {
+        var segment = CreateSegment(new(ulong.MaxValue), segmentSize, 10, 11);
+        var partition = SeedPartition(segment, segment);
+        Assert.True(partition.TryPull("Group", 1000, out var held));
+        Assert.Equal(new[] { 10, 11 }, held);
+
+        partition.Enqueue(12);
+        Assert.True(partition.TryPull("Group", 1000, out var replay));
+        Assert.Equal(new[] { 10, 11, 12 }, replay);
+        partition.Commit("Group");
+        partition.Enqueue(13);
+        Assert.True(partition.TryPull("Group", 1000, out var next));
+        Assert.Equal(new[] { 13 }, next);
+        Assert.Equal(new[] { 10, 11 }, held);
+    }
+
     [Fact]
     public void TryPull_Replays_Uncommitted_Batch_Across_Index_Wrap()
     {

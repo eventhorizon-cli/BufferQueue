@@ -31,6 +31,7 @@ var allBenchmarks = new[]
     typeof(MemoryNotificationOptimizationBenchmark),
     typeof(MemoryGroupProgressOptimizationBenchmark),
     typeof(MemorySparseBatchBenchmark),
+    typeof(MemoryPartialBatchAllocationBenchmark),
     typeof(ChannelReadPathBenchmark),
     typeof(PullConsumerSchedulingBenchmark),
     typeof(MemoryVsMemoryMappedFileBufferQueueConsumeBenchmark),
