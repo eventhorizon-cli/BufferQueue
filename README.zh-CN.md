@@ -28,6 +28,20 @@ BufferQueue 当前提供两种存储模式：
 
 ## 和其他常用内存缓存 Queue 的对比
 
+| 对比项 | `System.Threading.Channels` | BufferQueue |
+|---|---|---|
+| 主要定位 | 进程内生产者与消费者之间的异步数据交接 | 带分区、消费组和进度管理的批量处理 |
+| 批量 API | 逐条读写，应用可以自行组 batch | 支持批量生产和消费，每次最多返回 BatchSize 条已可用数据 |
+| 多消费者 | 多个 reader 竞争读取同一个队列 | 组内按 partition 分工，不同 group 独立消费 |
+| 消费确认与重放 | 读取即移除，没有内建的处理确认和重放机制 | 支持 Auto Commit 和 **Manual Commit**，未提交的 batch 可以再次交付 |
+| 顺序 | FIFO 读取，并行处理的完成顺序可能不同 | partition 内有序，跨 partition 不保证全局顺序 |
+| 容量与背压 | bounded / unbounded；bounded 支持等待或丢弃策略 | Memory 支持 bounded / unbounded、等待或失败；容量释放取决于最慢 group 的已提交进度 |
+| 持久化 | 无内建持久化 | Memory 仅在进程内保存；可选 MemoryMappedFile 包支持本地数据和已提交进度持久化 |
+
+只需要共享工作队列、逐条交接数据时，Channel 更直接；需要批量 API、明确的消费确认或多个独立消费组时，BufferQueue 提供对应能力。
+下面的 benchmark 测量 Memory 存储下的单个消费组，不包含 MemoryMappedFile，也不能据此确定每项额外功能各占多少开销。
+具体语义参见 [Channel 文档](https://learn.microsoft.com/en-us/dotnet/core/extensions/channels)和 [BufferQueue 消费模型](docs/design/consumer-model.zh-CN.md)。
+
 主要对比选择 `ReadAllAsync`，因为两边的方法都返回异步流，通过 `await foreach` 消费：
 
 ```csharp
