@@ -522,10 +522,7 @@ internal sealed class MemoryBufferPartition<T>
             ? item
             : throw new ArgumentOutOfRangeException(nameof(index));
 
-        public IEnumerator<TItem> GetEnumerator()
-        {
-            yield return item;
-        }
+        public IEnumerator<TItem> GetEnumerator() => new Enumerator(item);
 
         IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 
@@ -538,6 +535,38 @@ internal sealed class MemoryBufferPartition<T>
         public void Clear() => throw new NotSupportedException();
 
         public bool Remove(TItem itemToRemove) => throw new NotSupportedException();
+
+        private sealed class Enumerator(TItem item) : IEnumerator<TItem>
+        {
+            private readonly TItem _item = item;
+            // Zero is unstarted, one has yielded, and minus one was disposed before starting.
+            private int _state;
+
+            public TItem Current => _state == 1 ? _item : default!;
+
+            object? IEnumerator.Current => Current;
+
+            public bool MoveNext()
+            {
+                if (_state != 0)
+                {
+                    return false;
+                }
+
+                _state = 1;
+                return true;
+            }
+
+            public void Dispose()
+            {
+                if (_state == 0)
+                {
+                    _state = -1;
+                }
+            }
+
+            public void Reset() => throw new NotSupportedException();
+        }
     }
 
     private sealed class SnapshotBatch<TItem>(TItem[] items, int count) : IReadOnlyList<TItem>, ICollection<TItem>
