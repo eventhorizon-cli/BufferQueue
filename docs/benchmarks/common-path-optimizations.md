@@ -9,11 +9,11 @@ standard deviation, and allocation.
 ## Environment and Method
 
 - Apple M2 Max, 12 cores (verified with `sysctl`), macOS 27.0.1, Arm64.
-- .NET 10.0.0 and BenchmarkDotNet 0.15.8. The baseline core/runtime reference is `e615da8`, the same core as `091ac24` for
-  this benchmark line.
+- .NET 10.0.0 and BenchmarkDotNet 0.15.8. Sections A and B use baseline `e615da8`, the same core as `091ac24`.
+  Section C uses `791c399`, which includes the notification optimization.
 - Each run used one launch. The initial auto-commit comparison used 4 warmup and 10 measured iterations; its
-  confirmation used 8 warmup and 30 measured iterations. The notification and sparse comparisons used 6 warmup and
-  20 measured iterations.
+  confirmation used 8 warmup and 30 measured iterations. The notification, sparse, and minimum-progress comparisons used
+  6 warmup and 20 measured iterations.
 - Measurements ran sequentially on the same host. These short drain/path benchmarks are useful for directional
   comparison, not a complete application throughput claim. Reported `Error` and `StdDev` are retained in the CSV.
 
@@ -47,6 +47,30 @@ though each pull has only one available item. After the handshake change, Auto C
 Manual Commit by 5.21% to 10.60% across these configurations. Allocation was unchanged at 196.6 KB in every row.
 These 2 notification rows plus 16 sparse rows for each variant are included in the CSV.
 
+## C: Minimum-progress cache candidates (not retained)
+
+The group cases use the same 6-warmup/20-iteration job, 8,192 prefetched values, one partition, and `bounded` capacity.
+Each pull reads one item and is followed by an explicit commit (Manual Commit). `FastReaderWithIdleGroups` drains one
+group while the others remain idle; `LockstepReaders` reads and commits one item per group in each round.
+Single-group controls cover Auto Commit and Manual Commit, both capacity modes, and BatchSize 1/10/100.
+The baseline is the `791c399` line. The three candidates are a record-key cache, a raw index-equality cache, and a
+tied-count cache. The CSV contains 52 rows: baseline 16, record-key candidate 16, index candidate 4, and tied-count
+candidate 16. The 12 single-group rows per applicable run are retained as raw controls; the implementation is nearly unchanged on that
+path, so their cross-run movement is not presented as a stable gain.
+
+| Case | Baseline `791c399` | Record-key candidate | Index candidate | Tied-count candidate |
+|---|---:|---:|---:|---:|
+| FastReader, groups=2 | 359.2 us / 6.07 / 192 KB | 608.5 us / 19.08 / 192 KB | 387.8 us / 12.12 / 192 KB | 396.7 us / 12.26 / 192 KB |
+| Lockstep, groups=2 | 697.7 us / 22.30 / 384 KB | 1,446.2 us / 30.17 / 384 KB | 1,020.9 us / 17.46 / 384 KB | 854.4 us / 35.37 / 384 KB |
+| FastReader, groups=16 | 569.1 us / 14.28 / 192 KB | 682.2 us / 14.28 / 192 KB | 478.9 us / 7.52 / 192 KB | 397.6 us / 15.51 / 192 KB |
+| Lockstep, groups=16 | 6,844.5 us / 1,555.66 / 3072 KB | 10,250.4 us / 4,393.83 / 3072 KB | 8,058.1 us / 3,473.54 / 3072 KB | 7,893.4 us / 282.41 / 3072 KB |
+
+Each cell is `Mean / Error / Allocated`; the full `StdDev` and all raw rows are in the CSV. Record-key regressed all
+four group cases. Index and tied-count improved only the idle-reader case with 16 groups; both still regressed the
+two-group cases and the 16-group lockstep case. The 16-group lockstep distribution is bimodal and has a large error
+margin, but the two-group regressions are clear. All three minimum-progress cache candidates are rejected and none is
+merged.
+
 ## Reproduce
 
 Run the focused notification comparison with:
@@ -66,3 +90,12 @@ dotnet run -c Release --project tests/BufferQueue.Benchmarks/BufferQueue.Benchma
 The rejected reader-reuse implementation is not retained. Its recorded runs remain in the CSV;
 `MemoryAutoCommitOptimizationBenchmark` can still measure the current Auto/Manual Commit paths.
 Compare the retained notification change against its parent checkout, using the same benchmark source and settings.
+
+Run the current group-progress workload with:
+
+```bash
+dotnet run -c Release --project tests/BufferQueue.Benchmarks/BufferQueue.Benchmarks.csproj -- \
+  --filter '*MemoryGroupProgressOptimizationBenchmark*' --warmupCount 6 --iterationCount 20
+```
+
+The rejected cache implementations are not included in the repository.
