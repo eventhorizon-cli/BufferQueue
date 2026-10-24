@@ -84,7 +84,7 @@ Manual Commit 行是在相同的 `e615da8` 生产基线之上单独测量的，�
 15 次测量迭代，并在说明的 .NET 10 / Apple M2 Max 环境中运行；每个 async batch 后调用 `CommitAsync`。已有的
 Auto Commit 和 Channel 行仍作为汇总基线。
 
-#### unbounded
+### unbounded
 
 Channel reference（固定的 `BatchSize = 1` 代表值）：
 
@@ -123,7 +123,7 @@ BufferQueue `ConsumeAsync`（`AutoCommit = false`，每个 batch 后调用 `Comm
 | 1000 | 1 | 26.830 | 48.87 KB |
 | 1000 | 12 | 33.010 | 54.31 KB |
 
-#### bounded
+### bounded
 
 `bounded` 使用容量 8,192 的 BufferQueue 和容量 8,192 的 Channel。队列在计时方法开始前已预填充，因此这里
 是 drain benchmark，不测 producer 等待容量的路径。

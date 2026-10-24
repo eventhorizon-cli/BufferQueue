@@ -89,7 +89,7 @@ method. They use one launch, six warmup iterations, and fifteen measured iterati
 Max environment; each async batch is followed by `CommitAsync`. The existing Auto Commit and Channel rows remain the
 checked-in baseline workload.
 
-#### unbounded
+### unbounded
 
 Channel reference (fixed `BatchSize = 1` representative):
 
@@ -128,7 +128,7 @@ BufferQueue `ConsumeAsync` with `AutoCommit = false` and `CommitAsync` after eac
 | 1000 | 1 | 26.830 | 48.87 KB |
 | 1000 | 12 | 33.010 | 54.31 KB |
 
-#### bounded
+### bounded
 
 `bounded` uses a BufferQueue capacity of 8,192 and a Channel capacity of 8,192. The queues are prefetched before the
 timed method, so this is a drain benchmark and does not measure producer waiting for capacity.
