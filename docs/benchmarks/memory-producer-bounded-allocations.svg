@@ -931,7 +931,7 @@ L 226.396699 307.008
 L 226.396699 113.474526
 L 104.288727 113.474526
 z
-" clip-path="url(#pf5ba86ba65)" style="fill: #7c9fc9; opacity: 0.9"/>
+" clip-path="url(#pf5ba86ba65)" style="fill: #2459b8; opacity: 0.9"/>
    </g>
    <g id="patch_6">
     <path d="M 239.964252 307.008
@@ -939,7 +939,7 @@ L 362.072224 307.008
 L 362.072224 116.132345
 L 239.964252 116.132345
 z
-" clip-path="url(#pf5ba86ba65)" style="fill: #a6b1c0; opacity: 0.9"/>
+" clip-path="url(#pf5ba86ba65)" style="fill: #98a2b3; opacity: 0.9"/>
    </g>
    <g id="patch_7">
     <path d="M 375.639776 307.008
@@ -947,7 +947,7 @@ L 497.747748 307.008
 L 497.747748 150.700595
 L 375.639776 150.700595
 z
-" clip-path="url(#pf5ba86ba65)" style="fill: #7cae9a; opacity: 0.9"/>
+" clip-path="url(#pf5ba86ba65)" style="fill: #2f855a; opacity: 0.9"/>
    </g>
    <g id="patch_8">
     <path d="M 511.315301 307.008
@@ -955,7 +955,7 @@ L 633.423273 307.008
 L 633.423273 150.858403
 L 511.315301 150.858403
 z
-" clip-path="url(#pf5ba86ba65)" style="fill: #d2a17e; opacity: 0.9"/>
+" clip-path="url(#pf5ba86ba65)" style="fill: #b56313; opacity: 0.9"/>
    </g>
    <g id="text_9">
     <g id="patch_9">
@@ -967,7 +967,7 @@ z
 " style="fill: #ffffff; opacity: 0.9"/>
     </g>
     <!-- 68.3 -->
-    <g style="fill: #7c9fc9" transform="translate(156.585291 103.474526) scale(0.09 -0.09)">
+    <g style="fill: #2459b8" transform="translate(156.585291 103.474526) scale(0.09 -0.09)">
      <defs>
       <path id="ArialMT-2e" d="M 581 0
 L 581 641
@@ -1026,7 +1026,7 @@ z
 " style="fill: #ffffff; opacity: 0.9"/>
     </g>
     <!-- 67.3 -->
-    <g style="fill: #a6b1c0" transform="translate(292.260816 106.132345) scale(0.09 -0.09)">
+    <g style="fill: #98a2b3" transform="translate(292.260816 106.132345) scale(0.09 -0.09)">
      <defs>
       <path id="ArialMT-37" d="M 303 3981
 L 303 4522
@@ -1059,7 +1059,7 @@ z
 " style="fill: #ffffff; opacity: 0.9"/>
     </g>
     <!-- 55.1 -->
-    <g style="fill: #7cae9a" transform="translate(427.93634 140.700595) scale(0.09 -0.09)">
+    <g style="fill: #2f855a" transform="translate(427.93634 140.700595) scale(0.09 -0.09)">
      <defs>
       <path id="ArialMT-35" d="M 266 1200
 L 856 1250
@@ -1103,7 +1103,7 @@ z
 " style="fill: #ffffff; opacity: 0.9"/>
     </g>
     <!-- 55.1 -->
-    <g style="fill: #d2a17e" transform="translate(563.611865 140.858403) scale(0.09 -0.09)">
+    <g style="fill: #b56313" transform="translate(563.611865 140.858403) scale(0.09 -0.09)">
      <use xlink:href="#ArialMT-35"/>
      <use xlink:href="#ArialMT-35" x="55.615234"/>
      <use xlink:href="#ArialMT-2e" x="111.230469"/>
@@ -1619,7 +1619,7 @@ L 93.832 54.36875
 L 93.832 48.76875
 L 77.832 48.76875
 z
-" style="fill: #7c9fc9; opacity: 0.9"/>
+" style="fill: #2459b8; opacity: 0.9"/>
    </g>
    <g id="text_16">
     <!-- Channel WriteAsync(item) -->
@@ -1725,7 +1725,7 @@ L 93.832 71.07625
 L 93.832 65.47625
 L 77.832 65.47625
 z
-" style="fill: #a6b1c0; opacity: 0.9"/>
+" style="fill: #98a2b3; opacity: 0.9"/>
    </g>
    <g id="text_17">
     <!-- Channel TryWrite(item) (sync) -->
@@ -1780,7 +1780,7 @@ L 231.92575 54.36875
 L 231.92575 48.76875
 L 215.92575 48.76875
 z
-" style="fill: #7cae9a; opacity: 0.9"/>
+" style="fill: #2f855a; opacity: 0.9"/>
    </g>
    <g id="text_18">
     <!-- BufferQueue ProduceAsync(item) -->
@@ -1879,7 +1879,7 @@ L 231.92575 71.08125
 L 231.92575 65.48125
 L 215.92575 65.48125
 z
-" style="fill: #d2a17e; opacity: 0.9"/>
+" style="fill: #b56313; opacity: 0.9"/>
    </g>
    <g id="text_19">
     <!-- BufferQueue ProduceAsync(ReadOnlyMemory) -->

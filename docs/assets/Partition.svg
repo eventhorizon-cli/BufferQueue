@@ -3,20 +3,20 @@
 <desc id="description">A producer writes to two partitions. Consumer Group 1 assigns one partition to each consumer, while Consumer Group 2 assigns both partitions to one consumer.</desc>
 <defs>
   <marker id="arrow-flow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#475467"/></marker>
-  <marker id="arrow-blue" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#7c9fc9"/></marker>
-  <marker id="arrow-purple" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#b29bcc"/></marker>
+  <marker id="arrow-blue" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#2459b8"/></marker>
+  <marker id="arrow-purple" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#7c3aed"/></marker>
   <style>
     text { font-family: Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; fill:#172b4d; text-anchor:middle; }
     .label { font-size:22px; }
     .group-label { font-size:20px; font-weight:700; text-anchor:start; }
     .producer, .queue { fill:#f8fafc; stroke:#d0d5dd; stroke-width:2; }
-    .partition-blue, .consumer-blue { fill:#eff4fb; stroke:#7c9fc9; stroke-width:2; }
-    .partition-purple, .consumer-purple { fill:#f5f0fa; stroke:#b29bcc; stroke-width:2; }
-    .consumer-green { fill:#eff7f2; stroke:#7cae9a; stroke-width:2; }
+    .partition-blue, .consumer-blue { fill:#eef4ff; stroke:#2459b8; stroke-width:2; }
+    .partition-purple, .consumer-purple { fill:#f5f0ff; stroke:#7c3aed; stroke-width:2; }
+    .consumer-green { fill:#edf7f1; stroke:#2f855a; stroke-width:2; }
     .group { fill:#ffffff; stroke:#d0d5dd; stroke-width:2; stroke-dasharray:7 6; }
     .flow { fill:none; stroke:#475467; stroke-width:2.4; marker-end:url(#arrow-flow); stroke-linecap:round; stroke-linejoin:round; }
-    .assignment-blue { fill:none; stroke:#7c9fc9; stroke-width:2.2; stroke-dasharray:7 6; marker-end:url(#arrow-blue); stroke-linecap:round; stroke-linejoin:round; }
-    .assignment-purple { fill:none; stroke:#b29bcc; stroke-width:2.2; stroke-dasharray:7 6; marker-end:url(#arrow-purple); stroke-linecap:round; stroke-linejoin:round; }
+    .assignment-blue { fill:none; stroke:#2459b8; stroke-width:2.2; stroke-dasharray:7 6; marker-end:url(#arrow-blue); stroke-linecap:round; stroke-linejoin:round; }
+    .assignment-purple { fill:none; stroke:#7c3aed; stroke-width:2.2; stroke-dasharray:7 6; marker-end:url(#arrow-purple); stroke-linecap:round; stroke-linejoin:round; }
   </style>
 </defs>
 <rect width="1500" height="760" fill="#ffffff"/>

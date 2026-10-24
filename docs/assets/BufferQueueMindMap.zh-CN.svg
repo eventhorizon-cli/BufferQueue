@@ -4,11 +4,11 @@
 <!-- Topology: Q -> T1, T2, More; T1 -> Span, Metric, Log. Lines express hierarchy. -->
 <style>
   text { font-family:'PingFang SC', Arial, 'Microsoft YaHei', sans-serif; fill:#172b4d; font-size:22px; text-anchor:middle; dominant-baseline:middle; }
-  .queue { fill:#eff4fb; stroke:#7c9fc9; }
-  .topic { fill:#f8fafc; stroke:#a6b1c0; }
-  .type { fill:#f5f0fa; stroke:#b29bcc; }
+  .queue { fill:#eef4ff; stroke:#2459b8; }
+  .topic { fill:#f8fafc; stroke:#98a2b3; }
+  .type { fill:#f5f0ff; stroke:#7c3aed; }
   .node { stroke-width:1.8; }
-  .branch { fill:none; stroke:#a6b1c0; stroke-width:1.8; stroke-linecap:round; }
+  .branch { fill:none; stroke:#98a2b3; stroke-width:1.8; stroke-linecap:round; }
 </style>
 <rect width="1000" height="400" fill="white"/>
 <path class="branch" d="M260 204 C320 204 330 88 390 88"/>
