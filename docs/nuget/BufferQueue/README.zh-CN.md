@@ -108,8 +108,8 @@ await producer.ProduceAsync(ordersFromAnEnumerable, cancellationToken);
 ~~~
 
 数据已经连续存储，或可以直接表示为内存区间时，应优先使用 `ReadOnlyMemory<T>`。这是核心批量写入形式，
-能避免非数组 `IEnumerable<T>` 在提交前产生的物化。`IEnumerable<T>` 重载用于方便调用；当输入不是数组时，
-会先物化为数组，再提交整个批次。单条和 `ReadOnlyMemory<T>` 的 `ProduceAsync` 都是核心接口方法，不是扩展方法。
+能避免非数组 `IEnumerable<T>` 在提交前转换成数组的开销。`IEnumerable<T>` 重载用于方便调用；当输入不是数组时，
+会先转换为数组，再提交整个批次。单条和 `ReadOnlyMemory<T>` 的 `ProduceAsync` 都是核心接口方法，不是扩展方法。
 
 对于配置了 bounded 容量的 Memory topic，`FullMode` 默认为 `Wait`：`ProduceAsync` 和 `TryProduceAsync` 都会异步
 等待容量可用；输入完整接纳后，`TryProduceAsync` 返回 `true`。生产代码应传入 `CancellationToken`，以便取消
@@ -126,6 +126,11 @@ Memory 使用一个内部的 64 位逻辑位置，超过最大值后会回到零
 MemoryMappedFile 格式。
 
 ## 批量消费
+
+每个返回的 batch 都是已生成的独立 `IReadOnlyList<T>` 快照，直接提供 `Count` 和索引访问，同时继续支持
+`foreach` 和 LINQ。batch 在后续 pull、commit 或存储 segment 回收后仍然有效。
+
+升级到 2.1.0 后，需要重新编译使用这些接口的应用和库；自定义接口实现、mock 和 Push Consumer handler 需要将 batch 参数或返回类型改为 `IReadOnlyList<T>`。
 
 没有可读数据时，consumer 异步等待；并发通知会唤醒 consumer，不改变 partition 调度公平性或提交语义。
 
@@ -218,7 +223,7 @@ using Microsoft.Extensions.DependencyInjection;
 public sealed class OrderIndexConsumer : IBufferAutoCommitPushConsumer<Order>
 {
     public async Task ConsumeAsync(
-        IEnumerable<Order> batch,
+        IReadOnlyList<Order> batch,
         CancellationToken cancellationToken)
     {
         foreach (var order in batch)
@@ -250,7 +255,7 @@ using Microsoft.Extensions.DependencyInjection;
 public sealed class BillingConsumer : IBufferManualCommitPushConsumer<Order>
 {
     public async Task ConsumeAsync(
-        IEnumerable<Order> batch,
+        IReadOnlyList<Order> batch,
         IBufferConsumerCommitter committer,
         CancellationToken cancellationToken)
     {

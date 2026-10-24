@@ -136,7 +136,7 @@ public class MemoryNotificationOptimizationBenchmark
         {
         }
 
-        public bool TryPull(string groupName, int batchSize, [NotNullWhen(true)] out IEnumerable<int>? items)
+        public bool TryPull(string groupName, int batchSize, [NotNullWhen(true)] out IReadOnlyList<int>? items)
         {
             items = null;
             return false;

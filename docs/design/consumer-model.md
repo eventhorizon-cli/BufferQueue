@@ -38,6 +38,13 @@ await foreach (var batch in consumer.ConsumeAsync(cancellationToken))
 }
 ~~~
 
+`ConsumeAsync` returns `IAsyncEnumerable<IReadOnlyList<TItem>>`. Each yielded batch is an independently owned,
+already materialized snapshot. `IReadOnlyList<TItem>` exposes `Count` and indexed access while still supporting
+`foreach` and LINQ through `IEnumerable<TItem>`. The list interface does not make the item values immutable, and the
+batch remains valid after later pulls, commits, or segment recycling. This public signature change is binary-incompatible:
+applications and libraries that call these interfaces must be recompiled. Ordinary enumeration source code usually remains valid; interface implementations, mocks, and push handlers
+must update their parameter or return types.
+
 When `AutoCommit` is false, the consumer read position does not advance until
 `CommitAsync` is called. This gives at-least-once behavior within the current process.
 In MemoryMappedFile mode it also applies across process restarts for records that have reached a
@@ -76,6 +83,10 @@ completion must remain under that same lock. Notifications still only wake the r
 Push-consumer mode is built on pull consumers. The host service discovers push consumers by
 attribute, creates the corresponding pull consumers, and passes batches to the push-consumer
 implementation.
+
+Push consumer handlers receive `IReadOnlyList<TItem>` for the same `Count`/index access and enumeration behavior.
+Handlers may retain a batch while their asynchronous work is running; Auto Commit does not indicate that handler work
+has completed. The queue therefore does not recycle or invalidate a yielded batch automatically.
 
 Auto-commit push consumers advance progress after a successful pull and before application code
 processes the batch. A handler failure therefore does not make that batch eligible for replay.

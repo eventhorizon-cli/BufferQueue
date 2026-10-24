@@ -9,5 +9,7 @@ public interface IBufferPullConsumer<out T> : IBufferConsumerCommitter
 
     string GroupName { get; }
 
-    IAsyncEnumerable<IEnumerable<T>> ConsumeAsync(CancellationToken cancellationToken = default);
+    /// <summary>Reads materialized batches with a count and indexed access.</summary>
+    /// <remarks>The queue does not invalidate returned batches on later pulls or commits.</remarks>
+    IAsyncEnumerable<IReadOnlyList<T>> ConsumeAsync(CancellationToken cancellationToken = default);
 }

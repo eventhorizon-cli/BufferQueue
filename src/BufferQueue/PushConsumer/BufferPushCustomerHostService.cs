@@ -110,7 +110,7 @@ internal class BufferPushCustomerHostService(
     private static Task ConsumeBufferAsync<T>(
         object pushConsumer,
         Type serviceType,
-        IEnumerable<T> buffer,
+        IReadOnlyList<T> buffer,
         IBufferPullConsumer<T> pullConsumer,
         CancellationToken cancellationToken) =>
         pushConsumer switch

@@ -220,7 +220,7 @@ internal sealed class MemoryMappedFileBufferPartition<T>
         }
     }
 
-    public bool TryPull(string groupName, int batchSize, [NotNullWhen(true)] out IEnumerable<T>? items)
+    public bool TryPull(string groupName, int batchSize, [NotNullWhen(true)] out IReadOnlyList<T>? items)
     {
         ThrowIfDisposed();
 
@@ -1025,7 +1025,7 @@ internal sealed class MemoryMappedFileBufferPartition<T>
 
         public long NextReadOffset => _nextReadOffset;
 
-        public bool TryRead(int batchSize, [NotNullWhen(true)] out IEnumerable<T>? items)
+        public bool TryRead(int batchSize, [NotNullWhen(true)] out IReadOnlyList<T>? items)
         {
             var remainingCount = batchSize;
             var readOffset = _readOffset;

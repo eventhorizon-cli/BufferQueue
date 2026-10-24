@@ -156,6 +156,12 @@ batch-level flush unit.
 
 Consumers wait asynchronously when no data is available; concurrent notifications wake the consumer without changing partition fairness or commit semantics.
 
+Each yielded batch is an already materialized `IReadOnlyList<T>` snapshot. It exposes `Count` and indexed access while
+remaining directly usable with `foreach` and LINQ. Batches remain valid after later pulls,
+commits, and storage-segment recycling.
+
+When upgrading to 2.1.0, recompile applications and libraries using these interfaces. Custom implementations, mocks, and push handlers must update their batch parameter or return types to `IReadOnlyList<T>`.
+
 Consumers rotate among readable assigned partitions, starting after the partition that supplied the
 previous batch. Empty partitions do not favor lower partition indices. This balances pull
 opportunities, not processing time; partition-local order and manual-commit replay are preserved.
@@ -231,7 +237,7 @@ using Microsoft.Extensions.DependencyInjection;
 public sealed class OrderIndexConsumer : IBufferAutoCommitPushConsumer<OrderEvent>
 {
     public async Task ConsumeAsync(
-        IEnumerable<OrderEvent> batch,
+        IReadOnlyList<OrderEvent> batch,
         CancellationToken cancellationToken)
     {
         foreach (var orderEvent in batch)
@@ -266,7 +272,7 @@ using Microsoft.Extensions.DependencyInjection;
 public sealed class BillingConsumer : IBufferManualCommitPushConsumer<OrderEvent>
 {
     public async Task ConsumeAsync(
-        IEnumerable<OrderEvent> batch,
+        IReadOnlyList<OrderEvent> batch,
         IBufferConsumerCommitter committer,
         CancellationToken cancellationToken)
     {

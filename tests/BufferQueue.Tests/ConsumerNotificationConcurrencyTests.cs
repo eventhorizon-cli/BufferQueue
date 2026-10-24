@@ -151,7 +151,7 @@ public sealed class ConsumerNotificationConcurrencyTests
         public bool TryPull(
             string groupName,
             int batchSize,
-            [NotNullWhen(true)] out IEnumerable<int>? items)
+            [NotNullWhen(true)] out IReadOnlyList<int>? items)
         {
             items = null;
             return false;

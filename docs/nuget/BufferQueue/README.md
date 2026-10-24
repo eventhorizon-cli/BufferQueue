@@ -154,6 +154,12 @@ does not change the public API or the MemoryMappedFile format.
 
 Consumers wait asynchronously when no data is available; concurrent notifications wake the consumer without changing partition fairness or commit semantics.
 
+Each yielded batch is an already materialized `IReadOnlyList<T>` snapshot. It exposes `Count` and indexed access while
+remaining directly usable with `foreach` and LINQ. Batches remain valid after later pulls,
+commits, and storage-segment recycling.
+
+When upgrading to 2.1.0, recompile applications and libraries using these interfaces. Custom implementations, mocks, and push handlers must update their batch parameter or return types to `IReadOnlyList<T>`.
+
 Create each named group once per topic queue instance. `CreatePullConsumer<T>` creates a group with one consumer;
 use `CreatePullConsumers<T>(options, consumerNumber)` to create the entire group with multiple consumers.
 The count must be between one and the topic's partition count. The group's consumer count and partition assignments
@@ -247,7 +253,7 @@ using Microsoft.Extensions.DependencyInjection;
 public sealed class OrderIndexConsumer : IBufferAutoCommitPushConsumer<Order>
 {
     public async Task ConsumeAsync(
-        IEnumerable<Order> batch,
+        IReadOnlyList<Order> batch,
         CancellationToken cancellationToken)
     {
         foreach (var order in batch)
@@ -280,7 +286,7 @@ using Microsoft.Extensions.DependencyInjection;
 public sealed class BillingConsumer : IBufferManualCommitPushConsumer<Order>
 {
     public async Task ConsumeAsync(
-        IEnumerable<Order> batch,
+        IReadOnlyList<Order> batch,
         IBufferConsumerCommitter committer,
         CancellationToken cancellationToken)
     {

@@ -26,7 +26,7 @@ MMF 不支持 bounded 容量，也不协调多个进程的 writer。它保证单
 MMF 与 Memory 存储一样实现 `IBufferProducer<T>` 的四个核心方法，每个方法都接收可选的
 `CancellationToken`。MMF 是 unbounded 的，因此 `TryProduceAsync` 和 `ProduceAsync` 都不会等待容量，
 也没有 `BufferQueueFullMode` 配置。接收 `IEnumerable<T>` 的批量便捷重载仍然是扩展方法；对于非数组输入，
-它们会先物化，再调用核心的 `ReadOnlyMemory<T>` 方法。
+它们会先转换为数组，再调用核心的 `ReadOnlyMemory<T>` 方法。
 
 ## 目录结构
 

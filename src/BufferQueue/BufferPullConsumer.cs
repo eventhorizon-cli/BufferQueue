@@ -57,7 +57,7 @@ internal sealed class BufferPullConsumer<TItem>(BufferPullConsumerOptions option
         }
     }
 
-    public async IAsyncEnumerable<IEnumerable<TItem>> ConsumeAsync(
+    public async IAsyncEnumerable<IReadOnlyList<TItem>> ConsumeAsync(
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         if (_assignedPartitions.Length == 0)
@@ -140,7 +140,7 @@ internal sealed class BufferPullConsumer<TItem>(BufferPullConsumerOptions option
     }
 
     private bool TryPull(IBufferPartition<TItem> partition, int batchSize,
-        [NotNullWhen(true)] out IEnumerable<TItem>? items)
+        [NotNullWhen(true)] out IReadOnlyList<TItem>? items)
     {
         _partitionBeingConsumed = partition;
         var dataAvailable = partition.TryPull(options.GroupName, batchSize, out items);
@@ -153,7 +153,7 @@ internal sealed class BufferPullConsumer<TItem>(BufferPullConsumerOptions option
         return dataAvailable;
     }
 
-    private bool TryPullNext([NotNullWhen(true)] out IEnumerable<TItem>? items)
+    private bool TryPullNext([NotNullWhen(true)] out IReadOnlyList<TItem>? items)
     {
         var partitions = _assignedPartitions;
         if (partitions.Length == 0)
