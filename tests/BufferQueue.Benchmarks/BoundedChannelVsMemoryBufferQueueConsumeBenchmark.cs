@@ -9,6 +9,7 @@ public class BoundedChannelVsMemoryBufferQueueConsumeBenchmark
 
     private Channel<int> _boundedChannel = null!;
     private IEnumerable<IBufferPullConsumer<int>> _boundedMemoryBufferQueueConsumers = null!;
+    private IEnumerable<IBufferPullConsumer<int>> _boundedManualCommitConsumers = null!;
 
     [Params(8192)] public int MessageSize { get; set; }
 
@@ -35,11 +36,19 @@ public class BoundedChannelVsMemoryBufferQueueConsumeBenchmark
             BoundedCapacity = (ulong)MessageSize
         });
         var boundedMemoryBufferQueueProducer = boundedMemoryBufferQueue.GetProducer();
+        var boundedManualCommitQueue = new MemoryBufferQueue<int>(new MemoryBufferQueueOptions
+        {
+            TopicName = "test-bounded-manual-commit",
+            PartitionNumber = Environment.ProcessorCount,
+            BoundedCapacity = (ulong)MessageSize
+        });
+        var boundedManualCommitProducer = boundedManualCommitQueue.GetProducer();
 
         for (var i = 0; i < MessageSize; i++)
         {
             _boundedChannel.Writer.TryWrite(i);
             boundedMemoryBufferQueueProducer.ProduceAsync(i).GetAwaiter().GetResult();
+            boundedManualCommitProducer.ProduceAsync(i).GetAwaiter().GetResult();
         }
 
         _boundedChannel.Writer.TryComplete();
@@ -49,6 +58,15 @@ public class BoundedChannelVsMemoryBufferQueueConsumeBenchmark
                 GroupName = "TestGroup",
                 TopicName = "test-bounded",
                 AutoCommit = true,
+                BatchSize = BatchSize,
+            },
+            Consumers);
+        _boundedManualCommitConsumers = boundedManualCommitQueue.CreateConsumers(
+            new BufferPullConsumerOptions
+            {
+                GroupName = "TestGroup",
+                TopicName = "test-bounded-manual-commit",
+                AutoCommit = false,
                 BatchSize = BatchSize,
             },
             Consumers);
@@ -65,7 +83,11 @@ public class BoundedChannelVsMemoryBufferQueueConsumeBenchmark
 
     [Benchmark]
     public Task BufferQueue_ConsumeAsync_AutoCommit() =>
-        ConsumeMemoryBufferQueueAsync(_boundedMemoryBufferQueueConsumers, MessageSize);
+        ConsumeMemoryBufferQueueAsync(_boundedMemoryBufferQueueConsumers, MessageSize, manualCommit: false);
+
+    [Benchmark]
+    public Task BufferQueue_ConsumeAsync_ManualCommit() =>
+        ConsumeMemoryBufferQueueAsync(_boundedManualCommitConsumers, MessageSize, manualCommit: true);
 
     private int[] ConsumeChannelTryRead(Channel<int> channel)
     {
@@ -106,7 +128,8 @@ public class BoundedChannelVsMemoryBufferQueueConsumeBenchmark
 
     private async Task ConsumeMemoryBufferQueueAsync(
         IEnumerable<IBufferPullConsumer<int>> consumers,
-        int expectedTotal)
+        int expectedTotal,
+        bool manualCommit)
     {
         var consumerList = consumers.ToList();
         var expectedCounts = GetExpectedCounts(consumerList.Count, expectedTotal);
@@ -116,6 +139,11 @@ public class BoundedChannelVsMemoryBufferQueueConsumeBenchmark
             await foreach (var items in consumer.ConsumeAsync())
             {
                 consumedCount += items.Count();
+                if (manualCommit)
+                {
+                    await consumer.CommitAsync();
+                }
+
                 if (consumedCount >= expectedCounts[index])
                 {
                     break;
