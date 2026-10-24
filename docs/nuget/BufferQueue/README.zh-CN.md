@@ -127,6 +127,8 @@ MemoryMappedFile 格式。
 
 ## 批量消费
 
+没有可读数据时，consumer 异步等待；并发通知会唤醒 consumer，不改变 partition 调度公平性或提交语义。
+
 在同一个 topic queue 实例内，同名 group 只能创建一次。`CreatePullConsumer<T>` 创建包含一个 consumer 的
 group；需要多个 consumer 时，使用 `CreatePullConsumers<T>(options, consumerNumber)` 一次创建整个 group。
 consumer 数量必须介于 1 和该 topic 的 partition 数量之间。创建后，该组的 consumer 数量和 partition 分配固定；

@@ -60,13 +60,16 @@ Consumers do not spin when no data is available. The common consumer waits throu
 6. The consumer increments its pending-data version and completes the pending value task.
 7. The consumer resumes the same ring scan; the notification is a wake-up hint, not a priority override.
 
-The pending-data version prevents a lost wake-up when data arrives between the final pull attempt
-and the transition into the waiting state. Checking that version and resetting the waiter are one
-write-locked operation. Notifications acquire the same lock before checking whether a waiter exists,
-so an arrival after the version check still completes the newly registered waiter. A check outside
-that lock must not skip notification merely because the consumer has not registered its waiter yet.
-A deterministic regression holds the registration lock while notification starts, then registers
-the waiter and verifies that this notification completes it without another write.
+The pending-data version prevents a lost wake-up between the final empty scan and waiting. Under the
+registration lock, the consumer first publishes a waiting flag with an interlocked exchange, then
+rechecks the version. A changed version clears the flag and retries the scan; an unchanged version
+resets the pending value-task source before releasing the lock.
+
+A notification increments the version before checking the flag. If no waiter is published it returns
+without locking; otherwise it takes the registration lock, rechecks the flag, and completes the waiter
+at most once. The interlocked operations supply the ordering: either registration sees the new version,
+or notification sees the published waiter. The flag may be visible before the source is reset, so
+completion must remain under that same lock. Notifications still only wake the round-robin scan.
 
 ## Push Consumers
 

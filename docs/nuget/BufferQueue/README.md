@@ -152,6 +152,8 @@ does not change the public API or the MemoryMappedFile format.
 
 ## Consume in batches
 
+Consumers wait asynchronously when no data is available; concurrent notifications wake the consumer without changing partition fairness or commit semantics.
+
 Create each named group once per topic queue instance. `CreatePullConsumer<T>` creates a group with one consumer;
 use `CreatePullConsumers<T>(options, consumerNumber)` to create the entire group with multiple consumers.
 The count must be between one and the topic's partition count. The group's consumer count and partition assignments

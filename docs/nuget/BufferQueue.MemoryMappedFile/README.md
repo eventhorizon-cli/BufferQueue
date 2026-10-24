@@ -154,6 +154,8 @@ batch-level flush unit.
 
 ## Pull consumers
 
+Consumers wait asynchronously when no data is available; concurrent notifications wake the consumer without changing partition fairness or commit semantics.
+
 Consumers rotate among readable assigned partitions, starting after the partition that supplied the
 previous batch. Empty partitions do not favor lower partition indices. This balances pull
 opportunities, not processing time; partition-local order and manual-commit replay are preserved.
