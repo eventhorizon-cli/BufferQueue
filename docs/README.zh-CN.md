@@ -20,6 +20,8 @@
 
 ## 阅读顺序
 
+包发布流程和 tag 规则见[包发布](releases.zh-CN.md)。
+
 先阅读[架构与注册](design/architecture.zh-CN.md)，了解两种存储实现共享的边界。随后阅读
 [Partition 与并发](design/partitioning-and-concurrency.zh-CN.md)，先理解 producer 路由和 partition 所属关系，
 再阅读 [Consumer 模型与投递](design/consumer-model.zh-CN.md) 后修改通用队列行为。随后根据所修改的实现阅读对应存储文章：

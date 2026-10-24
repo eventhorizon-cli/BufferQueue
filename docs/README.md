@@ -21,6 +21,8 @@ The articles below describe the checked-in implementation and complement the pac
 
 ## Reading order
 
+For package publishing and tag conventions, see [package releases](releases.md).
+
 Read [architecture and registrations](design/architecture.md) first to understand what is shared
 between storage implementations. Continue with [partitioning and concurrency](design/partitioning-and-concurrency.md)
 to understand producer routing and partition ownership, then read the [consumer model](design/consumer-model.md)

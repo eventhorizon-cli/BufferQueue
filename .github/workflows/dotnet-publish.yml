@@ -4,6 +4,8 @@ on:
   push:
     tags:
       - "v*"
+      - "core-v*"
+      - "mmf-v*"
 
 permissions:
   contents: read
@@ -33,6 +35,15 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Validate main-only release tag and resolve versions
+        id: release
+        shell: bash
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: bash .github/scripts/prepare-release.sh
 
       - name: Setup .NET SDKs
         uses: actions/setup-dotnet@v6
@@ -49,33 +60,17 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-nuget-
 
-      - name: Resolve package version
-        id: version
-        shell: bash
-        env:
-          TAG_NAME: ${{ github.ref_name }}
-        run: |
-          version="${TAG_NAME#v}"
-          semver_pattern='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-((0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*))?$'
-
-          if [[ "$version" == "$TAG_NAME" || ! "$version" =~ $semver_pattern ]]; then
-            echo "::error title=Invalid release tag::Expected v<semver>, received '$TAG_NAME'."
-            exit 1
-          fi
-
-          echo "value=$version" >> "$GITHUB_OUTPUT"
-
       - name: Restore
-        run: dotnet restore BufferQueue.slnx
+        run: >-
+          dotnet restore BufferQueue.slnx
+          -p:CustomAfterMicrosoftCommonProps="$RELEASE_PROPS"
 
       - name: Build
-        env:
-          VERSION: ${{ steps.version.outputs.value }}
         run: >-
           dotnet build BufferQueue.slnx
           --configuration Release
           --no-restore
-          -p:Version="$VERSION"
+          -p:CustomAfterMicrosoftCommonProps="$RELEASE_PROPS"
           -p:ContinuousIntegrationBuild=true
 
       - name: Test
@@ -84,17 +79,17 @@ jobs:
           --configuration Release
           --no-build
           --no-restore
+          -p:CustomAfterMicrosoftCommonProps="$RELEASE_PROPS"
 
       - name: Pack BufferQueue
-        env:
-          VERSION: ${{ steps.version.outputs.value }}
+        if: steps.release.outputs.target != 'mmf'
         run: >-
           dotnet pack "$CORE_PROJECT"
           --configuration Release
           --no-build
           --no-restore
           --output artifacts/packages
-          -p:PackageVersion="$VERSION"
+          -p:CustomAfterMicrosoftCommonProps="$RELEASE_PROPS"
           -p:Authors="$PACKAGE_AUTHORS"
           -p:RepositoryUrl="$REPOSITORY_URL"
           -p:RepositoryType="$REPOSITORY_TYPE"
@@ -102,32 +97,76 @@ jobs:
           -p:ContinuousIntegrationBuild=true
 
       - name: Pack BufferQueue.MemoryMappedFile
-        env:
-          VERSION: ${{ steps.version.outputs.value }}
+        if: steps.release.outputs.target != 'core'
         run: >-
           dotnet pack "$MMF_PROJECT"
           --configuration Release
           --no-build
           --no-restore
           --output artifacts/packages
-          -p:PackageVersion="$VERSION"
+          -p:CustomAfterMicrosoftCommonProps="$RELEASE_PROPS"
           -p:Authors="$PACKAGE_AUTHORS"
           -p:RepositoryUrl="$REPOSITORY_URL"
           -p:RepositoryType="$REPOSITORY_TYPE"
           -p:PackageLicenseUrl="$PACKAGE_LICENSE_URL"
           -p:ContinuousIntegrationBuild=true
 
+      - name: Verify selected package files and dependency versions
+        shell: python
+        env:
+          RELEASE_TARGET: ${{ steps.release.outputs.target }}
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+          CORE_VERSION: ${{ steps.release.outputs.core_version }}
+        run: |
+          import os
+          import pathlib
+          import xml.etree.ElementTree as ET
+          import zipfile
+
+          target = os.environ["RELEASE_TARGET"]
+          version = os.environ["RELEASE_VERSION"]
+          packages = []
+          if target != "mmf":
+              packages.append("BufferQueue")
+          if target != "core":
+              packages.append("BufferQueue.MemoryMappedFile")
+          directory = pathlib.Path("artifacts/packages")
+          expected = {f"{package}.{version}.nupkg" for package in packages}
+          actual = {path.name for path in directory.glob("*.nupkg")}
+          if actual != expected:
+              raise SystemExit(f"Unexpected package selection: expected {expected}, found {actual}")
+          for package in packages:
+              with zipfile.ZipFile(directory / f"{package}.{version}.nupkg") as archive:
+                  nuspecs = [name for name in archive.namelist() if name.endswith(".nuspec")]
+                  if len(nuspecs) != 1:
+                      raise SystemExit(f"Expected one nuspec in {package}")
+                  metadata = ET.fromstring(archive.read(nuspecs[0]))
+                  text = lambda name: metadata.find(f".//{{*}}{name}").text
+                  if text("id") != package or text("version") != version:
+                      raise SystemExit(f"Unexpected identity or version in {package}")
+                  for framework in ("net8.0", "net10.0"):
+                      archive.getinfo(f"lib/{framework}/{package}.dll")
+                  archive.getinfo("README.md")
+                  if package == "BufferQueue.MemoryMappedFile":
+                      dependencies = [item for item in metadata.findall(".//{*}dependency")
+                                      if item.get("id") == "BufferQueue"]
+                      if len(dependencies) != 2 or any(
+                          item.get("version") != os.environ["CORE_VERSION"] for item in dependencies
+                      ):
+                          raise SystemExit("MMF must depend on the resolved core version for both frameworks")
+
       - name: Upload NuGet packages
         uses: actions/upload-artifact@v7
         with:
-          name: bufferqueue-nuget-${{ steps.version.outputs.value }}
+          name: bufferqueue-nuget-${{ steps.release.outputs.target }}-${{ steps.release.outputs.version }}
           path: artifacts/packages/*.nupkg
           if-no-files-found: error
 
       - name: Publish BufferQueue
+        if: steps.release.outputs.target != 'mmf'
         env:
           NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
-          VERSION: ${{ steps.version.outputs.value }}
+          VERSION: ${{ steps.release.outputs.version }}
         run: |
           package="artifacts/packages/BufferQueue.$VERSION.nupkg"
 
@@ -139,9 +178,10 @@ jobs:
           dotnet nuget push "$package" --api-key "$NUGET_API_KEY" --source "$NUGET_SOURCE"
 
       - name: Publish BufferQueue.MemoryMappedFile
+        if: steps.release.outputs.target != 'core'
         env:
           NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
-          VERSION: ${{ steps.version.outputs.value }}
+          VERSION: ${{ steps.release.outputs.version }}
         run: |
           package="artifacts/packages/BufferQueue.MemoryMappedFile.$VERSION.nupkg"
 
