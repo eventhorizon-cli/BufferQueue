@@ -56,7 +56,7 @@ IAsyncEnumerable<IEnumerable<T>> ConsumeAsync(CancellationToken cancellationToke
 
 `ReadAllAsync` yields items individually until the channel completes; it does not collect them into one batch.
 The primary summary below uses BufferQueue `AutoCommit = true`; the charts also include a separately measured Manual Commit
-series. The detail report retains `Channel<T>.TryRead` as a synchronous reference. The workload drains prefilled queues
+series. The charts also show `Channel<T>.TryRead` as a gray synchronous reference. The workload drains prefilled queues
 with `8,192` `int` messages, `12` BufferQueue partitions, and `1` or `12` consumers. `BatchSize` affects BufferQueue only.
 
 Benchmark environment: Apple M2 Max (12 cores), macOS 27.0.1 / Arm64, .NET 10.0.0, BenchmarkDotNet 0.15.8 (Release).
