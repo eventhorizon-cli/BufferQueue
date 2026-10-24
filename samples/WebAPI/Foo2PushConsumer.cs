@@ -11,11 +11,11 @@ namespace WebAPI;
     concurrency: 2)]
 public class Foo2PushConsumer(ILogger<Foo2PushConsumer> logger) : IBufferAutoCommitPushConsumer<Foo>
 {
-    public Task ConsumeAsync(IEnumerable<Foo> buffer, CancellationToken cancellationToken)
+    public Task ConsumeAsync(IReadOnlyList<Foo> buffer, CancellationToken cancellationToken)
     {
-        foreach (var foo in buffer)
+        for (var i = 0; i < buffer.Count; i++)
         {
-            logger.LogInformation("Foo2PushConsumer.ConsumeAsync: {Foo}", foo);
+            logger.LogInformation("Foo2PushConsumer.ConsumeAsync: {Foo}", buffer[i]);
         }
 
         return Task.CompletedTask;

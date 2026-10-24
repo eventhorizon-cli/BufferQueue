@@ -158,7 +158,7 @@ public class BufferPushCustomerHostServiceLifetimeTests
 
             if (targetMethod.Name == nameof(IBufferAutoCommitPushConsumer<int>.ConsumeAsync))
             {
-                var buffer = (IEnumerable<int>)args![0]!;
+                var buffer = (IReadOnlyList<int>)args![0]!;
                 var throwOnThisBatch = probe.RecordConsumed(
                     _instanceId,
                     buffer.Count(),
@@ -247,7 +247,7 @@ public class BufferPushCustomerHostServiceLifetimeTests
                 : throw new NotSupportedException();
     }
 
-    private sealed class FakePullConsumer<T>(IReadOnlyList<IEnumerable<T>> batches) : IBufferPullConsumer<T>
+    private sealed class FakePullConsumer<T>(IReadOnlyList<IReadOnlyList<T>> batches) : IBufferPullConsumer<T>
     {
         private readonly TaskCompletionSource _completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -257,7 +257,7 @@ public class BufferPushCustomerHostServiceLifetimeTests
 
         public Task Completion => _completion.Task;
 
-        public async IAsyncEnumerable<IEnumerable<T>> ConsumeAsync(
+        public async IAsyncEnumerable<IReadOnlyList<T>> ConsumeAsync(
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
             try

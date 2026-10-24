@@ -12,7 +12,7 @@ namespace WebAPI;
     concurrency: 2)]
 public class BarPushConsumer(ILogger<BarPushConsumer> logger) : IBufferManualCommitPushConsumer<Bar>
 {
-    public async Task ConsumeAsync(IEnumerable<Bar> buffer, IBufferConsumerCommitter committer,
+    public async Task ConsumeAsync(IReadOnlyList<Bar> buffer, IBufferConsumerCommitter committer,
         CancellationToken cancellationToken)
     {
         foreach (var bar in buffer)

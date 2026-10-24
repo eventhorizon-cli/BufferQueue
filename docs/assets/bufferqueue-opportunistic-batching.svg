@@ -1,28 +1,30 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1720" height="780" viewBox="0 0 1720 780" role="img" aria-labelledby="title description">
 <title id="title">BufferQueue opportunistic batch consumption</title><desc id="description">A producer appends data and sends a wake-up hint. The consumer pulls only currently queued items and waits only when all assigned partitions are empty.</desc>
 <defs>
-  <marker id="arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto" markerUnits="strokeWidth"><path d="M0 0 L9 4.5 L0 9 Z" fill="#596773"/></marker>
-  <marker id="blue-arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto" markerUnits="strokeWidth"><path d="M0 0 L9 4.5 L0 9 Z" fill="#3567a7"/></marker>
-  <marker id="green-arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto" markerUnits="strokeWidth"><path d="M0 0 L9 4.5 L0 9 Z" fill="#2f6f5e"/></marker>
+  <marker id="arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto" markerUnits="strokeWidth"><path d="M0 0 L9 4.5 L0 9 Z" fill="#475467"/></marker>
+  <marker id="blue-arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto" markerUnits="strokeWidth"><path d="M0 0 L9 4.5 L0 9 Z" fill="#7c9fc9"/></marker>
+  <marker id="purple-arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto" markerUnits="strokeWidth"><path d="M0 0 L9 4.5 L0 9 Z" fill="#b29bcc"/></marker>
+  <marker id="green-arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto" markerUnits="strokeWidth"><path d="M0 0 L9 4.5 L0 9 Z" fill="#7cae9a"/></marker>
   <style>
-    text { font-family: Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; fill:#303b44; text-anchor:middle; font-size:22px; }
+    text { font-family: Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; fill:#172b4d; text-anchor:middle; font-size:21px; }
     .node { stroke-width:2; }
-    .client { fill:#e9f6f1; stroke:#2f6f5e; }
-    .core { fill:#edf1f5; stroke:#596773; }
-    .router { fill:#eaf2ff; stroke:#3567a7; }
-    .partition { fill:#eef5ff; stroke:#3567a7; }
-    .handler { fill:#f4edfb; stroke:#75529b; }
-    .store { fill:#fff4d6; stroke:#8a6a1d; }
-    .wait { fill:#eaf2ff; stroke:#3567a7; }
-    .edge { fill:none; stroke:#596773; stroke-width:2.5; marker-end:url(#arrow); stroke-linejoin:round; }
-    .data { fill:none; stroke:#3567a7; stroke-width:2.8; marker-end:url(#blue-arrow); stroke-linejoin:round; }
-    .notify { fill:none; stroke:#75529b; stroke-width:2.5; stroke-dasharray:8 6; marker-end:url(#arrow); stroke-linejoin:round; }
-    .assign { fill:none; stroke:#2f6f5e; stroke-width:2.5; stroke-dasharray:8 6; marker-end:url(#green-arrow); stroke-linejoin:round; }
+    .client { fill:#eff7f2; stroke:#7cae9a; }
+    .core { fill:#f8fafc; stroke:#a6b1c0; }
+    .router { fill:#eff4fb; stroke:#7c9fc9; }
+    .partition { fill:#eff4fb; stroke:#7c9fc9; }
+    .handler { fill:#f5f0fa; stroke:#b29bcc; }
+    .store { fill:#fcf3ea; stroke:#d2a17e; }
+    .wait { fill:#eff4fb; stroke:#7c9fc9; }
+    .edge { fill:none; stroke:#475467; stroke-width:2.2; marker-end:url(#arrow); stroke-linejoin:round; }
+    .data { fill:none; stroke:#7c9fc9; stroke-width:2.6; marker-end:url(#blue-arrow); stroke-linejoin:round; }
+    .notify { fill:none; stroke:#b29bcc; stroke-width:2.4; stroke-dasharray:8 6; marker-end:url(#purple-arrow); stroke-linejoin:round; }
+    .assign { fill:none; stroke:#7cae9a; stroke-width:2.4; stroke-dasharray:8 6; marker-end:url(#green-arrow); stroke-linejoin:round; }
     .label { font-size:21px; }
-    .note { font-size:21px; fill:#596773; }
+    .note { font-size:20px; fill:#475467; }
     .small { font-size:19px; }
+    .wait-copy { font-size:19px; }
     .left { text-anchor:start; }
     .group-title { font-size:24px; font-weight:700; text-anchor:start; }
   </style>
 </defs>
-<rect width="1720" height="780" fill="white"/><rect class="node client" x="30" y="270" width="310" height="120" rx="8"/><text x="185.0" y="313.0" class="">Producer appends data</text><text x="185.0" y="347.0" class="">to selected partition</text><rect class="node router" x="440" y="270" width="330" height="120" rx="8"/><text x="605.0" y="313.0" class="">Partition has queued data</text><text x="605.0" y="347.0" class="">sends a wake-up hint</text><rect class="node wait" x="440" y="500" width="330" height="110" rx="8"/><text x="605.0" y="538.0" class="">Wait for pending-data notification</text><text x="605.0" y="572.0" class="">only when all partitions are empty</text><rect class="node core" x="850" y="55" width="310" height="110" rx="8"/><text x="1005.0" y="93.0" class="">Scan assigned partitions</text><text x="1005.0" y="127.0" class="">round-robin</text><path class="node core" d="M1005 235 L1180 345 L1005 455 L830 345 Z"/><text x="1005" y="328" class="">Try pulling the next batch</text><text x="1005" y="362" class="">Data available?</text><rect class="node handler" x="1260" y="270" width="400" height="120" rx="8"/><text x="1460.0" y="313.0" class="">Opportunistic batch</text><text x="1460.0" y="347.0" class="">up to BatchSize queued items</text><path class="data" d="M340 330 H440"/><path class="notify" d="M605 390 V500"/><path class="notify" d="M770 555 H805 V345 H830"/><path class="edge" d="M1005 165 V235"/><path class="edge" d="M1180 345 H1260"/><text x="1220" y="325" class="label">Yes</text><path class="edge" d="M1460 270 V105 H1160"/><text x="1470" y="82" class="label">Resume scan after current batch is handled</text><path class="edge" d="M1005 455 V680 H605 V610"/><text x="940" y="665" class="label">No · No data in any assigned partition</text><text x="850" y="735" class="note">Notification-version check avoids the scan-to-wait race</text><rect x="30" y="45" width="360" height="150" rx="12" fill="#f8fafc" stroke="#94a3b8" stroke-width="2"/><text x="60" y="82" class="group-title">Legend</text><path class="data" d="M65 125 H170"/><text x="190" y="125" class="small left">Solid = data path</text><path class="notify" d="M65 165 H170"/><text x="190" y="165" class="small left">Dashed = wake-up hint</text></svg>
+<rect width="1720" height="780" fill="white"/><rect class="node client" x="30" y="270" width="310" height="120" rx="8"/><text x="185.0" y="313.0" class="">Producer appends data</text><text x="185.0" y="347.0" class="">to selected partition</text><rect class="node router" x="440" y="270" width="330" height="120" rx="8"/><text x="605.0" y="313.0" class="">Partition has queued data</text><text x="605.0" y="347.0" class="">sends a wake-up hint</text><rect class="node wait" x="440" y="500" width="330" height="110" rx="8"/><text x="605.0" y="538.0" class="wait-copy">Wait for pending-data notification</text><text x="605.0" y="572.0" class="wait-copy">only when all partitions are empty</text><rect class="node core" x="850" y="55" width="310" height="110" rx="8"/><text x="1005.0" y="93.0" class="">Scan assigned partitions</text><text x="1005.0" y="127.0" class="">round-robin</text><path class="node core" d="M1005 235 L1180 345 L1005 455 L830 345 Z"/><text x="1005" y="328" class="">Try pulling the next batch</text><text x="1005" y="362" class="">Data available?</text><rect class="node handler" x="1260" y="270" width="400" height="120" rx="8"/><text x="1460.0" y="313.0" class="">Opportunistic batch</text><text x="1460.0" y="347.0" class="">up to BatchSize queued items</text><path class="data" d="M340 330 H440"/><path class="notify" d="M605 390 V500"/><path class="notify" d="M770 555 H805 V345 H830"/><path class="edge" d="M1005 165 V235"/><path class="edge" d="M1180 345 H1260"/><text x="1220" y="325" class="label">Yes</text><path class="edge" d="M1460 270 V105 H1160"/><text x="1470" y="82" class="label">Resume scan after current batch is handled</text><path class="edge" d="M1005 455 V680 H605 V610"/><text x="940" y="708" class="label">No · No data in any assigned partition</text><text x="850" y="735" class="note">Notification-version check avoids the scan-to-wait race</text><rect x="30" y="45" width="390" height="150" rx="12" fill="#f8fafc" stroke="#a6b1c0" stroke-width="2"/><text x="60" y="82" class="group-title">Legend</text><path class="data" d="M65 125 H170"/><text x="190" y="125" class="small left">Solid = data path</text><path class="notify" d="M65 165 H170"/><text x="190" y="165" class="small left">Dashed = wake-up hint</text></svg>

@@ -87,7 +87,7 @@ public sealed class MemoryBufferPartitionWrapTests
         Assert.True(GetHead(partition).StartOffset > segment.StartOffset);
 
         async Task DrainAsync(
-            IAsyncEnumerator<IEnumerable<int>> batches,
+            IAsyncEnumerator<IReadOnlyList<int>> batches,
             List<int> consumed,
             IBufferPullConsumer<int>? manualConsumer)
         {
@@ -129,7 +129,7 @@ public sealed class MemoryBufferPartitionWrapTests
         consumer.AssignPartitions(partition);
         using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         await using var batches = consumer.ConsumeAsync(cancellation.Token).GetAsyncEnumerator();
-        IEnumerable<int>? firstBatch = null;
+        IReadOnlyList<int>? firstBatch = null;
 
         for (var cycle = 0; cycle < 5; cycle++)
         {

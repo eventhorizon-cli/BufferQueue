@@ -76,6 +76,10 @@ public class UnboundedChannelVsMemoryBufferQueueConsumeBenchmark
     public Task Channel_ReadAllAsync() => ConsumeChannelReadAllAsync(_unboundedChannel, MessageSize);
 
     [Benchmark]
+    public Task Channel_ReadAllAsync_Batched() =>
+        ChannelBatchConsumption.ConsumeAsync(_unboundedChannel, Consumers, BatchSize, MessageSize);
+
+    [Benchmark]
     public Task BufferQueue_ConsumeAsync_AutoCommit() =>
         ConsumeMemoryBufferQueueAsync(_unboundedMemoryBufferQueueConsumers, MessageSize, manualCommit: false);
 

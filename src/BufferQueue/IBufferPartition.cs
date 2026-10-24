@@ -20,7 +20,7 @@ internal interface IBufferPartition<TItem>
 
     void Enqueue(TItem item);
 
-    bool TryPull(string groupName, int batchSize, [NotNullWhen(true)] out IEnumerable<TItem>? items);
+    bool TryPull(string groupName, int batchSize, [NotNullWhen(true)] out IReadOnlyList<TItem>? items);
 
     void Commit(string groupName);
 }

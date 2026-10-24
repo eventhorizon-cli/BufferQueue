@@ -87,7 +87,7 @@ Manual Commit 在每个 batch 后调用 `CommitAsync`。BufferQueue 使用每个
 测量不包括业务处理和应用侧的 item 枚举分配。[foreach 测量](batch-enumeration.zh-CN.md)和
 [稀疏批次测量](partial-batch-allocation.zh-CN.md)分别记录这些不同的 workload。
 
-### unbounded
+### Unbounded
 
 Channel 参考值固定使用 `BatchSize=1` 行；BatchSize 不控制 Channel：
 
@@ -126,7 +126,7 @@ BufferQueue `ConsumeAsync`，`AutoCommit=false`，每批后调用 `CommitAsync`:
 | 1000 | 1 | 27.331 | 33.65 |
 | 1000 | 12 | 35.608 | 39.09 |
 
-### bounded
+### Bounded
 
 bounded 的 BufferQueue 和 Channel 容量均为 8,192。队列预先填充，本节不测等待容量。
 
@@ -208,12 +208,16 @@ Channel baseline 固定为代表性的 `BatchSize = 1`，与 BufferQueue 的 `Ba
 // ChannelReader<T>
 IAsyncEnumerable<T> ReadAllAsync(CancellationToken cancellationToken = default);
 // IBufferPullConsumer<T>
-IAsyncEnumerable<IEnumerable<T>> ConsumeAsync(CancellationToken cancellationToken = default);
+IAsyncEnumerable<IReadOnlyList<T>> ConsumeAsync(CancellationToken cancellationToken = default);
 ```
 
-Channel 每轮返回一条消息，BufferQueue 每轮返回一个 batch。`ReadAllAsync` 会持续读取直到已完成的 Channel 被读空，
+Channel 每轮返回一条消息，BufferQueue 每轮返回一个 batch。当前 batch 是已生成的 `IReadOnlyList<T>`，可以直接使用
+`Count` 和索引，同时继续支持 `foreach` 和 LINQ。`ReadAllAsync` 会持续读取直到已完成的 Channel 被读空，
 并不是把全部数据收集成一个 batch。`ChannelReader<T>.ReadAsync` 返回单次读取的 `ValueTask<T>`，属于另一项单条异步对比；
 `TryRead` 是同步参考，不是主要异步基线。
+
+本报告的重跑数据产生于公开 batch 签名从 `IEnumerable<T>` 改为 `IReadOnlyList<T>` 之前；benchmark 的操作和快照数据没有变化，
+本次仅 API 调整没有重新测量这些表格。
 
 ## 内存分配
 
@@ -228,15 +232,32 @@ Producer allocation 的计时包含 queue/channel creation 和 producer task sch
 Consumer 图将 BenchmarkDotNet 的 allocation 统一转换为 `KiB/op`（`1 KiB = 1,024 B`）。消费测试从 12 个 partition
 中消费预填充的 8,192 条消息，分别使用 1 个和 12 个 consumer；`BatchSize` 横轴按分类配置等距显示，纵轴使用对数刻度。
 队列和 consumer 的 setup 不计入测量 allocation。数值表示每次消费 8,192 条消息的 benchmark operation 分配的托管内存，
-不是峰值驻留内存，也不是单条消息 allocation。两条 Channel 参考线均取自与 `BatchSize = 1` 一起记录的结果，BatchSize 只影响 BufferQueue；Auto/Manual 曲线基本重合。
+不是峰值驻留内存，也不是单条消息 allocation。BatchSize 控制 BufferQueue 和 Channel 数组聚合；Auto/Manual 分配量基本一致，因此合并为一条曲线，采用 Auto Commit 测量值。
 
-![unbounded，1 个 consumer](memory-unbounded-1-consumer-allocations.zh-CN.svg)
+BufferQueue 分配独立批次快照，使返回的数据在后续 pull、commit、segment 回收以及异步业务处理后仍然有效。
+元素按类型复制：值类型复制值，引用类型复制引用，不会深拷贝引用对象。原有 Channel 参考路径逐条读取，不创建 batch 容器。
 
-![unbounded，12 个 consumer](memory-unbounded-12-consumers-allocations.zh-CN.svg)
+新增的 `Channel_ReadAllAsync_Batched` 曲线也返回可独立保留的批次：通过 `ReadAllAsync` 填入新建的 `int[BatchSize]`，
+batch iterator 返回已填充前缀的 `ReadOnlyMemory<int>` 视图。数组不池化或复用，最后一个不满批次也不额外裁剪复制。
+这让双方都包含创建批次存储的成本，同时保留共享队列与分区的差异。Auto / Manual Commit 的分配量仍然接近；Channel 没有对应的 commit 功能。
 
-![bounded，1 个 consumer](memory-bounded-1-consumer-allocations.zh-CN.svg)
+原有系列在成功重跑 113 组后保留原记录值；新增 20 组数组聚合数据单独记录在[Channel 数组聚合测量](channel-batch-aggregation.zh-CN.md)。
+该文档包含完整耗时、分配、原始数据，以及不满批次和并发组织的差异。README 消费内存图比较双方返回独立批次的成本，
+耗时图仍使用原生 Channel 逐条读取作为参考。
 
-![bounded，12 个 consumer](memory-bounded-12-consumers-allocations.zh-CN.svg)
+### Channel 逐条读取参考
+
+以下保留原始对比：BufferQueue 返回批次快照，Channel 逐条读取。这些结果能衡量原生逐条数据交接的分配，
+但 Channel 没有生成批次，因此对“返回可保留批次”的分配成本参考有限。该场景应看[数组聚合对比](channel-batch-aggregation.zh-CN.md)。
+以下 Channel 参考线取自与 `BatchSize = 1` 一起记录的结果，保持水平；图中的 BatchSize 只影响 BufferQueue。
+
+![unbounded，1 个 consumer](memory-unbounded-1-consumer-per-item-allocations.zh-CN.svg)
+
+![unbounded，12 个 consumer](memory-unbounded-12-consumers-per-item-allocations.zh-CN.svg)
+
+![bounded，1 个 consumer](memory-bounded-1-consumer-per-item-allocations.zh-CN.svg)
+
+![bounded，12 个 consumer](memory-bounded-12-consumers-per-item-allocations.zh-CN.svg)
 
 ## Read-path 优化测量
 

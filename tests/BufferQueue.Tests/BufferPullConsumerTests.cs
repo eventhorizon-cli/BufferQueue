@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using BufferQueue.Memory;
 
 namespace BufferQueue.Tests;
 
@@ -25,6 +26,66 @@ public class BufferPullConsumerTests
         Assert.Equal(new[] { 42 }, reader.Current);
         Assert.Equal(1, first.CommitCount);
         Assert.Equal(0, last.CommitCount);
+    }
+
+    [Theory]
+    [InlineData(true, false, 1)]
+    [InlineData(false, false, 1)]
+    [InlineData(true, true, 2)]
+    [InlineData(false, true, 2)]
+    [InlineData(true, false, 4)]
+    [InlineData(false, false, 4)]
+    public async Task ConsumeAsync_Exposes_Count_And_Index_For_A_Batch(bool autoCommit, bool bounded, int batchSize)
+    {
+        var queue = new MemoryBufferQueue<int>(new MemoryBufferQueueOptions<int>
+        {
+            TopicName = "readonly-batch",
+            PartitionNumber = 1,
+            SegmentSize = 2,
+            BoundedCapacity = bounded ? 2UL : null
+        });
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var producer = queue.GetProducer();
+        await producer.ProduceAsync(42, cancellation.Token);
+        await producer.ProduceAsync(43, cancellation.Token);
+        var consumer = queue.CreateConsumer(new BufferPullConsumerOptions
+        {
+            TopicName = "readonly-batch",
+            GroupName = "group",
+            BatchSize = batchSize,
+            AutoCommit = autoCommit
+        });
+
+        await using var reader = consumer.ConsumeAsync(cancellation.Token).GetAsyncEnumerator();
+        Assert.True(await reader.MoveNextAsync());
+        var batch = reader.Current;
+        var expectedCount = Math.Min(2, batchSize);
+        Assert.Equal(expectedCount, batch.Count);
+        Assert.Equal(42, batch[0]);
+        if (expectedCount == 2)
+        {
+            Assert.Equal(43, batch[1]);
+        }
+
+        if (!autoCommit)
+        {
+            await consumer.CommitAsync();
+        }
+
+        await producer.ProduceAsync(44, cancellation.Token);
+        Assert.True(await reader.MoveNextAsync());
+        Assert.Equal(expectedCount == 1 ? 43 : 44, reader.Current[0]);
+        if (!autoCommit)
+        {
+            await consumer.CommitAsync();
+        }
+
+        Assert.Equal(expectedCount, batch.Count);
+        Assert.Equal(42, batch[0]);
+        if (expectedCount == 2)
+        {
+            Assert.Equal(43, batch[1]);
+        }
     }
 
     [Fact]
@@ -65,7 +126,7 @@ public class BufferPullConsumerTests
             _consumer?.NotifyNewDataAvailable(this);
         }
 
-        public bool TryPull(string groupName, int batchSize, [NotNullWhen(true)] out IEnumerable<int>? items)
+        public bool TryPull(string groupName, int batchSize, [NotNullWhen(true)] out IReadOnlyList<int>? items)
         {
             PullCount++;
             if (_items.TryPeek(out var item))

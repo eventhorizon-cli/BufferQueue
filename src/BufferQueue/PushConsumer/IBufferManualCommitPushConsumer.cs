@@ -6,5 +6,7 @@ namespace BufferQueue.PushConsumer;
 
 public interface IBufferManualCommitPushConsumer<in T> : IBufferPushConsumer
 {
-    Task ConsumeAsync(IEnumerable<T> buffer, IBufferConsumerCommitter committer, CancellationToken cancellationToken);
+    /// <summary>Processes a materialized batch with a count and indexed access.</summary>
+    /// <remarks>The queue does not invalidate the batch after this handler completes.</remarks>
+    Task ConsumeAsync(IReadOnlyList<T> buffer, IBufferConsumerCommitter committer, CancellationToken cancellationToken);
 }

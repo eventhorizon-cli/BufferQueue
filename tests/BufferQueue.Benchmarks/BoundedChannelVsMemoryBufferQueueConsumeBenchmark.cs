@@ -82,6 +82,10 @@ public class BoundedChannelVsMemoryBufferQueueConsumeBenchmark
     public Task Channel_ReadAllAsync() => ConsumeChannelReadAllAsync(_boundedChannel, MessageSize);
 
     [Benchmark]
+    public Task Channel_ReadAllAsync_Batched() =>
+        ChannelBatchConsumption.ConsumeAsync(_boundedChannel, Consumers, BatchSize, MessageSize);
+
+    [Benchmark]
     public Task BufferQueue_ConsumeAsync_AutoCommit() =>
         ConsumeMemoryBufferQueueAsync(_boundedMemoryBufferQueueConsumers, MessageSize, manualCommit: false);
 

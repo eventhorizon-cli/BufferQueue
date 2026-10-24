@@ -19,7 +19,22 @@ BufferQueue 当前提供两种存储模式：
 - Memory：进程内分段内存存储，主要优化批量消费吞吐。
 - MemoryMappedFile：本地内存映射分段文件存储，并持久化 producer offset 和 consumer offset。
 
-## 基准测试
+## 与 Channel 的对比
+
+### 功能差异
+
+| 对比项 | `System.Threading.Channels` | BufferQueue |
+|---|---|---|
+| 主要定位 | 进程内生产者与消费者之间的异步数据交接 | 带分区、消费组和进度管理的批量处理 |
+| 批量 API | 逐条读写，应用可以自行组 batch | 支持批量生产和消费，每次最多返回 BatchSize 条已可用数据 |
+| 多消费者 | 多个 reader 竞争读取同一个队列 | 组内按 partition 分工，不同 group 独立消费 |
+| 消费确认与重放 | 读取即移除，没有内建的处理确认和重放机制 | 支持 Auto Commit 和 **Manual Commit**，未提交的 batch 可以再次交付 |
+| 顺序 | FIFO 读取，并行处理的完成顺序可能不同 | partition 内有序，跨 partition 不保证全局顺序 |
+| 容量与背压 | bounded / unbounded；bounded 支持等待或丢弃策略 | Memory 支持 bounded / unbounded、等待或失败；容量释放取决于最慢 group 的已提交进度 |
+| 持久化 | 无内建持久化 | Memory 仅在进程内保存；可选 MemoryMappedFile 包支持本地数据和已提交进度持久化 |
+
+只需要共享工作队列、逐条交接数据时，Channel 更直接；需要批量 API、明确的消费确认或多个独立消费组时，BufferQueue 提供对应能力。
+具体语义参见 [Channel 文档](https://learn.microsoft.com/en-us/dotnet/core/extensions/channels)和 [BufferQueue 消费模型](docs/design/consumer-model.zh-CN.md)。
 
 下面按写入、消费的顺序展示 Memory BufferQueue 与 `System.Threading.Channels` 的性能对比，不包含 MemoryMappedFile。
 
@@ -45,13 +60,23 @@ BufferQueue batch 写入比 Channel 单条写入耗时约少 89–90%，其中�
 BufferQueue 的 `12` 个 partition，以及 `1` 或 `12` 个 consumer；`BatchSize` 只影响 BufferQueue。主要汇总使用
 `AutoCommit = true`，图表也包含单独测量的 Manual Commit 系列和灰色的 `Channel<T>.TryRead` 同步参考。
 
-#### unbounded 队列
+这项对比衡量积压数据的批量消费能力：BufferQueue 按批取出并累加 `Count()`，Channel 逐条取出并计数，不聚合成数组，
+体现批量 API 减少调用和异步迭代次数的收益。BufferQueue 创建批次和复制元素的成本已计入；
+不包含应用侧逐条遍历和业务处理，这部分额外成本见[单独的遍历测量](docs/benchmarks/batch-enumeration.zh-CN.md)。
+Channel 也返回批次时的耗时和分配，单独记录在[数组聚合测量](docs/benchmarks/channel-batch-aggregation.zh-CN.md)中。
+下方耗时图比较原生 API。数组聚合是在 Channel 之上增加的应用侧工作，额外耗时不能归因于 Channel 原生读取变慢，
+因此这组耗时仅放在链接文档中。
+
+**本次单 consumer、BatchSize 10～100 时，Channel 加上应用侧数组聚合后，内存分配与 BufferQueue 基本持平。
+理解分配差距，请看下方[消费内存分配图](#消费分配量)中的“Channel + 应用侧数组聚合”曲线；此结论不代表耗时持平。**
+
+#### Unbounded 队列
 
 ![unbounded 队列消费基准测试，1 个消费者](docs/benchmarks/memory-unbounded-1-consumer.zh-CN.svg)
 
 ![unbounded 队列消费基准测试，12 个消费者](docs/benchmarks/memory-unbounded-12-consumers.zh-CN.svg)
 
-#### bounded 队列
+#### Bounded 队列
 
 ![bounded 队列消费基准测试，1 个消费者](docs/benchmarks/memory-bounded-1-consumer.zh-CN.svg)
 
@@ -75,8 +100,9 @@ Manual Commit 的计时包含每批读取后的 `CommitAsync`。
 
 ### 内存分配
 
-以下数值均表示每次 benchmark operation 处理 8,192 条消息产生的累计托管分配量（allocated bytes），不是峰值驻留内存。
-消费测量使用 `Count()` 统计批次中的条数，不包含逐条枚举和业务处理的分配。
+消费内存分配图只比较需要保留 batch 的工作：BufferQueue Auto / Manual Commit 和 Channel 数组聚合。以下数值均表示
+每次 benchmark operation 处理 8,192 条消息产生的累计托管分配量（allocated bytes），不是峰值驻留内存。BufferQueue
+消费测量使用 `Count()` 统计批次条数，Channel 数组聚合使用每批的 `Length`；不包含应用侧逐条遍历和业务处理的分配。
 测试消费预填充数据；分区尾部仍可能取不满 batch，这种情况下也会减少内存分配。
 
 #### 写入分配量
@@ -89,8 +115,19 @@ Producer 每次处理 8,192 条约分配 55 KiB，Channel `WriteAsync` 在 unbou
 
 #### 消费分配量
 
-单消费者消费时，BufferQueue 在 BatchSize 1 / 100 / 1000 下分别约分配 193 / 35.3 / 33.6 KiB，Auto Commit / Manual Commit 结果接近；
-Channel `ReadAllAsync` 约分配 0.93 KiB。图表同时展示 Auto / Manual，`ReadAllAsync` 是异步参考，`TryRead` 是同步参考。
+Auto / Manual Commit 分配量基本一致，主图合并为一条 `Auto/Manual Commit` 曲线，采用 Auto Commit 测量值，
+与 **Channel + 应用侧数组聚合** 对比。Channel 通过 `ReadAllAsync` 逐条读取，
+每批填入一个新建的 `int[BatchSize]`，最后不满的一批只返回已填充前缀，不池化或复用已返回数组。BatchSize 同时
+控制 BufferQueue 和新增的 Channel 数组聚合路径，数组创建和填充的成本计入测量。
+
+BufferQueue 同样返回独立快照，在后续 pull、commit 和 segment 回收后仍然有效。单 consumer、BatchSize 100 时，
+Channel 数组聚合约分配 **35.1 KiB**，BufferQueue 约 **35.3 KiB**；这是分配对比，不代表耗时持平。Channel 逐条读取的
+分配量仍能反映原生数据交接的成本，但未包含生成可保留批次的成本，因此对本批量消费对比的参考有限。详见
+[Channel 逐条读取内存分配参考](docs/benchmarks/memory-queues.zh-CN.md#channel-逐条读取参考)和[完整数组聚合测量](docs/benchmarks/channel-batch-aggregation.zh-CN.md)，
+后者记录各配置的耗时、分配，以及分区和尾部批次行为的差异。
+
+单 consumer 下，BatchSize 1 / 100 / 1000 的 BufferQueue 分配约为 193 / 35.3 / 33.6 KiB，Auto / Manual 结果接近；
+Channel 数组聚合约为 257 / 35.1 / 36.5 KiB。
 
 ![unbounded 消费内存分配，1 个消费者](docs/benchmarks/memory-unbounded-1-consumer-allocations.zh-CN.svg)
 
@@ -101,21 +138,6 @@ Channel `ReadAllAsync` 约分配 0.93 KiB。图表同时展示 Auto / Manual，`
 ![bounded 消费内存分配，12 个消费者](docs/benchmarks/memory-bounded-12-consumers-allocations.zh-CN.svg)
 
 详细的 benchmark 配置、签名和结果解释参见[内存队列 benchmark 说明](docs/benchmarks/memory-queues.zh-CN.md)。
-
-## 功能定位
-
-| 对比项 | `System.Threading.Channels` | BufferQueue |
-|---|---|---|
-| 主要定位 | 进程内生产者与消费者之间的异步数据交接 | 带分区、消费组和进度管理的批量处理 |
-| 批量 API | 逐条读写，应用可以自行组 batch | 支持批量生产和消费，每次最多返回 BatchSize 条已可用数据 |
-| 多消费者 | 多个 reader 竞争读取同一个队列 | 组内按 partition 分工，不同 group 独立消费 |
-| 消费确认与重放 | 读取即移除，没有内建的处理确认和重放机制 | 支持 Auto Commit 和 **Manual Commit**，未提交的 batch 可以再次交付 |
-| 顺序 | FIFO 读取，并行处理的完成顺序可能不同 | partition 内有序，跨 partition 不保证全局顺序 |
-| 容量与背压 | bounded / unbounded；bounded 支持等待或丢弃策略 | Memory 支持 bounded / unbounded、等待或失败；容量释放取决于最慢 group 的已提交进度 |
-| 持久化 | 无内建持久化 | Memory 仅在进程内保存；可选 MemoryMappedFile 包支持本地数据和已提交进度持久化 |
-
-只需要共享工作队列、逐条交接数据时，Channel 更直接；需要批量 API、明确的消费确认或多个独立消费组时，BufferQueue 提供对应能力。
-具体语义参见 [Channel 文档](https://learn.microsoft.com/en-us/dotnet/core/extensions/channels)和 [BufferQueue 消费模型](docs/design/consumer-model.zh-CN.md)。
 
 ## 适用场景
 
@@ -143,6 +165,7 @@ Channel `ReadAllAsync` 约分配 0.93 KiB。图表同时展示 Auto / Manual，`
 ![BufferQueue 架构](docs/assets/BufferQueueMindMap.zh-CN.svg)
 
 ## 高性能设计
+
 ### Partition 并发设计
 
 Memory 模式对已发布 slot 的读取不会持有追加锁，因此不同 Consumer Group 可以独立读取数据。
@@ -165,6 +188,20 @@ Producer 默认以轮询方式往每个 Partition 中写入数据。Topic 也可
 ### Segment 存储
 Memory 模式使用固定大小的 segment 保存记录。unbounded topic 会按需分配新的 segment；bounded topic 遵守配置的总容量，
 并在所有 consumer group 提交进度后释放容量。
+
+### 机会式批量消费（Opportunistic Batching）
+
+BufferQueue 会在 Consumer 扫描 Partition 时，把当时已经可读的数据组成 batch。一次 pull 最多从一个有数据的
+Partition 返回 `BatchSize` 条记录。同一 Partition 中已经排队的数据可能被机会式地合并到这个 batch 中；它不会为了凑满
+`BatchSize` 而等待固定时间窗口。因此低流量可能得到只有一条数据的 batch，突发流量则可能得到同一 Partition 中已经排队的更大 batch。
+
+开启 `AutoCommit` 时，Consumer 在成功 pull 后立即提交进度。手动提交时，batch 会先返回给调用方，只有调用
+`CommitAsync` 后才推进进度；未提交的 batch 可能再次交付。Push Consumer 复用相同的交付和提交语义。
+
+![BufferQueue 机会式批量消费](docs/assets/bufferqueue-opportunistic-batching.zh-CN.svg)
+
+“机会式”描述的是数据何时被收集进 batch，不代表业务层面的合并或去重保证。具体 batch 受入队时机、Partition 路由、
+`BatchSize` 和 Consumer 调度影响。交付和唤醒细节参见[Consumer 模型](docs/design/consumer-model.zh-CN.md)。
 
 ## 使用示例
 
@@ -426,7 +463,7 @@ public class TestController(
 - `ProduceAsync(ReadOnlyMemory<T> items, CancellationToken cancellationToken = default)`
 
 `BufferProducerExtensions` 只提供接收 `IEnumerable<T>` 的便捷重载，这些重载同样接收 `CancellationToken`。
-传入的序列不是数组时，会先物化为数组，再进入核心批量写入路径。核心 `ProduceAsync` 方法属于接口本身，
+传入的序列不是数组时，会先转换为数组，再进入核心批量写入路径。核心 `ProduceAsync` 方法属于接口本身，
 不是扩展方法。
 
 ```csharp
@@ -457,11 +494,13 @@ segment 中间位置的情况。较晚创建的 consumer group 会从当前逻�
 // ChannelReader<T>: one item per iteration
 IAsyncEnumerable<T> ReadAllAsync(CancellationToken cancellationToken = default);
 // IBufferPullConsumer<T>: one batch per iteration
-IAsyncEnumerable<IEnumerable<T>> ConsumeAsync(CancellationToken cancellationToken = default);
+IAsyncEnumerable<IReadOnlyList<T>> ConsumeAsync(CancellationToken cancellationToken = default);
 ```
 
-Channel 每轮返回一条消息，BufferQueue 每轮返回一个 batch。`ReadAllAsync` 会持续读取直到已完成的 Channel 被读空，
-并不是把全部数据收集成一个 batch。
+Channel 每轮返回一条消息，BufferQueue 每轮返回一个 batch。每个 BufferQueue batch 都是已生成的
+`IReadOnlyList<T>`，可以直接使用 `Count` 和索引，同时继续支持 `foreach` 和 LINQ。`ReadAllAsync` 会持续读取直到已完成的
+Channel 被读空，并不是把全部数据收集成一个 batch。公开 batch 签名变化后，所有已编译的 consumer 都必须重新编译；
+只枚举 batch 的源代码通常不需要改动，但 consumer 实现、mock 和 push handler 必须更新参数或返回类型签名。
 
 #### Consumer Group
 
@@ -558,11 +597,11 @@ BufferPushCustomerAttribute 中的 concurrency 参数用于设置 push consumer 
     concurrency: 2)]
 public class Foo2PushConsumer(ILogger<Foo2PushConsumer> logger) : IBufferAutoCommitPushConsumer<Foo>
 {
-    public Task ConsumeAsync(IEnumerable<Foo> buffer, CancellationToken cancellationToken)
+    public Task ConsumeAsync(IReadOnlyList<Foo> buffer, CancellationToken cancellationToken)
     {
-        foreach (var foo in buffer)
+        for (var i = 0; i < buffer.Count; i++)
         {
-            logger.LogInformation("Foo2PushConsumer.ConsumeAsync: {Foo}", foo);
+            logger.LogInformation("Foo2PushConsumer.ConsumeAsync: {Foo}", buffer[i]);
         }
 
         return Task.CompletedTask;
@@ -579,7 +618,7 @@ public class Foo2PushConsumer(ILogger<Foo2PushConsumer> logger) : IBufferAutoCom
     2)]
 public class BarPushConsumer(ILogger<BarPushConsumer> logger) : IBufferManualCommitPushConsumer<Bar>
 {
-    public async Task ConsumeAsync(IEnumerable<Bar> buffer, IBufferConsumerCommitter committer,
+    public async Task ConsumeAsync(IReadOnlyList<Bar> buffer, IBufferConsumerCommitter committer,
         CancellationToken cancellationToken)
     {
         foreach (var bar in buffer)
@@ -591,20 +630,6 @@ public class BarPushConsumer(ILogger<BarPushConsumer> logger) : IBufferManualCom
     }
 }
 ```
-
-#### 机会式批量消费（Opportunistic Batching）
-
-BufferQueue 会在 Consumer 扫描 Partition 时，把当时已经可读的数据组成 batch。一次 pull 最多从一个有数据的
-Partition 返回 `BatchSize` 条记录。同一 Partition 中已经排队的数据可能被机会式地合并到这个 batch 中；它不会为了凑满
-`BatchSize` 而等待固定时间窗口。因此低流量可能得到只有一条数据的 batch，突发流量则可能得到同一 Partition 中已经排队的更大 batch。
-
-开启 `AutoCommit` 时，Consumer 在成功 pull 后立即提交进度。手动提交时，batch 会先返回给调用方，只有调用
-`CommitAsync` 后才推进进度；未提交的 batch 可能再次交付。Push Consumer 复用相同的交付和提交语义。
-
-![BufferQueue 机会式批量消费](docs/assets/bufferqueue-opportunistic-batching.zh-CN.svg)
-
-“机会式”描述的是数据何时被收集进 batch，不代表业务层面的合并或去重保证。具体 batch 受入队时机、Partition 路由、
-`BatchSize` 和 Consumer 调度影响。交付和唤醒细节参见[Consumer 模型](docs/design/consumer-model.zh-CN.md)。
 
 ## 示例项目
 

@@ -93,7 +93,7 @@ source and job configuration. Manual Commit calls `CommitAsync` after every batc
 included. The [foreach measurements](batch-enumeration.md) and [sparse-batch measurements](partial-batch-allocation.md)
 measure those separate workloads.
 
-### unbounded
+### Unbounded
 
 Channel references use the fixed `BatchSize=1` rows; BatchSize does not control Channel:
 
@@ -132,7 +132,7 @@ BufferQueue `ConsumeAsync`, `AutoCommit=false` with `CommitAsync` after each bat
 | 1000 | 1 | 27.331 | 33.65 |
 | 1000 | 12 | 35.608 | 39.09 |
 
-### bounded
+### Bounded
 
 BufferQueue and Channel capacities are both 8,192. Queues are prefilled; producer backpressure is not measured.
 
@@ -220,12 +220,17 @@ with `await foreach`:
 // ChannelReader<T>
 IAsyncEnumerable<T> ReadAllAsync(CancellationToken cancellationToken = default);
 // IBufferPullConsumer<T>
-IAsyncEnumerable<IEnumerable<T>> ConsumeAsync(CancellationToken cancellationToken = default);
+IAsyncEnumerable<IReadOnlyList<T>> ConsumeAsync(CancellationToken cancellationToken = default);
 ```
 
-Channel yields one item per iteration; BufferQueue yields one batch. `ReadAllAsync` continues until the channel
+Channel yields one item per iteration; BufferQueue yields one batch. The current batch is an already materialized
+`IReadOnlyList<T>` with `Count` and indexed access; it still supports `foreach` and LINQ. `ReadAllAsync` continues until the channel
 completes and is drained; it does not collect all items into one batch. `ChannelReader<T>.ReadAsync` is a separate single-item `ValueTask<T>` comparison,
 and `TryRead` is a synchronous reference rather than the primary asynchronous baseline.
+
+The refreshed measurements in this report were run before the public batch signature changed from `IEnumerable<T>`
+to `IReadOnlyList<T>`; the operation and snapshot data are otherwise unchanged, and the tables were not rerun for this
+API-only adjustment.
 
 ## Memory Allocation
 
@@ -241,16 +246,39 @@ allocation measurements.
 Consumer charts normalize BenchmarkDotNet's allocation display to `KiB/op` (`1 KiB = 1,024 B`). Consumption runs drain
 8,192 prefetched items from 12 partitions with 1 or 12 consumers; `BatchSize` values are categorical, and the y-axis
 is logarithmic. Queue and consumer setup is excluded from the measured allocation. The values are managed memory per
-8,192-item benchmark operation, not peak resident memory or per-item allocation. Both Channel references use the rows recorded alongside `BatchSize = 1`;
-BatchSize only affects BufferQueue, and the Auto/Manual curves are nearly overlapping.
+8,192-item benchmark operation, not peak resident memory or per-item allocation. BatchSize controls both BufferQueue
+and Channel array batching. Auto/Manual allocations are nearly equal, so one combined curve shows the Auto Commit measurements.
 
-![unbounded, 1 consumer](memory-unbounded-1-consumer-allocations.svg)
+BufferQueue allocates independent batch snapshots that survive later pulls, commits, segment recycling, and asynchronous
+application processing. Elements are copied by value for value types and by reference for reference types, without deep
+cloning. The original Channel references read individual items without creating batch containers.
 
-![unbounded, 12 consumers](memory-unbounded-12-consumers-allocations.svg)
+The added `Channel_ReadAllAsync_Batched` curve also returns independently retained batches: `ReadAllAsync` fills a new
+`int[BatchSize]`, and the batch iterator yields a `ReadOnlyMemory<int>` view of the filled prefix. Arrays are never pooled
+or reused; a partial final batch does not allocate another trimmed copy. This comparison includes the cost of creating
+batch storage on both sides, while preserving their different shared-queue/partition behavior. Auto / Manual Commit
+allocation remains similar; Channel has no commit equivalent.
 
-![bounded, 1 consumer](memory-bounded-1-consumer-allocations.svg)
+The original series retain their recorded values after a successful 113-case rerun; the new 20 array-batching cases are
+recorded separately in [Channel array-batching measurements](channel-batch-aggregation.md). That report includes all elapsed
+times, allocations, raw data, and the partial-batch and concurrency differences. The README's consumption allocation
+charts compare independently retained batches; its elapsed-time charts retain the native per-item Channel baseline.
 
-![bounded, 12 consumers](memory-bounded-12-consumers-allocations.svg)
+### Per-item Channel Reference
+
+These original charts compare BufferQueue batch snapshots with Channel per-item reads. They remain useful for assessing
+native item handoff, but Channel creates no batch container here, so they have limited relevance to the allocation cost
+of returning retained batches. For that workload, use the [array-batching comparison](channel-batch-aggregation.md).
+The Channel references below use the rows recorded alongside `BatchSize = 1` and stay horizontal; BatchSize affects
+only BufferQueue in these charts.
+
+![unbounded, 1 consumer](memory-unbounded-1-consumer-per-item-allocations.svg)
+
+![unbounded, 12 consumers](memory-unbounded-12-consumers-per-item-allocations.svg)
+
+![bounded, 1 consumer](memory-bounded-1-consumer-per-item-allocations.svg)
+
+![bounded, 12 consumers](memory-bounded-12-consumers-per-item-allocations.svg)
 
 ## Read-path Optimization Measurements
 

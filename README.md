@@ -19,7 +19,23 @@ BufferQueue currently provides two storage modes:
 - Memory: in-process segmented memory storage, optimized for high-throughput batch consumption.
 - MemoryMappedFile: local memory-mapped segment files with persisted producer and consumer offsets.
 
-## Benchmarks
+## Comparison with Channel
+
+### Functional Differences
+
+| Aspect | `System.Threading.Channels` | BufferQueue |
+|---|---|---|
+| Focus | In-process asynchronous producer/consumer handoff | Batch processing with partitions, consumer groups, and tracked progress |
+| Batch APIs | Item-based reads/writes; applications can assemble batches | Batch production and consumption; reads return up to BatchSize available items |
+| Multiple consumers | Readers compete for items from one queue | Partitions are assigned within a group; different groups consume independently |
+| Acknowledgement and replay | Reading removes an item; no built-in processing acknowledgement or replay | Auto Commit or **Manual Commit**; an uncommitted batch can be delivered again |
+| Ordering | FIFO reads; parallel processing may finish out of order | Ordering within each partition; no global order across partitions |
+| Capacity and backpressure | bounded / unbounded; bounded supports waiting or dropping items | Memory supports bounded / unbounded, waiting or failing; capacity follows the slowest group's committed progress |
+| Persistence | No built-in persistence | Memory is in-process; the optional MemoryMappedFile package persists data and committed progress locally |
+
+Channel suits a shared work queue when per-item handoff is sufficient. BufferQueue adds batch APIs and independent
+consumer progress when processing needs explicit acknowledgement or multiple consumer groups. See [Channel documentation](https://learn.microsoft.com/en-us/dotnet/core/extensions/channels)
+and the [BufferQueue consumer model](docs/design/consumer-model.md) for the respective semantics.
 
 The following sections compare Memory BufferQueue with `System.Threading.Channels`: production first, then consumption.
 MemoryMappedFile is not included.
@@ -48,6 +64,19 @@ These charts drain prefilled queues through asynchronous BufferQueue consumption
 The workload uses `8,192` `int` messages, `12` BufferQueue partitions, and `1` or `12` consumers; `BatchSize` affects
 BufferQueue only. The primary summary uses `AutoCommit = true`; the charts also include a separately measured Manual
 Commit series and a gray `Channel<T>.TryRead` synchronous reference.
+
+This comparison measures batch consumption capability when draining a backlog: BufferQueue retrieves batches and
+adds their `Count()`, while Channel retrieves and counts individual items without collecting them into arrays. This captures the reduction in API calls
+and asynchronous iterations from batching. BufferQueue's batch creation and element copying are included; application-side
+per-item traversal and business processing are excluded. [Separate traversal measurements](docs/benchmarks/batch-enumeration.md)
+cover that additional cost. [Channel array-batching results](docs/benchmarks/channel-batch-aggregation.md) separately
+record the elapsed time and allocation when Channel also returns batches.
+The time charts below compare the native APIs. Array batching adds application-side work to Channel; its extra
+elapsed time is not a slowdown of Channel's native read API, so those timings remain in the linked report.
+
+**With application-side array batching, Channel's allocation is approximately equal to BufferQueue's in this
+one-consumer workload at BatchSize 10–100. See the [consumption allocation charts](#consumption-allocations) below
+for the supplementary Channel + array batching curve. This is an allocation comparison, not an elapsed-time claim.**
 
 #### Unbounded
 
@@ -80,9 +109,11 @@ ensure a full batch under sparse traffic; these results measure draining a backl
 
 ### Allocations
 
-The charts show cumulative managed allocations per 8,192-item operation, not peak memory usage.
-Consumption measurements use each batch's `Count()`; per-item enumeration and application processing are excluded.
-The queues are prefilled, but batches can still be partial at partition tails, where allocation is reduced.
+The consumption allocation charts compare retained-batch work: BufferQueue Auto / Manual Commit and Channel array
+batching. They show cumulative managed allocations per 8,192-item operation, not peak memory usage. BufferQueue
+consumption uses each batch's `Count()`; Channel array batching uses each batch's `Length`. Application-side per-item
+traversal and business processing are excluded. The queues are prefilled, but batches can still be partial at partition
+tails, where allocation is reduced.
 
 #### Production Allocations
 
@@ -94,7 +125,18 @@ Production allocates about 55 KiB for BufferQueue versus 135 / 68 KiB for Channe
 
 #### Consumption Allocations
 
-These charts include Auto Commit and Manual Commit alongside Channel `ReadAllAsync`, with `TryRead` as a synchronous reference.
+The main charts show one `Auto/Manual Commit` curve because their allocations are nearly equal; the curve uses Auto Commit measurements. They compare BufferQueue with **Channel + array batching**. The added Channel path uses
+`ReadAllAsync` to fill a fresh `int[BatchSize]` for each batch and exposes only the filled prefix of the last partial
+batch; it never pools or reuses returned arrays. BatchSize controls both BufferQueue and this added Channel path, and
+array creation and filling are included in allocation.
+
+BufferQueue likewise returns independent snapshots that remain valid after later pulls, commits, and segment recycling.
+For one consumer at BatchSize 100, Channel array batching allocates about **35.1 KiB**, versus **35.3 KiB** for BufferQueue;
+this is an allocation comparison, not an elapsed-time claim. The raw Channel per-item allocation reference remains useful
+for native item handoff, but it does not materialize retained batches and is therefore a limited reference for this
+batch-consumption comparison. See the [per-item Channel allocation reference](docs/benchmarks/memory-queues.md#per-item-channel-reference)
+and the [complete array-batching measurements](docs/benchmarks/channel-batch-aggregation.md) for elapsed times,
+allocation at every configuration, and the different partition/tail-batch behavior.
 
 ![Unbounded consumption allocations, 1 consumer](docs/benchmarks/memory-unbounded-1-consumer-allocations.svg)
 
@@ -105,25 +147,9 @@ These charts include Auto Commit and Manual Commit alongside Channel `ReadAllAsy
 ![Bounded consumption allocations, 12 consumers](docs/benchmarks/memory-bounded-12-consumers-allocations.svg)
 
 For one-consumer draining, BufferQueue allocates about 193 / 35.3 / 33.6 KiB at BatchSize 1 / 100 / 1000, with
-similar Auto / Manual results; Channel `ReadAllAsync` allocates about 0.93 KiB.
+similar Auto / Manual results; Channel array batching allocates about 257 / 35.1 / 36.5 KiB.
 
 See [memory queue benchmark details](docs/benchmarks/memory-queues.md) for the complete setup, signatures, and results.
-
-## Functional Positioning
-
-| Aspect | `System.Threading.Channels` | BufferQueue |
-|---|---|---|
-| Focus | In-process asynchronous producer/consumer handoff | Batch processing with partitions, consumer groups, and tracked progress |
-| Batch APIs | Item-based reads/writes; applications can assemble batches | Batch production and consumption; reads return up to BatchSize available items |
-| Multiple consumers | Readers compete for items from one queue | Partitions are assigned within a group; different groups consume independently |
-| Acknowledgement and replay | Reading removes an item; no built-in processing acknowledgement or replay | Auto Commit or **Manual Commit**; an uncommitted batch can be delivered again |
-| Ordering | FIFO reads; parallel processing may finish out of order | Ordering within each partition; no global order across partitions |
-| Capacity and backpressure | bounded / unbounded; bounded supports waiting or dropping items | Memory supports bounded / unbounded, waiting or failing; capacity follows the slowest group's committed progress |
-| Persistence | No built-in persistence | Memory is in-process; the optional MemoryMappedFile package persists data and committed progress locally |
-
-Channel suits a shared work queue when per-item handoff is sufficient. BufferQueue adds batch APIs and independent
-consumer progress when processing needs explicit acknowledgement or multiple consumer groups. See [Channel documentation](https://learn.microsoft.com/en-us/dotnet/core/extensions/channels)
-and the [BufferQueue consumer model](docs/design/consumer-model.md) for the respective semantics.
 
 ## Applicable Scenarios
 
@@ -177,6 +203,23 @@ Different consumption groups' consumption progress is recorded on each partition
 
 Memory mode stores records in fixed-size segments. Unbounded topics allocate additional segments as needed; bounded
 topics enforce their configured total capacity and release it as all consumer groups commit.
+
+### Opportunistic Batching
+
+BufferQueue forms batches from data that is already available when a consumer scans a partition. A pull returns up
+to `BatchSize` items from one readable partition. Items already queued in the same partition may be combined
+opportunistically into that batch; the consumer does not hold the first item for a fixed collection window. Low
+traffic can therefore produce a one-item batch, while a burst can produce a larger batch from the same partition.
+
+With `AutoCommit`, the consumer commits immediately after a successful pull. With manual commit, it returns the batch
+to the caller and advances only after `CommitAsync`; an uncommitted batch may be delivered again. Push consumers use
+the same delivery and commit semantics.
+
+![BufferQueue opportunistic batch consumption](docs/assets/bufferqueue-opportunistic-batching.svg)
+
+“Opportunistic” describes when items are collected into a batch; it is not a business-level merge or deduplication
+guarantee. Batch composition depends on enqueue timing, partition routing, `BatchSize`, and consumer scheduling. See
+[Consumer model](docs/design/consumer-model.md) for delivery and wake-up details.
 
 ## Usage Example
 
@@ -484,11 +527,14 @@ The primary asynchronous comparison uses `ReadAllAsync` because both APIs expose
 // ChannelReader<T>: one item per iteration
 IAsyncEnumerable<T> ReadAllAsync(CancellationToken cancellationToken = default);
 // IBufferPullConsumer<T>: one batch per iteration
-IAsyncEnumerable<IEnumerable<T>> ConsumeAsync(CancellationToken cancellationToken = default);
+IAsyncEnumerable<IReadOnlyList<T>> ConsumeAsync(CancellationToken cancellationToken = default);
 ```
 
-Channel yields one item per iteration; BufferQueue yields one batch. `ReadAllAsync` continues until the Channel
-completes and is drained; it does not collect all items into one batch.
+Channel yields one item per iteration; BufferQueue yields one batch. Each BufferQueue batch is an already materialized
+`IReadOnlyList<T>` with `Count` and indexed access, while `foreach` and LINQ remain available. `ReadAllAsync` continues
+until the Channel completes and is drained; it does not collect all items into one batch. The public batch signature
+change requires every binary consumer to be rebuilt; source code that only enumerates batches usually needs no change,
+but consumer implementations, mocks, and push handlers must update their parameter or return signatures.
 
 #### Consumer Groups
 
@@ -588,11 +634,11 @@ The concurrency parameter in the BufferPushCustomer attribute is used to set the
     concurrency: 2)]
 public class Foo2PushConsumer(ILogger<Foo2PushConsumer> logger) : IBufferAutoCommitPushConsumer<Foo>
 {
-    public Task ConsumeAsync(IEnumerable<Foo> buffer, CancellationToken cancellationToken)
+    public Task ConsumeAsync(IReadOnlyList<Foo> buffer, CancellationToken cancellationToken)
     {
-        foreach (var foo in buffer)
+        for (var i = 0; i < buffer.Count; i++)
         {
-            logger.LogInformation("Foo2PushConsumer.ConsumeAsync: {Foo}", foo);
+            logger.LogInformation("Foo2PushConsumer.ConsumeAsync: {Foo}", buffer[i]);
         }
 
         return Task.CompletedTask;
@@ -609,7 +655,7 @@ public class Foo2PushConsumer(ILogger<Foo2PushConsumer> logger) : IBufferAutoCom
     2)]
 public class BarPushConsumer(ILogger<BarPushConsumer> logger) : IBufferManualCommitPushConsumer<Bar>
 {
-    public async Task ConsumeAsync(IEnumerable<Bar> buffer, IBufferConsumerCommitter committer,
+    public async Task ConsumeAsync(IReadOnlyList<Bar> buffer, IBufferConsumerCommitter committer,
         CancellationToken cancellationToken)
     {
         foreach (var bar in buffer)
@@ -621,23 +667,6 @@ public class BarPushConsumer(ILogger<BarPushConsumer> logger) : IBufferManualCom
     }
 }
 ```
-
-#### Opportunistic Batching
-
-BufferQueue forms batches from data that is already available when a consumer scans a partition. A pull returns up
-to `BatchSize` items from one readable partition. Items already queued in the same partition may be combined
-opportunistically into that batch; the consumer does not hold the first item for a fixed collection window. Low
-traffic can therefore produce a one-item batch, while a burst can produce a larger batch from the same partition.
-
-With `AutoCommit`, the consumer commits immediately after a successful pull. With manual commit, it returns the batch
-to the caller and advances only after `CommitAsync`; an uncommitted batch may be delivered again. Push consumers use
-the same delivery and commit semantics.
-
-![BufferQueue opportunistic batch consumption](docs/assets/bufferqueue-opportunistic-batching.svg)
-
-“Opportunistic” describes when items are collected into a batch; it is not a business-level merge or deduplication
-guarantee. Batch composition depends on enqueue timing, partition routing, `BatchSize`, and consumer scheduling. See
-[Consumer model](docs/design/consumer-model.md) for delivery and wake-up details.
 
 ## Samples
 

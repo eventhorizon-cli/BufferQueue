@@ -76,7 +76,7 @@ public sealed class MemoryConsumptionConcurrencyTests
         using var manualStop = CancellationTokenSource.CreateLinkedTokenSource(cancellation.Token);
         var autoItems = new ConcurrentBag<int>();
         var manualItems = new ConcurrentBag<int>();
-        var heldSnapshots = new ConcurrentBag<(IEnumerable<int> Batch, int[] Values)>();
+        var heldSnapshots = new ConcurrentBag<(IReadOnlyList<int> Batch, int[] Values)>();
 
         var autoTasks = autoConsumers.Select(consumer =>
             ConsumeAsync(consumer, autoItems, autoStop, manualCommit: false, heldSnapshots)).ToArray();
@@ -136,7 +136,7 @@ public sealed class MemoryConsumptionConcurrencyTests
         ConcurrentBag<int> receivedItems,
         CancellationTokenSource stop,
         bool manualCommit,
-        ConcurrentBag<(IEnumerable<int> Batch, int[] Values)> heldSnapshots)
+        ConcurrentBag<(IReadOnlyList<int> Batch, int[] Values)> heldSnapshots)
     {
         var capturedSnapshot = false;
         try
@@ -209,7 +209,7 @@ public sealed class MemoryConsumptionConcurrencyTests
     }
 
     private static void AssertHeldSnapshots(
-        ConcurrentBag<(IEnumerable<int> Batch, int[] Values)> heldSnapshots)
+        ConcurrentBag<(IReadOnlyList<int> Batch, int[] Values)> heldSnapshots)
     {
         Assert.NotEmpty(heldSnapshots);
         foreach (var (batch, values) in heldSnapshots)

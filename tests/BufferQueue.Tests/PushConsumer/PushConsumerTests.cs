@@ -92,9 +92,10 @@ public class PushConsumerTests
     [BufferPushCustomer("topic-foo1", "group-foo1", 100, ServiceLifetime.Singleton, 2)]
     public class Foo1Consumer : IBufferAutoCommitPushConsumer<Foo>
     {
-        public Task ConsumeAsync(IEnumerable<Foo> buffer, CancellationToken cancellationToken)
+        public Task ConsumeAsync(IReadOnlyList<Foo> buffer, CancellationToken cancellationToken)
         {
-            _foo1CountdownEvent.Signal(buffer.Count());
+            Assert.InRange(buffer[0].Id, 0, 104);
+            _foo1CountdownEvent.Signal(buffer.Count);
             return Task.CompletedTask;
         }
     }
@@ -103,22 +104,24 @@ public class PushConsumerTests
     public class Foo2Consumer : IBufferManualCommitPushConsumer<Foo>
     {
         public async Task ConsumeAsync(
-            IEnumerable<Foo> buffer,
+            IReadOnlyList<Foo> buffer,
             IBufferConsumerCommitter committer,
             CancellationToken cancellationToken)
         {
             await committer.CommitAsync();
 
-            _foo2CountdownEvent.Signal(buffer.Count());
+            Assert.InRange(buffer[0].Id, 0, 300);
+            _foo2CountdownEvent.Signal(buffer.Count);
         }
     }
 
     [BufferPushCustomer("topic-bar", "group-bar", 100, ServiceLifetime.Transient, 2)]
     public class BarConsumer : IBufferAutoCommitPushConsumer<Bar>
     {
-        public Task ConsumeAsync(IEnumerable<Bar> buffer, CancellationToken cancellationToken)
+        public Task ConsumeAsync(IReadOnlyList<Bar> buffer, CancellationToken cancellationToken)
         {
-            _barCountdownEvent.Signal(buffer.Count());
+            Assert.InRange(buffer[0].Id, 0, 104);
+            _barCountdownEvent.Signal(buffer.Count);
             return Task.CompletedTask;
         }
     }

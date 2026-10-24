@@ -36,6 +36,12 @@ await foreach (var batch in consumer.ConsumeAsync(cancellationToken))
 }
 ~~~
 
+`ConsumeAsync` 返回 `IAsyncEnumerable<IReadOnlyList<TItem>>`。每个 batch 都是已生成且独立持有数据的快照。
+`IReadOnlyList<TItem>` 提供 `Count` 和索引访问，同时通过 `IEnumerable<TItem>` 继续支持 `foreach` 和 LINQ。
+这个 list 接口不会让 item 本身变成不可变；batch 在后续 pull、commit 或 segment 复用后仍然有效。
+这个公开签名的变更不兼容旧二进制，使用这些接口的应用和库都需要重新编译。普通枚举代码通常不需要修改；
+consumer 接口实现、mock 和 push handler 需要更新参数或返回类型。
+
 当 `AutoCommit` 为 false 时，consumer 的读取位置不会在调用
 `CommitAsync` 前推进。这在当前进程内提供 at-least-once 语义。对 MemoryMappedFile 模式而言，
 已经到达 flush 边界的记录也会在进程重启后保留该语义；`CommitAsync` 本身会强制建立该边界。
@@ -69,6 +75,10 @@ interlocked exchange 发布等待标志，再检查版本。版本变化时清�
 
 Push consumer 模式构建在 pull consumer 之上。Host service 扫描带 attribute 的 push consumer，
 创建对应 pull consumer，并把 batch 交给 push consumer 实现处理。
+
+Push consumer handler 同样接收 `IReadOnlyList<TItem>`，可以直接使用 `Count` 和索引，也继续支持枚举。
+Handler 可以在异步处理期间保留 batch；Auto Commit 不代表 handler 已经处理完成，因此 queue 不会自动回收或使已交付的
+batch 失效。
 
 Auto-commit push consumer 会在成功 pull 后、应用代码处理 batch 前推进进度，因此 handler failure 不会让该
 batch 再次进入可重放状态。Manual-commit push consumer 会收到

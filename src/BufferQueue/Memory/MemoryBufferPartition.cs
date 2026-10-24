@@ -195,7 +195,7 @@ internal sealed class MemoryBufferPartition<T>
         }
     }
 
-    public bool TryPull(string groupName, int batchSize, [NotNullWhen(true)] out IEnumerable<T>? items)
+    public bool TryPull(string groupName, int batchSize, [NotNullWhen(true)] out IReadOnlyList<T>? items)
     {
         if (!_readers.TryGet(groupName, out var reader))
         {
@@ -396,10 +396,10 @@ internal sealed class MemoryBufferPartition<T>
 
         public MemoryBufferPartitionOffset ReadPosition => _readPosition;
 
-        public bool TryRead(int batchSize, [NotNullWhen(true)] out IEnumerable<T>? items)
+        public bool TryRead(int batchSize, [NotNullWhen(true)] out IReadOnlyList<T>? items)
             => batchSize == 1 ? TryReadSingle(out items) : TryReadBatch(batchSize, out items);
 
-        private bool TryReadSingle([NotNullWhen(true)] out IEnumerable<T>? items)
+        private bool TryReadSingle([NotNullWhen(true)] out IReadOnlyList<T>? items)
         {
             var readPosition = _readPosition;
             var currentSegment = _currentSegment;
@@ -420,7 +420,7 @@ internal sealed class MemoryBufferPartition<T>
             return true;
         }
 
-        private bool TryReadBatch(int batchSize, [NotNullWhen(true)] out IEnumerable<T>? items)
+        private bool TryReadBatch(int batchSize, [NotNullWhen(true)] out IReadOnlyList<T>? items)
         {
             var remainingCount = batchSize;
             var readPosition = _readPosition;
@@ -460,6 +460,9 @@ internal sealed class MemoryBufferPartition<T>
                             }
 
                             // A successor published after this observation belongs to the next pull.
+                            // With a visible successor, keep the requested size to avoid pre-scanning segments.
+                            // Revisit only if workloads show material cross-segment partial-batch waste:
+                            // https://github.com/eventhorizon-cli/BufferQueue/issues/54
                             var resultLength = remainingCount > 0 && currentSegment.NextSegment == null
                                 ? copiedCount + length
                                 : batchSize;
@@ -528,6 +531,9 @@ internal sealed class MemoryBufferPartition<T>
         }
     }
 
+    // Callers may retain snapshots after later pulls/commits, so storage cannot be pooled at those points.
+    // A struct returned through the list interface would still box; retain independent ownership.
+    // https://github.com/eventhorizon-cli/BufferQueue/issues/54
     private sealed class SingleItemBatch<TItem>(TItem item) : IReadOnlyList<TItem>, ICollection<TItem>
     {
         public int Count => 1;

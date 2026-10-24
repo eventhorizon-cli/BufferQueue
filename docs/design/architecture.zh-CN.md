@@ -93,8 +93,8 @@ await producer.ProduceAsync(itemsFromAnEnumerable, cancellationToken);
 ~~~
 
 数据已经连续存储，或可以直接表示为内存区间时，应优先使用 `ReadOnlyMemory<T>`。这是核心批量写入形式，
-可以避免非数组 `IEnumerable<T>` 在提交前所需的物化。`IEnumerable<T>` 重载用于方便调用；当输入不是数组时，
-会先物化为数组，再提交整个批次。核心 `ProduceAsync` 方法不是扩展方法；它们定义各存储模式的正常写入行为。
+可以避免非数组 `IEnumerable<T>` 在提交前转换成数组的开销。`IEnumerable<T>` 重载用于方便调用；当输入不是数组时，
+会先转换为数组，再提交整个批次。核心 `ProduceAsync` 方法不是扩展方法；它们定义各存储模式的正常写入行为。
 
 写入开始前会检查取消；Memory 写入因 `Wait` 等待容量时，也可以通过 token 取消。已接纳的批次或切片开始
 append 后，不会在每条数据之间反复检查 token。超过配置容量的 `Wait` 批次会按容量切片，因此取消可以发生在
@@ -154,7 +154,7 @@ internal interface IBufferPartition<TItem>
 
     void Enqueue(TItem item);
 
-    bool TryPull(string groupName, int batchSize, out IEnumerable<TItem>? items);
+    bool TryPull(string groupName, int batchSize, out IReadOnlyList<TItem>? items);
 
     void Commit(string groupName);
 }

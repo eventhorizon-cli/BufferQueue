@@ -51,7 +51,7 @@ group 完全消费的旧 segment。
 
 默认 round-robin 路由在 bounded 和 unbounded 模式下都使用一个短时的 topic 级协调锁，串行执行 partition 选择和
 批量选择范围的预留。整批容量接纳成功后，批量会保留一段连续的选择范围，按步长访问每个 partition 对应的数据切片，
-并在该 partition 自己的 append lock 内追加，因此无需为每个 partition 物化一个 `List<T>`。并发的单条和批量 append
+并在该 partition 自己的 append lock 内追加，因此无需为每个 partition 创建并填充一个 `List<T>`。并发的单条和批量 append
 如果指向同一个 partition，仍然会串行执行。没有活跃批量时，单条写入只使用协调锁；否则，在获取和持有目标
 partition lock 时也会继续持有协调锁，因此活跃批量结束后，它不会与只使用协调锁的路径竞争。由于批量 append 的完成发生在协调锁之外，
 活跃批量计数的增加和减少使用原子操作。Consumer 的状态变更也使用同一个协调锁，避免与未同步的 append 重叠。
@@ -113,7 +113,7 @@ Memory 模式可以通过 `MemoryBufferQueueOptions.BoundedCapacity` 限制整�
 等待并一次性预留完整容量，再追加，然后处理下一个切片。`ProduceAsync` 和 `TryProduceAsync` 都遵循此规则；
 队列写满时，`TryProduceAsync` 不会返回 `false`。取消只能发生在两个切片之间，因此已经完成的切片会保留，
 但已接纳的单个切片不会只写入一部分。`Fail` 模式下，超过容量的批次会整批拒绝。两种批量输入形式都遵循
-这些规则；非数组的 `IEnumerable<T>` 会先物化为数组。
+这些规则；非数组的 `IEnumerable<T>` 会先转换为数组。
 
 每个 partition 只有在所有已知 consumer group 的最小 committed position 向前推进后，才会把对应容量归还给
 topic 共享的容量门。释放范围可以只覆盖 segment 的一部分；尚未提交到同一位置的慢速 group 会继续占用这部分

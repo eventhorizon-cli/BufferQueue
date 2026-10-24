@@ -2,12 +2,12 @@
 <!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN"
   "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
 <svg xmlns:xlink="http://www.w3.org/1999/xlink" width="676.8pt" height="374.4pt" viewBox="0 0 676.8 374.4" xmlns="http://www.w3.org/2000/svg" version="1.1">
- <title>bounded Producer API</title>
+ <title>Bounded Producer API</title>
  <metadata>
   <rdf:RDF xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
    <cc:Work>
     <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
-    <dc:title>bounded Producer API</dc:title>
+    <dc:title>Bounded Producer API</dc:title>
     <dc:format>image/svg+xml</dc:format>
     <dc:creator>
      <cc:Agent>
@@ -1205,7 +1205,7 @@ L 226.396699 307.008
 L 226.396699 111.413536
 L 104.288727 111.413536
 z
-" clip-path="url(#pbe78dade4b)" style="fill: #2459b8; opacity: 0.9"/>
+" clip-path="url(#pbe78dade4b)" style="fill: #7c9fc9; opacity: 0.9"/>
    </g>
    <g id="patch_6">
     <path d="M 239.964252 307.008
@@ -1213,7 +1213,7 @@ L 362.072224 307.008
 L 362.072224 156.207369
 L 239.964252 156.207369
 z
-" clip-path="url(#pbe78dade4b)" style="fill: #98a2b3; opacity: 0.9"/>
+" clip-path="url(#pbe78dade4b)" style="fill: #a6b1c0; opacity: 0.9"/>
    </g>
    <g id="patch_7">
     <path d="M 375.639776 307.008
@@ -1221,7 +1221,7 @@ L 497.747748 307.008
 L 497.747748 135.784252
 L 375.639776 135.784252
 z
-" clip-path="url(#pbe78dade4b)" style="fill: #2f855a; opacity: 0.9"/>
+" clip-path="url(#pbe78dade4b)" style="fill: #7cae9a; opacity: 0.9"/>
    </g>
    <g id="patch_8">
     <path d="M 511.315301 307.008
@@ -1229,7 +1229,7 @@ L 633.423273 307.008
 L 633.423273 288.251546
 L 511.315301 288.251546
 z
-" clip-path="url(#pbe78dade4b)" style="fill: #b56313; opacity: 0.9"/>
+" clip-path="url(#pbe78dade4b)" style="fill: #d2a17e; opacity: 0.9"/>
    </g>
    <g id="text_14">
     <g id="patch_9">
@@ -1241,7 +1241,7 @@ z
 " style="fill: #ffffff; opacity: 0.9"/>
     </g>
     <!-- 392.0 -->
-    <g style="fill: #2459b8" transform="translate(153.354432 101.413536) scale(0.09 -0.09)">
+    <g style="fill: #7c9fc9" transform="translate(153.354432 101.413536) scale(0.09 -0.09)">
      <defs>
       <path id="PingFangSC-Regular-2e" d="M 845 762
 C 730 762 640 723 570 646
@@ -1272,7 +1272,7 @@ z
 " style="fill: #ffffff; opacity: 0.9"/>
     </g>
     <!-- 302.2 -->
-    <g style="fill: #98a2b3" transform="translate(289.029957 146.207369) scale(0.09 -0.09)">
+    <g style="fill: #a6b1c0" transform="translate(289.029957 146.207369) scale(0.09 -0.09)">
      <use xlink:href="#PingFangSC-Regular-33"/>
      <use xlink:href="#PingFangSC-Regular-30" x="59.999985"/>
      <use xlink:href="#PingFangSC-Regular-32" x="119.999969"/>
@@ -1290,7 +1290,7 @@ z
 " style="fill: #ffffff; opacity: 0.9"/>
     </g>
     <!-- 343.1 -->
-    <g style="fill: #2f855a" transform="translate(425.601262 125.784252) scale(0.09 -0.09)">
+    <g style="fill: #7cae9a" transform="translate(425.601262 125.784252) scale(0.09 -0.09)">
      <use xlink:href="#PingFangSC-Regular-33"/>
      <use xlink:href="#PingFangSC-Regular-34" x="59.999985"/>
      <use xlink:href="#PingFangSC-Regular-33" x="119.999969"/>
@@ -1308,7 +1308,7 @@ z
 " style="fill: #ffffff; opacity: 0.9"/>
     </g>
     <!-- 37.6 -->
-    <g style="fill: #b56313" transform="translate(563.319365 278.251546) scale(0.09 -0.09)">
+    <g style="fill: #d2a17e" transform="translate(563.319365 278.251546) scale(0.09 -0.09)">
      <defs>
       <path id="PingFangSC-Regular-37" d="M 218 4570
 L 218 4090
@@ -1424,32 +1424,39 @@ L 572.369287 287.934182
    </g>
   </g>
   <g id="text_18">
-   <!-- bounded Producer API -->
+   <!-- Bounded Producer API -->
    <g style="fill: #172b4d" transform="translate(77.832 24.275469) scale(0.17 -0.17)">
     <defs>
-     <path id="PingFangSC-Medium-62" d="M 384 4659
-L 384 0
-L 1018 0
-L 1018 397
-C 1248 77 1587 -90 2042 -90
-C 2528 -90 2906 83 3187 429
-C 3443 749 3571 1165 3571 1670
-C 3571 2157 3443 2560 3194 2880
-C 2918 3226 2547 3398 2074 3398
-C 1664 3398 1331 3206 1062 2816
-L 1062 4659
-L 384 4659
+     <path id="PingFangSC-Medium-42" d="M 448 4570
+L 448 0
+L 2534 0
+C 3021 0 3398 90 3667 269
+C 3981 486 4141 819 4141 1280
+C 4141 1587 4064 1837 3910 2022
+C 3757 2208 3526 2330 3226 2387
+C 3456 2470 3629 2598 3757 2765
+C 3885 2944 3949 3162 3949 3418
+C 3949 3770 3827 4045 3584 4250
+C 3328 4467 2982 4570 2534 4570
+L 448 4570
 z
-M 1920 2848
-C 2253 2848 2502 2739 2662 2509
-C 2803 2317 2874 2035 2874 1670
-C 2874 1306 2803 1024 2675 819
-C 2515 582 2272 461 1939 461
-C 1645 461 1414 582 1254 813
-C 1114 1024 1043 1293 1043 1626
-L 1043 1683
-C 1043 2042 1126 2330 1306 2547
-C 1459 2752 1664 2848 1920 2848
+M 1146 3994
+L 2362 3994
+C 2669 3994 2899 3942 3040 3834
+C 3181 3731 3251 3565 3251 3334
+C 3251 3091 3181 2912 3040 2797
+C 2899 2688 2669 2630 2349 2630
+L 1146 2630
+L 1146 3994
+z
+M 1146 2061
+L 2458 2061
+C 2790 2061 3040 2003 3200 1882
+C 3360 1760 3443 1562 3443 1293
+C 3443 1030 3334 838 3130 717
+C 2963 627 2733 576 2438 576
+L 1146 576
+L 1146 2061
 z
 " transform="scale(0.015625)"/>
      <path id="PingFangSC-Medium-6f" d="M 1907 3398
@@ -1635,26 +1642,26 @@ L 461 4570
 z
 " transform="scale(0.015625)"/>
     </defs>
-    <use xlink:href="#PingFangSC-Medium-62"/>
-    <use xlink:href="#PingFangSC-Medium-6f" x="59.799988"/>
-    <use xlink:href="#PingFangSC-Medium-75" x="119.499985"/>
-    <use xlink:href="#PingFangSC-Medium-6e" x="177.199982"/>
-    <use xlink:href="#PingFangSC-Medium-64" x="234.799973"/>
-    <use xlink:href="#PingFangSC-Medium-65" x="294.59996"/>
-    <use xlink:href="#PingFangSC-Medium-64" x="350.999954"/>
-    <use xlink:href="#PingFangSC-Medium-20" x="410.799942"/>
-    <use xlink:href="#PingFangSC-Medium-50" x="444.09993"/>
-    <use xlink:href="#PingFangSC-Medium-72" x="509.299927"/>
-    <use xlink:href="#PingFangSC-Medium-6f" x="546.499924"/>
-    <use xlink:href="#PingFangSC-Medium-64" x="606.199921"/>
-    <use xlink:href="#PingFangSC-Medium-75" x="665.999908"/>
-    <use xlink:href="#PingFangSC-Medium-63" x="723.699905"/>
-    <use xlink:href="#PingFangSC-Medium-65" x="779.499893"/>
-    <use xlink:href="#PingFangSC-Medium-72" x="835.899887"/>
-    <use xlink:href="#PingFangSC-Medium-20" x="873.099884"/>
-    <use xlink:href="#PingFangSC-Medium-41" x="906.399872"/>
-    <use xlink:href="#PingFangSC-Medium-50" x="973.799866"/>
-    <use xlink:href="#PingFangSC-Medium-49" x="1038.999863"/>
+    <use xlink:href="#PingFangSC-Medium-42"/>
+    <use xlink:href="#PingFangSC-Medium-6f" x="68.699982"/>
+    <use xlink:href="#PingFangSC-Medium-75" x="128.399979"/>
+    <use xlink:href="#PingFangSC-Medium-6e" x="186.099976"/>
+    <use xlink:href="#PingFangSC-Medium-64" x="243.699966"/>
+    <use xlink:href="#PingFangSC-Medium-65" x="303.499954"/>
+    <use xlink:href="#PingFangSC-Medium-64" x="359.899948"/>
+    <use xlink:href="#PingFangSC-Medium-20" x="419.699936"/>
+    <use xlink:href="#PingFangSC-Medium-50" x="452.999924"/>
+    <use xlink:href="#PingFangSC-Medium-72" x="518.199921"/>
+    <use xlink:href="#PingFangSC-Medium-6f" x="555.399918"/>
+    <use xlink:href="#PingFangSC-Medium-64" x="615.099915"/>
+    <use xlink:href="#PingFangSC-Medium-75" x="674.899902"/>
+    <use xlink:href="#PingFangSC-Medium-63" x="732.599899"/>
+    <use xlink:href="#PingFangSC-Medium-65" x="788.399887"/>
+    <use xlink:href="#PingFangSC-Medium-72" x="844.799881"/>
+    <use xlink:href="#PingFangSC-Medium-20" x="881.999878"/>
+    <use xlink:href="#PingFangSC-Medium-41" x="915.299866"/>
+    <use xlink:href="#PingFangSC-Medium-50" x="982.69986"/>
+    <use xlink:href="#PingFangSC-Medium-49" x="1047.899857"/>
    </g>
   </g>
   <g id="text_19">
@@ -3098,7 +3105,7 @@ L 93.832 55.31375
 L 93.832 49.71375
 L 77.832 49.71375
 z
-" style="fill: #2459b8; opacity: 0.9"/>
+" style="fill: #7c9fc9; opacity: 0.9"/>
    </g>
    <g id="text_21">
     <!-- Channel WriteAsync(item) -->
@@ -3220,7 +3227,7 @@ L 93.832 72.71375
 L 93.832 67.11375
 L 77.832 67.11375
 z
-" style="fill: #98a2b3; opacity: 0.9"/>
+" style="fill: #a6b1c0; opacity: 0.9"/>
    </g>
    <g id="text_22">
     <!-- Channel TryWrite(item)（sync） -->
@@ -3274,7 +3281,7 @@ L 244.38325 55.31375
 L 244.38325 49.71375
 L 228.38325 49.71375
 z
-" style="fill: #2f855a; opacity: 0.9"/>
+" style="fill: #7cae9a; opacity: 0.9"/>
    </g>
    <g id="text_23">
     <!-- BufferQueue ProduceAsync(item) -->
@@ -3400,7 +3407,7 @@ L 244.38325 72.71375
 L 244.38325 67.11375
 L 228.38325 67.11375
 z
-" style="fill: #b56313; opacity: 0.9"/>
+" style="fill: #d2a17e; opacity: 0.9"/>
    </g>
    <g id="text_24">
     <!-- BufferQueue ProduceAsync(ReadOnlyMemory) -->

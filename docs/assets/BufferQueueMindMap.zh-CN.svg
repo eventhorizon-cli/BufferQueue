@@ -1,25 +1,34 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="924" height="562" viewBox="0 0 924 562" role="img" aria-labelledby="title description">
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="400" viewBox="0 0 1000 400" role="img" aria-labelledby="title description">
 <title id="title">BufferQueue 主题结构图</title>
-<desc id="description">BufferQueue branches to topics and their related items.</desc>
+<desc id="description">BufferQueue 包含多个主题，主题可包含多种数据类型。</desc>
+<!-- Topology: Q -> T1, T2, More; T1 -> Span, Metric, Log. Lines express hierarchy. -->
 <style>
-  text { font-family: Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; fill:#20252b; font-size:30px; }
-  .root { fill:#5479c9; }
-  .root-text { fill:white; font-size:31px; font-weight:700; }
-  .branch { fill:none; stroke:#5479c9; stroke-width:4; stroke-linecap:round; stroke-linejoin:round; }
+  text { font-family:'PingFang SC', Arial, 'Microsoft YaHei', sans-serif; fill:#172b4d; font-size:22px; text-anchor:middle; dominant-baseline:middle; }
+  .queue { fill:#eff4fb; stroke:#7c9fc9; }
+  .topic { fill:#f8fafc; stroke:#a6b1c0; }
+  .type { fill:#f5f0fa; stroke:#b29bcc; }
+  .node { stroke-width:1.8; }
+  .branch { fill:none; stroke:#a6b1c0; stroke-width:1.8; stroke-linecap:round; }
 </style>
-<rect width="924" height="562" fill="white"/>
-<rect class="root" x="48" y="282" width="273" height="96" rx="52"/>
-<text class="root-text" x="184.5" y="330" text-anchor="middle" dominant-baseline="middle">BufferQueue</text>
-<path class="branch" d="M326 330 C382 330 407 183 473 183"/>
-<path class="branch" d="M326 330 C382 330 415 379 473 379"/>
-<path class="branch" d="M326 330 C382 330 409 477 473 477"/>
-<path class="branch" d="M607 183 C664 183 704 84 754 84"/>
-<path class="branch" d="M607 183 H754"/>
-<path class="branch" d="M607 183 C664 183 704 281 754 281"/>
-<text x="496" y="184" dominant-baseline="middle">主题1</text>
-<text x="496" y="380" dominant-baseline="middle">主题2</text>
-<text x="496" y="478" dominant-baseline="middle">…</text>
-<text x="778" y="85" dominant-baseline="middle">Span</text>
-<text x="778" y="184" dominant-baseline="middle">指标</text>
-<text x="778" y="282" dominant-baseline="middle">日志</text>
+<rect width="1000" height="400" fill="white"/>
+<path class="branch" d="M260 204 C320 204 330 88 390 88"/>
+<path class="branch" d="M260 204 C320 204 330 232 390 232"/>
+<path class="branch" d="M260 204 C320 204 330 342 390 342"/>
+<path class="branch" d="M550 88 C620 88 650 50 720 50"/>
+<path class="branch" d="M550 88 C620 88 650 124 720 124"/>
+<path class="branch" d="M550 88 C620 88 650 198 720 198"/>
+<rect id="Q" class="node queue" x="30" y="172" width="230" height="64" rx="7"/>
+<text x="145" y="204" font-weight="700">BufferQueue</text>
+<rect id="T1" class="node topic" x="390" y="60" width="160" height="56" rx="7"/>
+<text x="470" y="88">主题1</text>
+<rect id="T2" class="node topic" x="390" y="204" width="160" height="56" rx="7"/>
+<text x="470" y="232">主题2</text>
+<rect id="More" class="node topic" x="390" y="314" width="160" height="56" rx="7"/>
+<text x="470" y="342">…</text>
+<rect id="Span" class="node type" x="720" y="22" width="200" height="56" rx="7"/>
+<text x="820" y="50">Span</text>
+<rect id="Metric" class="node type" x="720" y="96" width="200" height="56" rx="7"/>
+<text x="820" y="124">指标</text>
+<rect id="Log" class="node type" x="720" y="170" width="200" height="56" rx="7"/>
+<text x="820" y="198">日志</text>
 </svg>

@@ -112,7 +112,7 @@ public class BufferQueueValidationTests
 
         public void Enqueue(int item) => throw new NotSupportedException();
 
-        public bool TryPull(string groupName, int batchSize, [NotNullWhen(true)] out IEnumerable<int>? items)
+        public bool TryPull(string groupName, int batchSize, [NotNullWhen(true)] out IReadOnlyList<int>? items)
         {
             items = null;
             return false;

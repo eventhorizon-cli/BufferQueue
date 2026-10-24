@@ -3,14 +3,18 @@ config:
   flowchart:
     htmlLabels: true
     curve: linear
+    nodeSpacing: 55
+    rankSpacing: 70
+    padding: 18
   theme: base
   themeVariables:
-    fontFamily: "Arial, Helvetica, sans-serif"
+    fontFamily: "Arial, PingFang SC, Microsoft YaHei, sans-serif"
     fontSize: 18px
-    primaryTextColor: "#233247"
-    lineColor: "#52657a"
+    primaryTextColor: "#172b4d"
+    lineColor: "#475467"
+    edgeLabelBackground: "#ffffff"
     clusterBkg: "#f8fafc"
-    clusterBorder: "#94a3b8"
+    clusterBorder: "#d0d5dd"
 ---
 flowchart LR
     P[Producer 追加数据] --> Q[Partition 中已有排队数据]
@@ -20,3 +24,14 @@ flowchart LR
     D -- 是 --> B[机会式批量消费<br/>最多 BatchSize 条已排队数据]
     B --> S
     D -- 否 --> W
+
+    class P client
+    class Q router
+    class S,D core
+    class W wait
+    class B handler
+    classDef client fill:#eff7f2,stroke:#7cae9a,color:#172b4d,stroke-width:1.5px
+    classDef router fill:#eff4fb,stroke:#7c9fc9,color:#172b4d,stroke-width:1.5px
+    classDef core fill:#f8fafc,stroke:#a6b1c0,color:#172b4d,stroke-width:1.5px
+    classDef wait fill:#eff4fb,stroke:#7c9fc9,color:#172b4d,stroke-width:1.5px
+    classDef handler fill:#f5f0fa,stroke:#b29bcc,color:#172b4d,stroke-width:1.5px
