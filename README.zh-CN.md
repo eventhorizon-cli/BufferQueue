@@ -76,6 +76,7 @@ Manual Commit 的计时包含每批读取后的 `CommitAsync`。
 ### 内存分配
 
 以下数值均表示每次 benchmark operation 处理 8,192 条消息产生的累计托管分配量（allocated bytes），不是峰值驻留内存。
+消费测量使用 `Count()` 统计批次中的条数，不包含逐条枚举和业务处理的分配。
 
 #### 写入分配量
 

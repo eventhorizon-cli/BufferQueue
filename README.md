@@ -81,6 +81,7 @@ ensure a full batch under sparse traffic; these results measure draining a backl
 ### Allocations
 
 The charts show cumulative managed allocations per 8,192-item operation, not peak memory usage.
+Consumption measurements count batches with `Count()`; per-item enumeration and application processing are excluded.
 
 #### Production Allocations
 
