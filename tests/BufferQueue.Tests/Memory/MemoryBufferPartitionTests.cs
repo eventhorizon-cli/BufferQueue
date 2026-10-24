@@ -6,6 +6,36 @@ namespace BufferQueue.Tests.Memory;
 public class MemoryBufferPartitionTests
 {
     [Fact]
+    public void Debugger_View_Preserves_Readers_When_Unknown_Consumer_Unregisters()
+    {
+        var partition = new MemoryBufferPartition<int>(0, 2);
+
+        Assert.False(partition.TryPull("Group", 1, out _));
+
+        var debugViewType = typeof(MemoryBufferPartition<int>)
+            .GetNestedType("DebugView", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .MakeGenericType(typeof(int));
+        var debugViewConstructor = debugViewType
+            .GetConstructors(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+            .Single();
+        var debugView = debugViewConstructor.Invoke([partition]);
+        var readersProperty = debugViewType
+            .GetProperty("ConsumerReaders", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)!;
+        var consumerReaders = readersProperty.GetValue(debugView)!;
+        var containsKey = consumerReaders.GetType().GetMethod("ContainsKey")!;
+
+        Assert.True((bool)containsKey.Invoke(consumerReaders, ["Group"])!);
+
+        partition.UnregisterConsumer(new TestConsumer("Unknown"));
+
+        var currentReaders = readersProperty.GetValue(debugView)!;
+        Assert.True((bool)containsKey.Invoke(currentReaders, ["Group"])!);
+        partition.Enqueue(42);
+        Assert.True(partition.TryPull("Group", 1, out var items));
+        Assert.Equal(new[] { 42 }, items);
+    }
+
+    [Fact]
     public void New_Partition_Has_Initial_Capacity_And_No_Items()
     {
         var partition = new MemoryBufferPartition<int>(10, 4);
@@ -427,5 +457,14 @@ public class MemoryBufferPartitionTests
             .MakeGenericType(typeof(T))
             .GetField("_slots", BindingFlags.Instance | BindingFlags.NonPublic)!
             .GetValue(segment) as T[];
+    }
+
+    private sealed class TestConsumer(string groupName) : IBufferPartitionConsumer<int>
+    {
+        public string GroupName => groupName;
+
+        public void NotifyNewDataAvailable(IBufferPartition<int> partition)
+        {
+        }
     }
 }
