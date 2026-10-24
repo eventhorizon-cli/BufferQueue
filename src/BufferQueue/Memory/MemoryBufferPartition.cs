@@ -475,15 +475,12 @@ internal sealed class MemoryBufferPartition<T>
                 }
 
                 var nextSegment = currentSegment.NextSegment;
-                var continueReading = nextSegment != null;
-                if (continueReading)
-                {
-                    currentSegment = nextSegment!;
-                }
-                else
+                if (nextSegment == null)
                 {
                     break;
                 }
+
+                currentSegment = nextSegment;
             }
 
             if (remainingCount == batchSize)

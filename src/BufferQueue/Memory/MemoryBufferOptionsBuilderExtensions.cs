@@ -12,8 +12,7 @@ public static class MemoryBufferOptionsBuilderExtensions
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(configure);
 
-        var options = new MemoryBufferOptionsBuilder(builder.Services);
-        configure(options);
+        configure(new MemoryBufferOptionsBuilder(builder.Services));
 
         return builder;
     }

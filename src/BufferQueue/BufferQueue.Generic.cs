@@ -19,8 +19,7 @@ internal abstract class BufferQueue<TItem>(
 
     public IBufferPullConsumer<TItem> CreateConsumer(BufferPullConsumerOptions options)
     {
-        var consumers = CreateConsumers(options, 1);
-        return consumers.Single();
+        return CreateConsumers(options, 1).Single();
     }
 
     public IEnumerable<IBufferPullConsumer<TItem>> CreateConsumers(BufferPullConsumerOptions options, int consumerNumber)
@@ -89,8 +88,7 @@ internal abstract class BufferQueue<TItem>(
                 var partitionEndIndex = partitionStartIndex
                                         + partitionsPerConsumer
                                         + extraPartitions;
-                var partitions1 = partitions[partitionStartIndex..partitionEndIndex];
-                consumer.AssignPartitions(partitions1);
+                consumer.AssignPartitions(partitions[partitionStartIndex..partitionEndIndex]);
                 assignedConsumers.Add(consumer);
 
                 partitionStartIndex = partitionEndIndex;

@@ -20,7 +20,7 @@ public static class BufferPushCustomerBufferOptionsBuilderExtensions
 
         foreach (var type in assembly.GetTypes())
         {
-            if (type.IsClass == false)
+            if (!type.IsClass)
             {
                 continue;
             }
@@ -62,14 +62,9 @@ public static class BufferPushCustomerBufferOptionsBuilderExtensions
         }
 
         builder.Services.AddHostedService<BufferPushCustomerHostService>(sp =>
-        {
-            var hostService =
-                ActivatorUtilities.CreateInstance<BufferPushCustomerHostService>(
-                    sp,
-                    consumerDescriptors.AsEnumerable());
-
-            return hostService;
-        });
+            ActivatorUtilities.CreateInstance<BufferPushCustomerHostService>(
+                sp,
+                consumerDescriptors.AsEnumerable()));
 
         return builder;
     }
