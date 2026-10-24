@@ -3,14 +3,14 @@
 [Simplified Chinese](memory-queues.zh-CN.md)
 
 This report is the detailed record behind the charts in the root README. The checked-in summary file is
-[memory-queues-results.csv](memory-queues-results.csv). It contains the six producer rows and the 85 rows from the
+[memory-queues-results.csv](memory-queues-results.csv). It contains the eight producer rows and the 105 rows from the
 three consume benchmark classes. The CSV retains the measured mean, error, standard deviation, allocation, and every
 configuration used for the charts; the tables below keep the comparison readable by showing mean time and allocation.
 
 ## Primary Consume Comparison
 
 The primary comparison uses `ChannelReader<T>.ReadAllAsync` and `IBufferPullConsumer<T>.ConsumeAsync`
-with `AutoCommit = true`. Their signatures expose the same asynchronous stream shape:
+with BufferQueue `AutoCommit = true`. Their signatures expose the same asynchronous stream shape:
 
 ```csharp
 // ChannelReader<T>
@@ -36,29 +36,49 @@ partitions. Channel readers count locally and the result is aggregated after all
 BufferQueue counts each assigned consumer's batches and validates both its assigned count and the aggregate total.
 There is no business work per item. The measured time includes the task scheduling used to run the readers.
 
+The Manual Commit rows were measured separately on the same `e615da8` production baseline after adding the benchmark
+method. They use one launch, six warmup iterations, and fifteen measured iterations on the stated .NET 10 / Apple M2
+Max environment; each async batch is followed by `CommitAsync`. The existing Auto Commit and Channel rows remain the
+checked-in baseline workload.
+
 ### unbounded
 
 Channel reference (fixed `BatchSize = 1` representative):
 
-| Consumers | Channel TryRead (us) | Channel ReadAllAsync (us) | TryRead allocated | ReadAllAsync allocated |
+| Consumers | Channel TryRead (us) | Channel ReadAllAsync (us) | TryRead allocated (B) | ReadAllAsync allocated (B) |
 |---:|---:|---:|---:|---:|
 | 1 | 139.000 | 513.130 | 592 B | 952 B |
 | 12 | 3,446.620 | 3,381.500 | 2,656 B | 4,952 B |
 
 BufferQueue `ConsumeAsync` with `AutoCommit = true`:
 
-| BatchSize | Consumers | Mean (us) | Allocated |
+| BatchSize | Consumers | Mean (us) | Allocated (KB) |
 |---:|---:|---:|---:|
-| 1 | 1 | 1,037.650 | 197,960 B |
-| 1 | 12 | 1,953.220 | 203,536 B |
-| 10 | 1 | 201.040 | 54,728 B |
-| 10 | 12 | 289.340 | 60,304 B |
-| 50 | 1 | 56.280 | 39,368 B |
-| 50 | 12 | 67.700 | 44,944 B |
-| 100 | 1 | 39.070 | 37,352 B |
-| 100 | 12 | 43.780 | 42,928 B |
-| 1000 | 1 | 20.910 | 50,024 B |
-| 1000 | 12 | 31.770 | 55,536 B |
+| 1 | 1 | 1,037.650 | 193.32 KB |
+| 1 | 12 | 1,953.220 | 198.77 KB |
+| 10 | 1 | 201.040 | 53.45 KB |
+| 10 | 12 | 289.340 | 58.89 KB |
+| 50 | 1 | 56.280 | 38.45 KB |
+| 50 | 12 | 67.700 | 43.89 KB |
+| 100 | 1 | 39.070 | 36.48 KB |
+| 100 | 12 | 43.780 | 41.92 KB |
+| 1000 | 1 | 20.910 | 48.85 KB |
+| 1000 | 12 | 31.770 | 54.23 KB |
+
+BufferQueue `ConsumeAsync` with `AutoCommit = false` and `CommitAsync` after each batch:
+
+| BatchSize | Consumers | Mean (us) | Allocated (KB) |
+|---:|---:|---:|---:|
+| 1 | 1 | 1,108.690 | 193.34 KB |
+| 1 | 12 | 2,247.950 | 198.78 KB |
+| 10 | 1 | 244.890 | 53.46 KB |
+| 10 | 12 | 260.880 | 58.91 KB |
+| 50 | 1 | 58.970 | 38.46 KB |
+| 50 | 12 | 66.070 | 43.91 KB |
+| 100 | 1 | 43.190 | 36.49 KB |
+| 100 | 12 | 44.490 | 41.94 KB |
+| 1000 | 1 | 26.830 | 48.87 KB |
+| 1000 | 12 | 33.010 | 54.31 KB |
 
 ### bounded
 
@@ -67,25 +87,40 @@ timed method, so this is a drain benchmark and does not measure producer waiting
 
 Channel reference (fixed `BatchSize = 1` representative):
 
-| Consumers | Channel TryRead (us) | Channel ReadAllAsync (us) | TryRead allocated | ReadAllAsync allocated |
+| Consumers | Channel TryRead (us) | Channel ReadAllAsync (us) | TryRead allocated (B) | ReadAllAsync allocated (B) |
 |---:|---:|---:|---:|---:|
 | 1 | 131.060 | 480.810 | 592 B | 952 B |
 | 12 | 1,036.560 | 2,760.870 | 2,656 B | 4,952 B |
 
 BufferQueue `ConsumeAsync` with `AutoCommit = true`:
 
-| BatchSize | Consumers | Mean (us) | Allocated |
+| BatchSize | Consumers | Mean (us) | Allocated (KB) |
 |---:|---:|---:|---:|
-| 1 | 1 | 1,296.740 | 197,960 B |
-| 1 | 12 | 1,811.020 | 203,536 B |
-| 10 | 1 | 248.920 | 54,728 B |
-| 10 | 12 | 329.410 | 60,304 B |
-| 50 | 1 | 63.740 | 39,368 B |
-| 50 | 12 | 75.650 | 44,944 B |
-| 100 | 1 | 42.920 | 37,352 B |
-| 100 | 12 | 48.370 | 42,928 B |
-| 1000 | 1 | 33.180 | 50,024 B |
-| 1000 | 12 | 33.840 | 55,600 B |
+| 1 | 1 | 1,296.740 | 193.32 KB |
+| 1 | 12 | 1,811.020 | 198.77 KB |
+| 10 | 1 | 248.920 | 53.45 KB |
+| 10 | 12 | 329.410 | 58.89 KB |
+| 50 | 1 | 63.740 | 38.45 KB |
+| 50 | 12 | 75.650 | 43.89 KB |
+| 100 | 1 | 42.920 | 36.48 KB |
+| 100 | 12 | 48.370 | 41.92 KB |
+| 1000 | 1 | 33.180 | 48.85 KB |
+| 1000 | 12 | 33.840 | 54.30 KB |
+
+BufferQueue `ConsumeAsync` with `AutoCommit = false` and `CommitAsync` after each batch:
+
+| BatchSize | Consumers | Mean (us) | Allocated (KB) |
+|---:|---:|---:|---:|
+| 1 | 1 | 1,393.820 | 193.34 KB |
+| 1 | 12 | 2,118.930 | 198.78 KB |
+| 10 | 1 | 281.260 | 53.46 KB |
+| 10 | 12 | 332.750 | 58.91 KB |
+| 50 | 1 | 72.730 | 38.46 KB |
+| 50 | 12 | 84.620 | 43.91 KB |
+| 100 | 1 | 49.200 | 36.49 KB |
+| 100 | 12 | 53.830 | 41.94 KB |
+| 1000 | 1 | 29.230 | 48.87 KB |
+| 1000 | 12 | 38.020 | 54.31 KB |
 
 ### Single-reader Channel comparison
 
@@ -100,13 +135,13 @@ Channel reference (fixed `BatchSize = 1` representative):
 
 BufferQueue `ConsumeAsync` with `AutoCommit = true`:
 
-| BatchSize | Mean (us) | Allocated |
+| BatchSize | Mean (us) | Allocated (KB) |
 |---:|---:|---:|
-| 1 | 1,078.010 | 197,264 B |
-| 10 | 207.230 | 54,032 B |
-| 50 | 50.720 | 38,672 B |
-| 100 | 36.190 | 36,656 B |
-| 1000 | 17.060 | 49,328 B |
+| 1 | 1,078.010 | 192.64 KB |
+| 10 | 207.230 | 52.77 KB |
+| 50 | 50.720 | 37.77 KB |
+| 100 | 36.190 | 35.80 KB |
+| 1000 | 17.060 | 48.17 KB |
 
 The Channel methods do not consume `BatchSize`-sized batches; the parameter changes only the BufferQueue method.
 `SingleReader = true` is a caller promise that at most one reader consumes the Channel; it is not the 12-consumer
@@ -122,20 +157,32 @@ distance. The time axis is logarithmic. Points and lines are means, while error 
 reported `Error`. Channel baselines are fixed at representative `BatchSize = 1` and do not depend on BufferQueue's
 `BatchSize`.
 
+The consumer charts show both async BufferQueue modes. Manual Commit uses the same `ConsumeAsync` workload with
+`AutoCommit = false` and calls `CommitAsync` after each batch; Channel has no built-in acknowledgement, checkpoint, or
+replay equivalent.
+
 ## Producer Comparison
 
-The producer benchmark prefills 8,192 `int` values using 12 concurrent producer tasks (`Environment.ProcessorCount`). The batch method sends a
-`ReadOnlyMemory<int>` batch; the single-item method sends one item at a time. These are separate API shapes, so the
-batch row is not a claim that a single-item producer has the same work.
+The producer benchmark writes 8,192 `int` values using 12 concurrent `Task.Run` producer tasks. Queue creation and
+task scheduling are inside the timed method. The primary Channel comparison uses asynchronous `WriteAsync`; synchronous
+`TryWrite` is retained as a reference. BufferQueue uses asynchronous `ProduceAsync` for both item and
+`ReadOnlyMemory<int>` batch calls. Bounded capacity is sufficient for the complete workload, so this measurement does
+not include producer backpressure waiting.
 
-| Mode | Method | Mean (us) | Allocated |
+| Mode | Method | Mean (us) | Allocated (KB) |
 |---|---|---:|---:|
-| unbounded | Channel_Produce_Concurrent | 291.690 | 134.53 KB |
-| unbounded | MemoryBufferQueue_Produce_Concurrent | 338.260 | 54.96 KB |
-| unbounded | MemoryBufferQueue_Produce_ReadOnlyMemoryBatch_Concurrent | 38.330 | 54.90 KB |
-| bounded | Channel_Produce_Concurrent | 305.510 | 67.33 KB |
-| bounded | MemoryBufferQueue_Produce_Concurrent | 339.820 | 55.13 KB |
-| bounded | MemoryBufferQueue_Produce_ReadOnlyMemoryBatch_Concurrent | 35.880 | 55.08 KB |
+| unbounded | `Channel.WriteAsync(item)` | 324.900 | 135.47 KB |
+| unbounded | `Channel.TryWrite(item)` (sync reference) | 281.590 | 134.53 KB |
+| unbounded | `BufferQueue.ProduceAsync(item)` | 321.910 | 54.96 KB |
+| unbounded | `BufferQueue.ProduceAsync(ReadOnlyMemory<int>)` | 36.420 | 54.90 KB |
+| bounded | `Channel.WriteAsync(item)` | 393.650 | 68.27 KB |
+| bounded | `Channel.TryWrite(item)` (sync reference) | 293.020 | 67.33 KB |
+| bounded | `BufferQueue.ProduceAsync(item)` | 350.020 | 55.13 KB |
+| bounded | `BufferQueue.ProduceAsync(ReadOnlyMemory<int>)` | 36.020 | 55.08 KB |
+
+![Unbounded producer APIs](memory-producer-unbounded.svg)
+
+![Bounded producer APIs](memory-producer-bounded.svg)
 
 Source: [ChannelVsMemoryBufferQueueProduceBenchmark.cs](../../tests/BufferQueue.Benchmarks/ChannelVsMemoryBufferQueueProduceBenchmark.cs).
 
@@ -171,6 +218,32 @@ Run the key-length benchmark with:
 ```bash
 dotnet run -c Release --project tests/BufferQueue.Benchmarks/BufferQueue.Benchmarks.csproj -- --filter '*StringPartitionRoutingBenchmark*'
 ```
+
+## Memory Allocation
+
+These charts normalize BenchmarkDotNet's allocation display to `KiB/op` (`1 KiB = 1,024 B`). Consumption runs drain
+8,192 prefetched items from 12 partitions with 1 or 12 consumers; `BatchSize` values are categorical, and the y-axis
+is logarithmic. Queue and consumer setup is excluded from the measured allocation. The values are managed memory per
+8,192-item benchmark operation, not peak resident memory or per-item allocation. The Channel reference uses the row recorded alongside `BatchSize = 1`;
+BatchSize only affects BufferQueue, and the Auto/Manual curves are nearly overlapping.
+
+![unbounded, 1 consumer](memory-unbounded-1-consumer-allocations.svg)
+
+![unbounded, 12 consumers](memory-unbounded-12-consumers-allocations.svg)
+
+![bounded, 1 consumer](memory-bounded-1-consumer-allocations.svg)
+
+![bounded, 12 consumers](memory-bounded-12-consumers-allocations.svg)
+
+
+Producer allocation includes queue/channel creation and producer task scheduling inside the timed operation. It uses
+12 tasks and 8,192 items; `Channel WriteAsync` is the async baseline, `Channel TryWrite` is a synchronous reference,
+and the two BufferQueue bars are the item and batch producer APIs. These are not peak resident-memory or per-item
+allocation measurements.
+
+![unbounded producer](memory-producer-unbounded-allocations.svg)
+
+![bounded producer](memory-producer-bounded-allocations.svg)
 
 ## Read-path Optimization Measurements
 
