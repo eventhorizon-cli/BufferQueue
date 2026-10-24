@@ -14,17 +14,17 @@ The articles below describe the checked-in implementation and complement the pac
 | Article | Focus |
 | --- | --- |
 | [Architecture and registrations](design/architecture.md) | Public model, project boundaries, shared queue abstractions, dependency injection, extension points, and test coverage. |
-| [Consumer model and delivery](design/consumer-model.md) | Pull and push consumers, asynchronous wake-up, commits, scopes, and at-least-once behavior. |
 | [Partitioning and concurrency](design/partitioning-and-concurrency.md) | Consumer groups, partition assignment, key routing, ordering, and in-process concurrency rules. |
+| [Consumer model and delivery](design/consumer-model.md) | Pull and push consumers, asynchronous wake-up, commits, scopes, and at-least-once behavior. |
 | [Memory storage](design/memory.md) | Segmented in-memory storage, append and read paths, recycling, and bounded capacity. |
 | [MemoryMappedFile storage](design/memory-mapped-file.md) | Durable segment layout, serialization, flush boundaries, recovery, checkpoints, and retention. |
 
 ## Reading order
 
 Read [architecture and registrations](design/architecture.md) first to understand what is shared
-between storage implementations. Continue with the [consumer model](design/consumer-model.md) and
-[partitioning and concurrency](design/partitioning-and-concurrency.md) before changing shared
-queue behavior. Read the storage article that matches the implementation being changed:
+between storage implementations. Continue with [partitioning and concurrency](design/partitioning-and-concurrency.md)
+to understand producer routing and partition ownership, then read the [consumer model](design/consumer-model.md)
+before changing shared queue behavior. Read the storage article that matches the implementation being changed:
 [Memory](design/memory.md) or [MemoryMappedFile](design/memory-mapped-file.md).
 
 ## Scope

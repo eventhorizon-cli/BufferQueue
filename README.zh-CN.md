@@ -19,43 +19,48 @@ BufferQueue 当前提供两种存储模式：
 - Memory：进程内分段内存存储，主要优化批量消费吞吐。
 - MemoryMappedFile：本地内存映射分段文件存储，并持久化 producer offset 和 consumer offset。
 
-## 适用场景
-生产者和消费者之间的速度不一致，需要并发批量处理数据的场景。
+## 基准测试
 
-如果只需要在当前进程内缓存数据，并且优先考虑消费吞吐，可以使用 Memory 模式。
-
-如果生产的数据和已提交消费进度需要在进程重启后保留，可以使用 MemoryMappedFile 模式。MemoryMappedFile 模式是面向单个 active queue 实例的本地持久化机制，不负责协调多个进程同时写入同一个 topic directory。
-
-## 和其他常用内存缓存 Queue 的对比
-
-| 对比项 | `System.Threading.Channels` | BufferQueue |
-|---|---|---|
-| 主要定位 | 进程内生产者与消费者之间的异步数据交接 | 带分区、消费组和进度管理的批量处理 |
-| 批量 API | 逐条读写，应用可以自行组 batch | 支持批量生产和消费，每次最多返回 BatchSize 条已可用数据 |
-| 多消费者 | 多个 reader 竞争读取同一个队列 | 组内按 partition 分工，不同 group 独立消费 |
-| 消费确认与重放 | 读取即移除，没有内建的处理确认和重放机制 | 支持 Auto Commit 和 **Manual Commit**，未提交的 batch 可以再次交付 |
-| 顺序 | FIFO 读取，并行处理的完成顺序可能不同 | partition 内有序，跨 partition 不保证全局顺序 |
-| 容量与背压 | bounded / unbounded；bounded 支持等待或丢弃策略 | Memory 支持 bounded / unbounded、等待或失败；容量释放取决于最慢 group 的已提交进度 |
-| 持久化 | 无内建持久化 | Memory 仅在进程内保存；可选 MemoryMappedFile 包支持本地数据和已提交进度持久化 |
-
-只需要共享工作队列、逐条交接数据时，Channel 更直接；需要批量 API、明确的消费确认或多个独立消费组时，BufferQueue 提供对应能力。
-下面的 benchmark 测量 Memory 存储下的单个消费组，不包含 MemoryMappedFile，也不能据此确定每项额外功能各占多少开销。
-具体语义参见 [Channel 文档](https://learn.microsoft.com/en-us/dotnet/core/extensions/channels)和 [BufferQueue 消费模型](docs/design/consumer-model.zh-CN.md)。
-
-主要对比选择 `ReadAllAsync`，因为两边的方法都返回异步流，通过 `await foreach` 消费：
-
-```csharp
-// ChannelReader<T>: one item per iteration
-IAsyncEnumerable<T> ReadAllAsync(CancellationToken cancellationToken = default);
-// IBufferPullConsumer<T>: one batch per iteration
-IAsyncEnumerable<IEnumerable<T>> ConsumeAsync(CancellationToken cancellationToken = default);
-```
-
-`ReadAllAsync` 逐条返回消息，直到 Channel 完成，并不是一次返回整批数据。
-下面的主要汇总使用 BufferQueue `AutoCommit = true`；图表也包含单独测量的 Manual Commit 系列。`Channel<T>.TryRead` 在图中以灰色线作为同步参考。测试消费预填充队列中的 `8,192` 条 `int` 消息，
-BufferQueue 使用 `12` 个 partition，consumer 数量为 `1` 或 `12`。`BatchSize` 只影响 BufferQueue。
+下面按写入、消费的顺序展示 Memory BufferQueue 与 `System.Threading.Channels` 的性能对比，不包含 MemoryMappedFile。
 
 测试环境：Apple M2 Max（12 核），macOS 27.0.1 / Arm64，.NET 10.0.0，BenchmarkDotNet 0.15.8（Release）。
+
+### 写入性能
+
+这些图表比较异步 Channel `WriteAsync` 与异步 BufferQueue 单条和 batch 写入；`TryWrite` 作为同步参考。
+测试由 12 个 producer task 写入 8,192 条数据。
+
+![unbounded Producer API](docs/benchmarks/memory-producer-unbounded.zh-CN.svg)
+
+![bounded Producer API](docs/benchmarks/memory-producer-bounded.zh-CN.svg)
+
+计时包含队列创建和任务调度。bounded 容量足够容纳全部数据，因此测量的是有可用容量时的写入成本，不包含等待空间的耗时。
+
+单条 async 写入时，unbounded 下 BufferQueue 与 Channel `WriteAsync` 耗时接近，bounded 下 BufferQueue 耗时约少 11%。
+BufferQueue batch 写入比 Channel 单条写入耗时约少 89–91%，其中也体现了 API 调用次数的差异。
+
+### 消费性能
+
+这些图表通过异步 BufferQueue 消费和 `Channel.ReadAllAsync` 消费预填充队列中的数据。测试使用 `8,192` 条 `int` 消息、
+BufferQueue 的 `12` 个 partition，以及 `1` 或 `12` 个 consumer；`BatchSize` 只影响 BufferQueue。主要汇总使用
+`AutoCommit = true`，图表也包含单独测量的 Manual Commit 系列和灰色的 `Channel<T>.TryRead` 同步参考。
+
+#### unbounded 队列
+
+![unbounded 队列消费基准测试，1 个消费者](docs/benchmarks/memory-unbounded-1-consumer.zh-CN.svg)
+
+![unbounded 队列消费基准测试，12 个消费者](docs/benchmarks/memory-unbounded-12-consumers.zh-CN.svg)
+
+#### bounded 队列
+
+![bounded 队列消费基准测试，1 个消费者](docs/benchmarks/memory-bounded-1-consumer.zh-CN.svg)
+
+![bounded 队列消费基准测试，12 个消费者](docs/benchmarks/memory-bounded-12-consumers.zh-CN.svg)
+
+Manual Commit 的计时包含每批读取后的 `CommitAsync`。
+
+**手动提交（Manual Commit）是 BufferQueue 的功能优势**：应用可以先成功处理 batch，再调用 `CommitAsync`，未提交的 batch
+保留重放机会。`Channel<T>` 没有内建的等价确认、checkpoint 或重放机制。
 
 在这组预填充队列测试中，启用 Auto Commit 的 BufferQueue 与 `Channel.ReadAllAsync` 相比：
 
@@ -68,68 +73,49 @@ BufferQueue 使用 `12` 个 partition，consumer 数量为 `1` 或 `12`。`Batch
 数据已经积累时，批量消费的收益更明显。低流量下，调大 BatchSize 不代表每次都能取满；这里测量的是消费积压数据的耗时，
 不是单条消息的交付延迟。
 
-### unbounded 队列
+### 内存分配
 
-![unbounded 队列消费基准测试，1 个消费者](docs/benchmarks/memory-unbounded-1-consumer.zh-CN.svg)
+Producer 每次处理 8,192 条约分配 55 KiB，Channel `WriteAsync` 在 unbounded / bounded 下分别约为 135 / 68 KiB。
+单消费者消费时，BufferQueue 在 BatchSize 1 / 100 下分别约分配 193 / 36.5 KiB，Auto / Manual 结果接近；
+Channel `ReadAllAsync` 约分配 0.93 KiB。这些是累计分配量，不是峰值内存，详见[分配量图表](docs/benchmarks/memory-queues.zh-CN.md#内存分配)。
 
-![unbounded 队列消费基准测试，12 个消费者](docs/benchmarks/memory-unbounded-12-consumers.zh-CN.svg)
+详细的 benchmark 配置、签名和结果解释参见[内存队列 benchmark 说明](docs/benchmarks/memory-queues.zh-CN.md)。
 
-### bounded 队列
+## 功能定位
 
-![bounded 队列消费基准测试，1 个消费者](docs/benchmarks/memory-bounded-1-consumer.zh-CN.svg)
+| 对比项 | `System.Threading.Channels` | BufferQueue |
+|---|---|---|
+| 主要定位 | 进程内生产者与消费者之间的异步数据交接 | 带分区、消费组和进度管理的批量处理 |
+| 批量 API | 逐条读写，应用可以自行组 batch | 支持批量生产和消费，每次最多返回 BatchSize 条已可用数据 |
+| 多消费者 | 多个 reader 竞争读取同一个队列 | 组内按 partition 分工，不同 group 独立消费 |
+| 消费确认与重放 | 读取即移除，没有内建的处理确认和重放机制 | 支持 Auto Commit 和 **Manual Commit**，未提交的 batch 可以再次交付 |
+| 顺序 | FIFO 读取，并行处理的完成顺序可能不同 | partition 内有序，跨 partition 不保证全局顺序 |
+| 容量与背压 | bounded / unbounded；bounded 支持等待或丢弃策略 | Memory 支持 bounded / unbounded、等待或失败；容量释放取决于最慢 group 的已提交进度 |
+| 持久化 | 无内建持久化 | Memory 仅在进程内保存；可选 MemoryMappedFile 包支持本地数据和已提交进度持久化 |
 
-![bounded 队列消费基准测试，12 个消费者](docs/benchmarks/memory-bounded-12-consumers.zh-CN.svg)
+只需要共享工作队列、逐条交接数据时，Channel 更直接；需要批量 API、明确的消费确认或多个独立消费组时，BufferQueue 提供对应能力。
+具体语义参见 [Channel 文档](https://learn.microsoft.com/en-us/dotnet/core/extensions/channels)和 [BufferQueue 消费模型](docs/design/consumer-model.zh-CN.md)。
 
-Manual Commit 的计时包含每批读取后的 `CommitAsync`。
+## 适用场景
 
-**手动提交（Manual Commit）是 BufferQueue 的功能优势**：应用可以先成功处理 batch，再调用 `CommitAsync`，未提交的 batch
-保留重放机会。`Channel<T>` 没有内建的等价确认、checkpoint 或重放机制。
+生产者和消费者之间的速度不一致，需要并发批量处理数据的场景。
 
-### Producer API
+如果只需要在当前进程内缓存数据，并且优先考虑消费吞吐，可以使用 Memory 模式。
 
-![unbounded Producer API](docs/benchmarks/memory-producer-unbounded.zh-CN.svg)
-
-![bounded Producer API](docs/benchmarks/memory-producer-bounded.zh-CN.svg)
-
-这些 Producer 图表比较实测的 API 形式：异步 Channel `WriteAsync`、作为同步参考的 Channel `TryWrite`，以及
-异步 BufferQueue `ProduceAsync` 的单条和 `ReadOnlyMemory<int>` batch 调用。计时方法会创建 Queue，并启动 12 个
-`Task.Run` producer task 写入 8,192 条数据。bounded capacity 足够容纳完整 workload，因此不测 producer 等待背压。
-
-单条 async 写入时，unbounded 下 BufferQueue 与 Channel `WriteAsync` 耗时接近，bounded 下 BufferQueue 耗时约少 11%。
-BufferQueue batch 写入比 Channel 单条写入耗时约少 89–91%，其中也体现了 API 调用次数的差异。
-
-每次处理 8,192 条的分配量也有取舍：Producer 中 BufferQueue 约分配 55 KiB，Channel `WriteAsync` 在 unbounded / bounded
-下分别约为 135 / 68 KiB。单消费者消费时，BufferQueue 在 BatchSize 1 / 100 下分别约分配 193 / 36.5 KiB，Auto / Manual
-结果接近；Channel `ReadAllAsync` 约分配 0.93 KiB。这是累计分配量，不是峰值内存，详见[分配量图表](docs/benchmarks/memory-queues.zh-CN.md#内存分配)。
-
-详细的 benchmark 配置和结果解释参见[内存队列 benchmark 说明](docs/benchmarks/memory-queues.zh-CN.md)。
-
-## 机会式批量消费（Opportunistic Batching）
-
-BufferQueue 会在 Consumer 扫描 Partition 时，把当时已经可读的数据组成 batch。一次 pull 最多从一个有数据的
-Partition 返回 `BatchSize` 条记录。同一 Partition 中已经排队的数据可能被机会式地合并到这个 batch 中；它不会为了凑满
-`BatchSize` 而等待固定时间窗口。因此低流量可能得到只有一条数据的 batch，突发流量则可能得到同一 Partition 中已经排队的更大 batch。
-
-开启 `AutoCommit` 时，Consumer 在成功 pull 后立即提交进度。手动提交时，batch 会先返回给调用方，只有调用
-`CommitAsync` 后才推进进度；未提交的 batch 可能再次交付。Push Consumer 复用相同的交付和提交语义。
-
-![BufferQueue 机会式批量消费](docs/assets/bufferqueue-opportunistic-batching.zh-CN.svg)
-
-“机会式”描述的是数据何时被收集进 batch，不代表业务层面的合并或去重保证。具体 batch 受入队时机、Partition 路由、
-`BatchSize` 和 Consumer 调度影响。交付和唤醒细节参见[Consumer 模型](docs/design/consumer-model.zh-CN.md)。
+如果生产的数据和已提交消费进度需要在进程重启后保留，可以使用 MemoryMappedFile 模式。MemoryMappedFile 模式是面向单个 active queue 实例的本地持久化机制，不负责协调多个进程同时写入同一个 topic directory。
 
 ## 功能设计
 1. 支持创建多个 Topic，每个 Topic 可以有多种数据类型。每一对 Topic 和数据类型对应一个独立的缓冲区。
 
-2. 支持创建多个 Consumer Group，每个 Consumer Group 的消费进度都是独立的。支持多个 Consumer Group 并发消费同一个 Topic。
+2. 支持批量写入和批量消费，可以一次写入或获取多条数据。
 
-3. 支持同一个 Consumer Group 创建多个 Consumer，以负载均衡的方式消费数据。
+3. 支持创建多个 Consumer Group，每个 Consumer Group 的消费进度都是独立的。支持多个 Consumer Group 并发消费同一个 Topic。
 
-4. 支持批量写入和批量消费，可以一次写入或获取多条数据。
+4. 支持同一个 Consumer Group 创建多个 Consumer，以负载均衡的方式消费数据。
 
 5. 支持 pull 模式和 push 模式两种消费模式。
 
-6. pull 模式下和 push 模式下都支持 auto commit 和 manual commit 两种提交方式。auto commit 模式下，消费者在收到数据后自动提交消费进度，如果消费失败不会重试。manual commit 模式下，消费者需要手动提交消费进度，如果消费失败只要不提交进度就可以重试。
+6. Pull 和 Push 模式都支持 Auto Commit 和 Manual Commit。Auto Commit 在成功读取后、应用处理前推进进度，处理失败不会触发重放；Manual Commit 允许应用处理成功后再提交，未提交的 batch 可以再次交付。
 
 7. 支持多种存储模式。Memory 模式把数据和 offset 保存在进程内存中。MemoryMappedFile 模式把记录写入内存映射分段文件，并把 producer offset 和已提交的 consumer offset 持久化到磁盘。
 
@@ -359,7 +345,104 @@ MemoryMappedFile 会在配置的数据目录下保存记录以及 producer/consu
 `PartitionNumber`；如果已有 partition 目录超过当前配置数量，启动会抛出 `InvalidDataException`。布局、retention 和恢复规则参见
 [MemoryMappedFile 存储](docs/design/memory-mapped-file.zh-CN.md)。
 
-### Consumer Group
+### Producer
+
+创建 Producer 有两种可选的方式：
+
+- 在声明依赖时 topic 已固定：使用 `[FromKeyedServices("topic-name")]` 注入 `IBufferProducer<T>`。
+- topic 需要在运行时确定：注入 `IBufferQueue`，再调用 `GetProducer<T>(topicName)` 获取 Producer。
+
+在 Memory 模式下，bounded topic 的 `FullMode` 默认为 `Wait`。此时 `ProduceAsync` 和 `TryProduceAsync` 都会
+异步等待容量可用；输入完整接纳后，`TryProduceAsync` 返回 `true`。生产代码应传入 `CancellationToken`，以便
+取消背压等待。需要立即拒绝写入时，可将 `FullMode` 设为 `Fail`：`ProduceAsync` 会抛出
+`BufferQueueFullException`，`TryProduceAsync` 返回 `false`。大小不超过配置容量的批次会整批接纳；超过容量的
+`Wait` 批次会按输入顺序切成容量大小的连续切片，每个切片整批接纳，取消时此前完成的切片可能已经可见。`Fail`
+模式会整批拒绝超过容量的批次。
+
+```csharp
+using Microsoft.Extensions.DependencyInjection;
+
+[ApiController]
+[Route("/api/[controller]")]
+public class TestController(
+    [FromKeyedServices("topic-foo1")] IBufferProducer<Foo> foo1Producer,
+    [FromKeyedServices("topic-foo2")] IBufferProducer<Foo> foo2Producer,
+    IBufferQueue bufferQueue) : ControllerBase
+{
+    [HttpPost("foo1")]
+    public async Task<IActionResult> PostFoo1([FromBody] Foo foo)
+    {
+        await foo1Producer.ProduceAsync(foo, HttpContext.RequestAborted);
+        return Ok();
+    }
+
+    [HttpPost("foo2")]
+    public async Task<IActionResult> PostFoo2([FromBody] Foo foo)
+    {
+        await foo2Producer.ProduceAsync(foo, HttpContext.RequestAborted);
+        return Ok();
+    }
+
+    [HttpPost("bar")]
+    public async Task<IActionResult> PostBar([FromBody] Bar bar)
+    {
+        var producer = bufferQueue.GetProducer<Bar>("topic-bar");
+        await producer.ProduceAsync(bar, HttpContext.RequestAborted);
+        // TryProduceAsync 会返回一个布尔值，表示数据是否成功发送
+        // bool success = await producer.TryProduceAsync(bar, HttpContext.RequestAborted);
+        return Ok();
+    }
+}
+```
+
+#### 批量写入
+
+`IBufferProducer<T>` 的核心接口提供四个方法，每个方法都接收可选的 `CancellationToken`：
+
+- `TryProduceAsync(T item, CancellationToken cancellationToken = default)`
+- `TryProduceAsync(ReadOnlyMemory<T> items, CancellationToken cancellationToken = default)`
+- `ProduceAsync(T item, CancellationToken cancellationToken = default)`
+- `ProduceAsync(ReadOnlyMemory<T> items, CancellationToken cancellationToken = default)`
+
+`BufferProducerExtensions` 只提供接收 `IEnumerable<T>` 的便捷重载，这些重载同样接收 `CancellationToken`。
+传入的序列不是数组时，会先物化为数组，再进入核心批量写入路径。核心 `ProduceAsync` 方法属于接口本身，
+不是扩展方法。
+
+```csharp
+Order[] orders = GetOrders();
+
+await producer.ProduceAsync(orders.AsMemory());
+await producer.ProduceAsync(orders.Where(order => order.Total > 0));
+
+if (!await producer.TryProduceAsync(orders.AsMemory()))
+{
+    // 配置为 FullMode.Fail 的 bounded Memory 队列无法接纳该批次。
+}
+```
+
+路由仍以单条数据为单位：Round-robin 每写入一条数据都会向前轮转一次；PartitionKey 会为批次中的每条数据
+调用 selector。因此，一个批次可以写入多个 partition。超过容量的 `Wait` 批次按容量切片后，仍会沿用同样的
+逐条路由规则；相同 PartitionKey 在选定 partition 内保持输入顺序。容量上限由 topic 下的所有 partition 共享；
+每个 partition 会在所有已知 consumer group 的最小 committed position 向前推进时归还容量，包括只推进到
+segment 中间位置的情况。较晚创建的 consumer group 会从当前逻辑上的最早位置开始消费，无法读取容量已经释放的数据。
+
+对于采用 `Wait` 模式的 bounded topic，应先启动消费并提交进度，再写入超过当前可用容量的数据。
+
+### Consumer
+
+主要异步对比选择 `ReadAllAsync`，因为两边的方法都返回可以通过 `await foreach` 消费的异步流：
+
+```csharp
+// ChannelReader<T>: one item per iteration
+IAsyncEnumerable<T> ReadAllAsync(CancellationToken cancellationToken = default);
+// IBufferPullConsumer<T>: one batch per iteration
+IAsyncEnumerable<IEnumerable<T>> ConsumeAsync(CancellationToken cancellationToken = default);
+```
+
+Channel 每轮返回一条消息，BufferQueue 每轮返回一个 batch。`ReadAllAsync` 会持续读取直到已完成的 Channel 被读空，
+并不是把全部数据收集成一个 batch。
+
+#### Consumer Group
 
 Consumer 在已分配的可读 partition 之间轮转，每次从上一批数据所在 partition 之后开始。
 空 partition 不会使低编号 partition 获得更多机会。这均衡的是拉取机会，不是处理时间；
@@ -384,7 +467,7 @@ consumer 数量必须介于 1 和该 topic 的 partition 数量之间。创建�
 对于采用 `Wait` 模式的 bounded Memory topic，容量不足时写入会等待。应启动消费并提交进度来释放容量，避免先等待
 超过可用容量的写入全部完成后才开始消费。
 
-### Pull 模式消费者
+#### Pull 模式消费者
 
 pull 模式的消费者示例：
 
@@ -434,6 +517,8 @@ public class Foo1PullConsumerHostService(
     }
 }
 ```
+
+#### Push 模式消费者
 
 push 模式的消费者示例：
 
@@ -486,86 +571,19 @@ public class BarPushConsumer(ILogger<BarPushConsumer> logger) : IBufferManualCom
 }
 ```
 
-Producer 示例：
+#### 机会式批量消费（Opportunistic Batching）
 
-创建 Producer 有两种可选的方式：
+BufferQueue 会在 Consumer 扫描 Partition 时，把当时已经可读的数据组成 batch。一次 pull 最多从一个有数据的
+Partition 返回 `BatchSize` 条记录。同一 Partition 中已经排队的数据可能被机会式地合并到这个 batch 中；它不会为了凑满
+`BatchSize` 而等待固定时间窗口。因此低流量可能得到只有一条数据的 batch，突发流量则可能得到同一 Partition 中已经排队的更大 batch。
 
-- 在声明依赖时 topic 已固定：使用 `[FromKeyedServices("topic-name")]` 注入 `IBufferProducer<T>`。
-- topic 需要在运行时确定：注入 `IBufferQueue`，再调用 `GetProducer<T>(topicName)` 获取 Producer。
+开启 `AutoCommit` 时，Consumer 在成功 pull 后立即提交进度。手动提交时，batch 会先返回给调用方，只有调用
+`CommitAsync` 后才推进进度；未提交的 batch 可能再次交付。Push Consumer 复用相同的交付和提交语义。
 
-在 Memory 模式下，bounded topic 的 `FullMode` 默认为 `Wait`。此时 `ProduceAsync` 和 `TryProduceAsync` 都会
-异步等待容量可用；输入完整接纳后，`TryProduceAsync` 返回 `true`。生产代码应传入 `CancellationToken`，以便
-取消背压等待。需要立即拒绝写入时，可将 `FullMode` 设为 `Fail`：`ProduceAsync` 会抛出
-`BufferQueueFullException`，`TryProduceAsync` 返回 `false`。大小不超过配置容量的批次会整批接纳；超过容量的
-`Wait` 批次会按输入顺序切成容量大小的连续切片，每个切片整批接纳，取消时此前完成的切片可能已经可见。`Fail`
-模式会整批拒绝超过容量的批次。
+![BufferQueue 机会式批量消费](docs/assets/bufferqueue-opportunistic-batching.zh-CN.svg)
 
-```csharp
-using Microsoft.Extensions.DependencyInjection;
-
-[ApiController]
-[Route("/api/[controller]")]
-public class TestController(
-    [FromKeyedServices("topic-foo1")] IBufferProducer<Foo> foo1Producer,
-    [FromKeyedServices("topic-foo2")] IBufferProducer<Foo> foo2Producer,
-    IBufferQueue bufferQueue) : ControllerBase
-{
-    [HttpPost("foo1")]
-    public async Task<IActionResult> PostFoo1([FromBody] Foo foo)
-    {
-        await foo1Producer.ProduceAsync(foo, HttpContext.RequestAborted);
-        return Ok();
-    }
-
-    [HttpPost("foo2")]
-    public async Task<IActionResult> PostFoo2([FromBody] Foo foo)
-    {
-        await foo2Producer.ProduceAsync(foo, HttpContext.RequestAborted);
-        return Ok();
-    }
-
-    [HttpPost("bar")]
-    public async Task<IActionResult> PostBar([FromBody] Bar bar)
-    {
-        var producer = bufferQueue.GetProducer<Bar>("topic-bar");
-        await producer.ProduceAsync(bar, HttpContext.RequestAborted);
-        // TryProduceAsync 会返回一个布尔值，表示数据是否成功发送
-        // bool success = await producer.TryProduceAsync(bar, HttpContext.RequestAborted);
-        return Ok();
-    }
-}
-```
-
-### 批量写入
-
-`IBufferProducer<T>` 的核心接口提供四个方法，每个方法都接收可选的 `CancellationToken`：
-
-- `TryProduceAsync(T item, CancellationToken cancellationToken = default)`
-- `TryProduceAsync(ReadOnlyMemory<T> items, CancellationToken cancellationToken = default)`
-- `ProduceAsync(T item, CancellationToken cancellationToken = default)`
-- `ProduceAsync(ReadOnlyMemory<T> items, CancellationToken cancellationToken = default)`
-
-`BufferProducerExtensions` 只提供接收 `IEnumerable<T>` 的便捷重载，这些重载同样接收 `CancellationToken`。
-传入的序列不是数组时，会先物化为数组，再进入核心批量写入路径。核心 `ProduceAsync` 方法属于接口本身，
-不是扩展方法。
-
-```csharp
-Order[] orders = GetOrders();
-
-await producer.ProduceAsync(orders.AsMemory());
-await producer.ProduceAsync(orders.Where(order => order.Total > 0));
-
-if (!await producer.TryProduceAsync(orders.AsMemory()))
-{
-    // 配置为 FullMode.Fail 的 bounded Memory 队列无法接纳该批次。
-}
-```
-
-路由仍以单条数据为单位：Round-robin 每写入一条数据都会向前轮转一次；PartitionKey 会为批次中的每条数据
-调用 selector。因此，一个批次可以写入多个 partition。超过容量的 `Wait` 批次按容量切片后，仍会沿用同样的
-逐条路由规则；相同 PartitionKey 在选定 partition 内保持输入顺序。容量上限由 topic 下的所有 partition 共享；
-每个 partition 会在所有已知 consumer group 的最小 committed position 向前推进时归还容量，包括只推进到
-segment 中间位置的情况。较晚创建的 consumer group 会从当前逻辑上的最早位置开始消费，无法读取容量已经释放的数据。
+“机会式”描述的是数据何时被收集进 batch，不代表业务层面的合并或去重保证。具体 batch 受入队时机、Partition 路由、
+`BatchSize` 和 Consumer 调度影响。交付和唤醒细节参见[Consumer 模型](docs/design/consumer-model.zh-CN.md)。
 
 ## 示例项目
 

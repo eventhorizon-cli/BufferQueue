@@ -10,12 +10,15 @@ var config = ManualConfig
 var allBenchmarks = new[]
 {
     typeof(BlockingCollectionVsMemoryBufferQueueProduceBenchmark),
-    typeof(BlockingCollectionVsMemoryBufferQueueConsumeBenchmark),
     typeof(ChannelVsMemoryBufferQueueProduceBenchmark),
+    typeof(MemoryVsMemoryMappedFileBufferQueueProduceBenchmark),
+    typeof(MemoryBufferPartitionerBenchmark),
+    typeof(StringPartitionRoutingBenchmark),
+    typeof(MemoryMappedFileSerializerSerializeBenchmark),
+    typeof(BlockingCollectionVsMemoryBufferQueueConsumeBenchmark),
     typeof(UnboundedChannelVsMemoryBufferQueueConsumeBenchmark),
     typeof(SingleReaderChannelVsMemoryBufferQueueConsumeBenchmark),
     typeof(BoundedChannelVsMemoryBufferQueueConsumeBenchmark),
-    typeof(MemoryBufferPartitionerBenchmark),
     typeof(MemoryBufferOffsetBenchmark),
     typeof(MemoryCommitModeBenchmark),
     typeof(MemoryAutoCommitOptimizationBenchmark),
@@ -23,11 +26,8 @@ var allBenchmarks = new[]
     typeof(MemoryGroupProgressOptimizationBenchmark),
     typeof(MemorySparseBatchBenchmark),
     typeof(ChannelReadPathBenchmark),
-    typeof(StringPartitionRoutingBenchmark),
     typeof(PullConsumerSchedulingBenchmark),
-    typeof(MemoryVsMemoryMappedFileBufferQueueProduceBenchmark),
     typeof(MemoryVsMemoryMappedFileBufferQueueConsumeBenchmark),
-    typeof(MemoryMappedFileSerializerSerializeBenchmark),
     typeof(MemoryMappedFileSerializerDeserializeBenchmark),
 };
 

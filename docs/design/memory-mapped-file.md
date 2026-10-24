@@ -217,6 +217,23 @@ non-record-boundary checkpoints, an existing consumer-group directory without
 `consumer.offset`, and a configured partition count below existing partition directories
 throw rather than create replacement files or reset progress.
 
+## Producer Checkpoint
+
+At a flush boundary, the partition flushes its memory-mapped accessor and writes the latest
+successfully flushed producer offset to `producer.offset` as an 8-byte little-endian
+integer. Immediate creates the boundary for every record. Batch creates it after
+`FlushBatchSize` records; segment rollover and consumer commit create it regardless of
+the pending count.
+
+Producer-offset writes use the same temporary-file plus replace-or-move pattern as other checkpoint
+writes. The producer checkpoint is an optimization and recovery hint, not the only source of
+truth. It can lag the in-process write offset while Batch mode has a partial batch pending.
+
+On startup, the partition validates records forward from the persisted producer offset. The scan
+catches up when that checkpoint is behind complete data. If the checkpoint file is absent, it scans
+from the earliest retained offset. If it exists but is inconsistent with the log, recovery fails
+fast.
+
 ## Consumer Checkpoints
 
 MMF persists committed offsets per partition and consumer group. On `Commit`, a partition
@@ -268,20 +285,3 @@ If the process stops after step three, old files can remain outside the logical 
 are removed on a later startup or commit. If a segment cannot be deleted after
 `earliest.offset` advances, the consumer commit remains persisted and the operation
 throws an `IOException` that states cleanup can be retried.
-
-## Producer Checkpoint
-
-At a flush boundary, the partition flushes its memory-mapped accessor and writes the latest
-successfully flushed producer offset to `producer.offset` as an 8-byte little-endian
-integer. Immediate creates the boundary for every record. Batch creates it after
-`FlushBatchSize` records; segment rollover and consumer commit create it regardless of
-the pending count.
-
-Producer-offset writes use the same temporary-file plus replace-or-move pattern as consumer
-checkpoints. The producer checkpoint is an optimization and recovery hint, not the only source of
-truth. It can lag the in-process write offset while Batch mode has a partial batch pending.
-
-On startup, the partition validates records forward from the persisted producer offset. The scan
-catches up when that checkpoint is behind complete data. If the checkpoint file is absent, it scans
-from the earliest retained offset. If it exists but is inconsistent with the log, recovery fails
-fast.

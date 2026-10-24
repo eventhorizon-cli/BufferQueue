@@ -84,6 +84,10 @@
 
 参见[MemoryMappedFile 存储](design/memory-mapped-file.zh-CN.md#恢复)。
 
+### Producer Offset 持久化
+
+参见[MemoryMappedFile 存储](design/memory-mapped-file.zh-CN.md#producer-checkpoint)。
+
 ### Offset 持久化
 
 参见[MemoryMappedFile 存储](design/memory-mapped-file.zh-CN.md#consumer-checkpoint)。
@@ -91,10 +95,6 @@
 ### Segment 保留策略
 
 参见[MemoryMappedFile 存储](design/memory-mapped-file.zh-CN.md#segment-保留策略)。
-
-### Producer Offset 持久化
-
-参见[MemoryMappedFile 存储](design/memory-mapped-file.zh-CN.md#producer-checkpoint)。
 
 ## Push Consumer 模式
 

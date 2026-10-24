@@ -200,6 +200,20 @@ segment、segment file 尺寸不正确、不在 record boundary 上的 checkpoin
 但缺少 `consumer.offset`，以及配置的 partition count 小于已有 partition directory 数量，
 都会抛出异常，而不是创建替代文件或重置进度。
 
+## Producer Checkpoint
+
+到达 flush 边界时，partition flush memory-mapped accessor，并把最新成功 flush 的 producer offset 以
+8 字节 little-endian integer 写入 `producer.offset`。Immediate 为每条 record 建立该边界。
+Batch 在累计 `FlushBatchSize` 条 record 后建立该边界；segment rollover 和 consumer commit
+无论待处理数量都会建立该边界。
+
+Producer-offset 写入使用与其他 checkpoint 相同的临时文件加 replace-or-move 模式。Producer checkpoint
+是启动优化和恢复提示，不是唯一事实来源。Batch 模式仍有部分 batch 等待时，它可能落后于进程内 write offset。
+
+启动时，partition 从持久化 producer offset 向后校验 record。如果 checkpoint 落后于数据文件中的完整记录，
+扫描会追上。如果 checkpoint 文件不存在，从最早保留 offset 开始扫描。如果 checkpoint 存在但与日志不一致，
+恢复会快速失败。
+
 ## Consumer Checkpoint
 
 MMF 按 partition 和 consumer group 持久化已提交 offset。调用 `Commit` 时，partition 会先
@@ -245,17 +259,3 @@ Retention 值为 `N` 时，partition 保留最新的 `N` 个可回收 segment，
 如果进程在第三步后停止，旧文件可能仍然在逻辑保留区间之外，并会在后续启动或提交时删除。如果某个 segment
 在 `earliest.offset` 已推进后仍无法删除，consumer commit 仍然已经持久化，并会抛出说明可以
 重试清理的 `IOException`。
-
-## Producer Checkpoint
-
-到达 flush 边界时，partition flush memory-mapped accessor，并把最新成功 flush 的 producer offset 以
-8 字节 little-endian integer 写入 `producer.offset`。Immediate 为每条 record 建立该边界。
-Batch 在累计 `FlushBatchSize` 条 record 后建立该边界；segment rollover 和 consumer commit
-无论待处理数量都会建立该边界。
-
-Producer-offset 写入使用与 consumer checkpoint 相同的临时文件加 replace-or-move 模式。Producer checkpoint
-是启动优化和恢复提示，不是唯一事实来源。Batch 模式仍有部分 batch 等待时，它可能落后于进程内 write offset。
-
-启动时，partition 从持久化 producer offset 向后校验 record。如果 checkpoint 落后于数据文件中的完整记录，
-扫描会追上。如果 checkpoint 文件不存在，从最早保留 offset 开始扫描。如果 checkpoint 存在但与日志不一致，
-恢复会快速失败。
