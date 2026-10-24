@@ -52,7 +52,7 @@ IAsyncEnumerable<IEnumerable<T>> ConsumeAsync(CancellationToken cancellationToke
 ```
 
 `ReadAllAsync` 逐条返回消息，直到 Channel 完成，并不是一次返回整批数据。
-下面的主要汇总使用 BufferQueue `AutoCommit = true`；图表也包含单独测量的 Manual Commit 系列。`Channel<T>.TryRead` 作为同步参考。测试消费预填充队列中的 `8,192` 条 `int` 消息，
+下面的主要汇总使用 BufferQueue `AutoCommit = true`；图表也包含单独测量的 Manual Commit 系列。`Channel<T>.TryRead` 在图中以灰色线作为同步参考。测试消费预填充队列中的 `8,192` 条 `int` 消息，
 BufferQueue 使用 `12` 个 partition，consumer 数量为 `1` 或 `12`。`BatchSize` 只影响 BufferQueue。
 
 测试环境：Apple M2 Max（12 核），macOS 27.0.1 / Arm64，.NET 10.0.0，BenchmarkDotNet 0.15.8（Release）。
