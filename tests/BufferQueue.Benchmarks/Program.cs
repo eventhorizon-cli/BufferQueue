@@ -3,6 +3,12 @@ using BenchmarkDotNet.Diagnosers;
 using BenchmarkDotNet.Running;
 using BufferQueue.Benchmarks;
 
+if (args is ["--batch-enumeration-probe"])
+{
+    BatchEnumerationProbe.Run();
+    return;
+}
+
 var config = ManualConfig
     .Create(DefaultConfig.Instance)
     .AddDiagnoser(MemoryDiagnoser.Default);

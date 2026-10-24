@@ -176,6 +176,8 @@ For a bounded Memory topic in `Wait` mode, writes wait when capacity is unavaila
 progress to release capacity instead of waiting for writes beyond the available capacity to finish first.
 
 `BatchSize` is an upper limit: sparse pulls avoid allocating a full-size batch when only one item is available, returned values remain stable after segment recycling, and the behavior is the same with Auto Commit and Manual Commit.
+Singleton batches support repeated and independent overlapping enumeration. Each `foreach` creates
+its own compact enumerator; retaining a batch after commit does not expose recycled segment storage.
 
 This example uses manual commit, so progress advances only after the batch has
 been processed successfully:
