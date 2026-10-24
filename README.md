@@ -80,10 +80,31 @@ ensure a full batch under sparse traffic; these results measure draining a backl
 
 ### Allocations
 
+The charts show cumulative managed allocations per 8,192-item operation, not peak memory usage.
+Consumption measurements count batches with `Count()`; per-item enumeration and application processing are excluded.
+
+#### Production Allocations
+
+![Unbounded producer allocations](docs/benchmarks/memory-producer-unbounded-allocations.svg)
+
+![Bounded producer allocations](docs/benchmarks/memory-producer-bounded-allocations.svg)
+
 Production allocates about 55 KiB for BufferQueue versus 135 / 68 KiB for Channel `WriteAsync` (unbounded / bounded).
+
+#### Consumption Allocations
+
+These charts include Auto Commit and Manual Commit alongside Channel `ReadAllAsync`, with `TryRead` as a synchronous reference.
+
+![Unbounded consumption allocations, 1 consumer](docs/benchmarks/memory-unbounded-1-consumer-allocations.svg)
+
+![Unbounded consumption allocations, 12 consumers](docs/benchmarks/memory-unbounded-12-consumers-allocations.svg)
+
+![Bounded consumption allocations, 1 consumer](docs/benchmarks/memory-bounded-1-consumer-allocations.svg)
+
+![Bounded consumption allocations, 12 consumers](docs/benchmarks/memory-bounded-12-consumers-allocations.svg)
+
 For one-consumer draining, BufferQueue allocates about 193 KiB at BatchSize 1 and 36.5 KiB at BatchSize 100, with
-similar Auto / Manual results; Channel `ReadAllAsync` allocates about 0.93 KiB. These are allocated bytes, not peak
-memory. See the [allocation charts](docs/benchmarks/memory-queues.md#memory-allocation).
+similar Auto / Manual results; Channel `ReadAllAsync` allocates about 0.93 KiB.
 
 See [memory queue benchmark details](docs/benchmarks/memory-queues.md) for the complete setup, signatures, and results.
 
