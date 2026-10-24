@@ -7,24 +7,72 @@ This report is the detailed record behind the charts in the root README. The che
 three consume benchmark classes. The CSV retains the measured mean, error, standard deviation, allocation, and every
 configuration used for the charts; the tables below keep the comparison readable by showing mean time and allocation.
 
-## Primary Consume Comparison
+Unless noted otherwise, the measurements in this report use Apple M2 Max (12 cores), macOS 27.0.1 / Arm64,
+.NET 10.0.0, and BenchmarkDotNet 0.15.8 in Release mode.
 
-The primary comparison uses `ChannelReader<T>.ReadAllAsync` and `IBufferPullConsumer<T>.ConsumeAsync`
-with BufferQueue `AutoCommit = true`. Their signatures expose the same asynchronous stream shape:
+## Producer Comparison
 
-```csharp
-// ChannelReader<T>
-IAsyncEnumerable<T> ReadAllAsync(CancellationToken cancellationToken = default);
-// IBufferPullConsumer<T>
-IAsyncEnumerable<IEnumerable<T>> ConsumeAsync(CancellationToken cancellationToken = default);
+The producer benchmark writes 8,192 `int` values using 12 concurrent `Task.Run` producer tasks. Queue creation and
+task scheduling are inside the timed method. The primary Channel comparison uses asynchronous `WriteAsync`; synchronous
+`TryWrite` is retained as a reference. BufferQueue uses asynchronous `ProduceAsync` for both item and
+`ReadOnlyMemory<int>` batch calls. Bounded capacity is sufficient for the complete workload, so this measurement does
+not include producer backpressure waiting.
+
+| Mode | Method | Mean (us) | Allocated (KB) |
+|---|---|---:|---:|
+| unbounded | `Channel.WriteAsync(item)` | 324.900 | 135.47 KB |
+| unbounded | `Channel.TryWrite(item)` (sync reference) | 281.590 | 134.53 KB |
+| unbounded | `BufferQueue.ProduceAsync(item)` | 321.910 | 54.96 KB |
+| unbounded | `BufferQueue.ProduceAsync(ReadOnlyMemory<int>)` | 36.420 | 54.90 KB |
+| bounded | `Channel.WriteAsync(item)` | 393.650 | 68.27 KB |
+| bounded | `Channel.TryWrite(item)` (sync reference) | 293.020 | 67.33 KB |
+| bounded | `BufferQueue.ProduceAsync(item)` | 350.020 | 55.13 KB |
+| bounded | `BufferQueue.ProduceAsync(ReadOnlyMemory<int>)` | 36.020 | 55.08 KB |
+
+![Unbounded producer APIs](memory-producer-unbounded.svg)
+
+![Bounded producer APIs](memory-producer-bounded.svg)
+
+Source: [ChannelVsMemoryBufferQueueProduceBenchmark.cs](../../tests/BufferQueue.Benchmarks/ChannelVsMemoryBufferQueueProduceBenchmark.cs).
+
+### Partition-Key Routing Benchmark
+
+This retained routing measurement predates the current consumer comparison; it was not rerun with the current
+consume benchmark workload. The following [`MemoryBufferPartitionerBenchmark`](../../tests/BufferQueue.Benchmarks/MemoryBufferPartitionerBenchmark.cs)
+measures the complete Memory-mode producer path with `8` partitions and `8,192` messages repeated `832` times,
+`6` warmup iterations, and `15` measured iterations. Results are per produced item on macOS 27.0.1,
+ARM64, and .NET 10.0.0; no path allocated managed memory. String keys contain `7` UTF-16 code units;
+complete-key hashing takes more time as keys get longer.
+
+| Routing | Mean | Relative to round robin |
+| --- | ---: | ---: |
+| Round robin | `13.40 ns` | `1.00x` |
+| `int` key | `12.03 ns` | `0.90x` |
+| `string` key (XXH3-64, complete UTF-16 key) | `12.94 ns` | `0.97x` |
+| Custom message, numeric `CustomerId` key | `11.19 ns` | `0.83x` |
+
+Run this producer benchmark with:
+
+```bash
+dotnet run -c Release --project tests/BufferQueue.Benchmarks/BufferQueue.Benchmarks.csproj -- --filter '*MemoryBufferPartitionerBenchmark*'
 ```
 
-Both are consumed with `await foreach`. Channel yields one item per iteration; BufferQueue yields one batch.
-`ReadAllAsync` continues until the completed channel is drained, rather than collecting all items into one batch.
-This compares the cost of consuming the same messages through asynchronous streams, including BufferQueue's batching
-and Auto Commit behavior; it does not imply identical delivery semantics. `ChannelReader<T>.ReadAsync` returns
-`ValueTask<T>` for a single read and would be a separate asynchronous comparison. `ChannelReader<T>.TryRead` is a
-synchronous reference, not the primary asynchronous baseline.
+The separate [`StringPartitionRoutingBenchmark`](../../tests/BufferQueue.Benchmarks/StringPartitionRoutingBenchmark.cs)
+measures only string routing for prebuilt keys of `4`, `9`, `64`, `120`, `121`, `256`, and `1024` UTF-16 code units across `8` partitions.
+The `120`/`121` cases straddle XXH3's long-input threshold of `240` bytes.
+It uses one launch, `6` warmup iterations, and `10` measured iterations with a target iteration time of `100 ms`.
+Its results are per routing call and exclude queue writes; the table above comes from the producer benchmark.
+Run the key-length benchmark with:
+
+```bash
+dotnet run -c Release --project tests/BufferQueue.Benchmarks/BufferQueue.Benchmarks.csproj -- --filter '*StringPartitionRoutingBenchmark*'
+```
+
+## Primary Consume Comparison
+
+This section measures prefilled queue draining through asynchronous BufferQueue consumption and Channel references.
+The primary BufferQueue rows use `AutoCommit = true`; Manual Commit and the synchronous `TryRead` reference are
+reported separately below.
 
 Channel has no equivalent `BatchSize`; its baseline is shown once for each consumer count and is independent of the
 BufferQueue setting. BufferQueue uses the five configured values `1, 10, 50, 100, 1000`.
@@ -41,7 +89,7 @@ method. They use one launch, six warmup iterations, and fifteen measured iterati
 Max environment; each async batch is followed by `CommitAsync`. The existing Auto Commit and Channel rows remain the
 checked-in baseline workload.
 
-### unbounded
+#### unbounded
 
 Channel reference (fixed `BatchSize = 1` representative):
 
@@ -80,7 +128,7 @@ BufferQueue `ConsumeAsync` with `AutoCommit = false` and `CommitAsync` after eac
 | 1000 | 1 | 26.830 | 48.87 KB |
 | 1000 | 12 | 33.010 | 54.31 KB |
 
-### bounded
+#### bounded
 
 `bounded` uses a BufferQueue capacity of 8,192 and a Channel capacity of 8,192. The queues are prefetched before the
 timed method, so this is a drain benchmark and does not measure producer waiting for capacity.
@@ -162,67 +210,32 @@ The consumer charts show both async BufferQueue modes, with `ReadAllAsync` as th
 `AutoCommit = false` and calls `CommitAsync` after each batch; Channel has no built-in acknowledgement, checkpoint, or
 replay equivalent.
 
-## Producer Comparison
+`ChannelReader<T>.ReadAllAsync` is the primary asynchronous comparison because both methods expose streams consumed
+with `await foreach`:
 
-The producer benchmark writes 8,192 `int` values using 12 concurrent `Task.Run` producer tasks. Queue creation and
-task scheduling are inside the timed method. The primary Channel comparison uses asynchronous `WriteAsync`; synchronous
-`TryWrite` is retained as a reference. BufferQueue uses asynchronous `ProduceAsync` for both item and
-`ReadOnlyMemory<int>` batch calls. Bounded capacity is sufficient for the complete workload, so this measurement does
-not include producer backpressure waiting.
-
-| Mode | Method | Mean (us) | Allocated (KB) |
-|---|---|---:|---:|
-| unbounded | `Channel.WriteAsync(item)` | 324.900 | 135.47 KB |
-| unbounded | `Channel.TryWrite(item)` (sync reference) | 281.590 | 134.53 KB |
-| unbounded | `BufferQueue.ProduceAsync(item)` | 321.910 | 54.96 KB |
-| unbounded | `BufferQueue.ProduceAsync(ReadOnlyMemory<int>)` | 36.420 | 54.90 KB |
-| bounded | `Channel.WriteAsync(item)` | 393.650 | 68.27 KB |
-| bounded | `Channel.TryWrite(item)` (sync reference) | 293.020 | 67.33 KB |
-| bounded | `BufferQueue.ProduceAsync(item)` | 350.020 | 55.13 KB |
-| bounded | `BufferQueue.ProduceAsync(ReadOnlyMemory<int>)` | 36.020 | 55.08 KB |
-
-![Unbounded producer APIs](memory-producer-unbounded.svg)
-
-![Bounded producer APIs](memory-producer-bounded.svg)
-
-Source: [ChannelVsMemoryBufferQueueProduceBenchmark.cs](../../tests/BufferQueue.Benchmarks/ChannelVsMemoryBufferQueueProduceBenchmark.cs).
-
-### Partition-Key Routing Benchmark
-
-This retained routing measurement predates the current consumer comparison; it was not rerun with the current
-consume benchmark workload. The following [`MemoryBufferPartitionerBenchmark`](../../tests/BufferQueue.Benchmarks/MemoryBufferPartitionerBenchmark.cs)
-measures the complete Memory-mode producer path with `8` partitions and `8,192` messages repeated `832` times,
-`6` warmup iterations, and `15` measured iterations. Results are per produced item on macOS 27.0.1,
-ARM64, and .NET 10.0.0; no path allocated managed memory. String keys contain `7` UTF-16 code units;
-complete-key hashing takes more time as keys get longer.
-
-| Routing | Mean | Relative to round robin |
-| --- | ---: | ---: |
-| Round robin | `13.40 ns` | `1.00x` |
-| `int` key | `12.03 ns` | `0.90x` |
-| `string` key (XXH3-64, complete UTF-16 key) | `12.94 ns` | `0.97x` |
-| Custom message, numeric `CustomerId` key | `11.19 ns` | `0.83x` |
-
-Run this producer benchmark with:
-
-```bash
-dotnet run -c Release --project tests/BufferQueue.Benchmarks/BufferQueue.Benchmarks.csproj -- --filter '*MemoryBufferPartitionerBenchmark*'
+```csharp
+// ChannelReader<T>
+IAsyncEnumerable<T> ReadAllAsync(CancellationToken cancellationToken = default);
+// IBufferPullConsumer<T>
+IAsyncEnumerable<IEnumerable<T>> ConsumeAsync(CancellationToken cancellationToken = default);
 ```
 
-The separate [`StringPartitionRoutingBenchmark`](../../tests/BufferQueue.Benchmarks/StringPartitionRoutingBenchmark.cs)
-measures only string routing for prebuilt keys of `4`, `9`, `64`, `120`, `121`, `256`, and `1024` UTF-16 code units across `8` partitions.
-The `120`/`121` cases straddle XXH3's long-input threshold of `240` bytes.
-It uses one launch, `6` warmup iterations, and `10` measured iterations with a target iteration time of `100 ms`.
-Its results are per routing call and exclude queue writes; the table above comes from the producer benchmark.
-Run the key-length benchmark with:
-
-```bash
-dotnet run -c Release --project tests/BufferQueue.Benchmarks/BufferQueue.Benchmarks.csproj -- --filter '*StringPartitionRoutingBenchmark*'
-```
+Channel yields one item per iteration; BufferQueue yields one batch. `ReadAllAsync` drains a completed channel rather
+than collecting items into one batch. `ChannelReader<T>.ReadAsync` is a separate single-item `ValueTask<T>` comparison,
+and `TryRead` is a synchronous reference rather than the primary asynchronous baseline.
 
 ## Memory Allocation
 
-These charts normalize BenchmarkDotNet's allocation display to `KiB/op` (`1 KiB = 1,024 B`). Consumption runs drain
+Producer allocation includes queue/channel creation and producer task scheduling inside the timed operation. It uses
+12 tasks and 8,192 items; `Channel WriteAsync` is the async baseline, `Channel TryWrite` is a synchronous reference,
+and the two BufferQueue bars are the item and batch producer APIs. These are not peak resident-memory or per-item
+allocation measurements.
+
+![unbounded producer](memory-producer-unbounded-allocations.svg)
+
+![bounded producer](memory-producer-bounded-allocations.svg)
+
+Consumer charts normalize BenchmarkDotNet's allocation display to `KiB/op` (`1 KiB = 1,024 B`). Consumption runs drain
 8,192 prefetched items from 12 partitions with 1 or 12 consumers; `BatchSize` values are categorical, and the y-axis
 is logarithmic. Queue and consumer setup is excluded from the measured allocation. The values are managed memory per
 8,192-item benchmark operation, not peak resident memory or per-item allocation. Both Channel references use the rows recorded alongside `BatchSize = 1`;
@@ -235,16 +248,6 @@ BatchSize only affects BufferQueue, and the Auto/Manual curves are nearly overla
 ![bounded, 1 consumer](memory-bounded-1-consumer-allocations.svg)
 
 ![bounded, 12 consumers](memory-bounded-12-consumers-allocations.svg)
-
-
-Producer allocation includes queue/channel creation and producer task scheduling inside the timed operation. It uses
-12 tasks and 8,192 items; `Channel WriteAsync` is the async baseline, `Channel TryWrite` is a synchronous reference,
-and the two BufferQueue bars are the item and batch producer APIs. These are not peak resident-memory or per-item
-allocation measurements.
-
-![unbounded producer](memory-producer-unbounded-allocations.svg)
-
-![bounded producer](memory-producer-bounded-allocations.svg)
 
 ## Read-path Optimization Measurements
 

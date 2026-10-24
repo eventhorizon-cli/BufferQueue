@@ -7,23 +7,69 @@
 行结果。CSV 保留 mean、error、standard deviation、allocation 以及每个配置；下面的表格为便于阅读主要展示
 mean 和 allocation。
 
-## 主要消费对比
+除特别说明外，本报告使用 Apple M2 Max（12 核）、macOS 27.0.1 / Arm64、.NET 10.0.0 和
+BenchmarkDotNet 0.15.8 Release 配置。
 
-主要对比选择 `ChannelReader<T>.ReadAllAsync` 和 BufferQueue `AutoCommit = true` 的 `IBufferPullConsumer<T>.ConsumeAsync`，
-因为它们的方法签名都是异步流：
+## Producer 对比
 
-```csharp
-// ChannelReader<T>
-IAsyncEnumerable<T> ReadAllAsync(CancellationToken cancellationToken = default);
-// IBufferPullConsumer<T>
-IAsyncEnumerable<IEnumerable<T>> ConsumeAsync(CancellationToken cancellationToken = default);
+Producer benchmark 使用 12 个并发 `Task.Run` producer task 写入 8,192 个 `int`。Queue 创建和 task scheduling
+都在计时方法内。Channel 的主比较使用异步 `WriteAsync`，同步 `TryWrite` 作为参考；BufferQueue 的 item 和
+`ReadOnlyMemory<int>` batch 都使用异步 `ProduceAsync`。bounded capacity 足够容纳完整 workload，因此这里不测
+producer 等待背压的路径。
+
+| Mode | Method | Mean (us) | Allocated (KB) |
+|---|---|---:|---:|
+| unbounded | `Channel.WriteAsync(item)` | 324.900 | 135.47 KB |
+| unbounded | `Channel.TryWrite(item)` (sync reference) | 281.590 | 134.53 KB |
+| unbounded | `BufferQueue.ProduceAsync(item)` | 321.910 | 54.96 KB |
+| unbounded | `BufferQueue.ProduceAsync(ReadOnlyMemory<int>)` | 36.420 | 54.90 KB |
+| bounded | `Channel.WriteAsync(item)` | 393.650 | 68.27 KB |
+| bounded | `Channel.TryWrite(item)` (sync reference) | 293.020 | 67.33 KB |
+| bounded | `BufferQueue.ProduceAsync(item)` | 350.020 | 55.13 KB |
+| bounded | `BufferQueue.ProduceAsync(ReadOnlyMemory<int>)` | 36.020 | 55.08 KB |
+
+![unbounded Producer API](memory-producer-unbounded.zh-CN.svg)
+
+![bounded Producer API](memory-producer-bounded.zh-CN.svg)
+
+源码：[ChannelVsMemoryBufferQueueProduceBenchmark.cs](../../tests/BufferQueue.Benchmarks/ChannelVsMemoryBufferQueueProduceBenchmark.cs)。
+
+### PartitionKey 路由性能
+
+以下是保留的历史路由测量，早于当前 consumer 对比，未使用当前消费 benchmark workload 重跑。下面的
+[`MemoryBufferPartitionerBenchmark`](../../tests/BufferQueue.Benchmarks/MemoryBufferPartitionerBenchmark.cs)
+测量完整的 Memory 模式 producer 路径，使用 `8` 个 partition、`8,192` 条消息重复 `832` 次、`6` 次预热和
+`15` 次测量迭代。结果为单条写入耗时，运行环境为 macOS 27.0.1、ARM64 和 .NET 10.0.0；
+所有路径均无托管内存分配。字符串 key 包含 `7` 个 UTF-16 码元；完整 key 哈希的耗时随 key 长度增加。
+
+| 路由方式 | Mean | 相对轮询 |
+| --- | ---: | ---: |
+| 轮询 | `13.40 ns` | `1.00x` |
+| `int` key | `12.03 ns` | `0.90x` |
+| `string` key（XXH3-64，完整 UTF-16 key） | `12.94 ns` | `0.97x` |
+| 自定义消息，取数值 `CustomerId` key | `11.19 ns` | `0.83x` |
+
+通过以下命令运行该 producer 基准：
+
+```bash
+dotnet run -c Release --project tests/BufferQueue.Benchmarks/BufferQueue.Benchmarks.csproj -- --filter '*MemoryBufferPartitionerBenchmark*'
 ```
 
-两边都通过 `await foreach` 消费：Channel 每轮返回一条消息，BufferQueue 每轮返回一个 batch。
-`ReadAllAsync` 会持续读取，直到已完成的 Channel 被读空，并不是把全部数据收集成一个 batch。
-这项对比衡量通过异步流消费相同消息的开销，包括 BufferQueue 的批量消费和 Auto Commit 行为，并不表示两者具有相同的交付语义。
-`ChannelReader<T>.ReadAsync` 返回单次读取的 `ValueTask<T>`，可以作为另一项异步对比；`ChannelReader<T>.TryRead`
-则作为同步参考，不是主要的异步基线。
+独立的 [`StringPartitionRoutingBenchmark`](../../tests/BufferQueue.Benchmarks/StringPartitionRoutingBenchmark.cs)
+仅测量字符串路由，使用预先构造的 `4`、`9`、`64`、`120`、`121`、`256`、`1024` 个 UTF-16 码元的 key 和 `8` 个 partition。
+`120`/`121` 两组覆盖 XXH3 的 `240` 字节长输入阈值两侧。
+它使用一次启动、`6` 次预热和 `10` 次测量迭代，目标迭代时间为 `100 ms`。
+其结果为单次路由耗时，不包含队列写入；上表数据来自 producer 基准。
+通过以下命令运行 key 长度基准：
+
+```bash
+dotnet run -c Release --project tests/BufferQueue.Benchmarks/BufferQueue.Benchmarks.csproj -- --filter '*StringPartitionRoutingBenchmark*'
+```
+
+## 主要消费对比
+
+本节测量预填充队列的消费路径，包含异步 BufferQueue 消费和 Channel 参考。主要 BufferQueue 行使用
+`AutoCommit = true`；Manual Commit 和同步 `TryRead` 参考在下面单独展示。
 
 Channel 没有对应的 `BatchSize`；它的 baseline 按 consumer 数量只展示一次，与 BufferQueue 的配置无关。BufferQueue
 使用 `1、10、50、100、1000` 五个配置。
@@ -38,7 +84,7 @@ Manual Commit 行是在相同的 `e615da8` 生产基线之上单独测量的，�
 15 次测量迭代，并在说明的 .NET 10 / Apple M2 Max 环境中运行；每个 async batch 后调用 `CommitAsync`。已有的
 Auto Commit 和 Channel 行仍作为汇总基线。
 
-### unbounded
+#### unbounded
 
 Channel reference（固定的 `BatchSize = 1` 代表值）：
 
@@ -77,7 +123,7 @@ BufferQueue `ConsumeAsync`（`AutoCommit = false`，每个 batch 后调用 `Comm
 | 1000 | 1 | 26.830 | 48.87 KB |
 | 1000 | 12 | 33.010 | 54.31 KB |
 
-### bounded
+#### bounded
 
 `bounded` 使用容量 8,192 的 BufferQueue 和容量 8,192 的 Channel。队列在计时方法开始前已预填充，因此这里
 是 drain benchmark，不测 producer 等待容量的路径。
@@ -154,65 +200,30 @@ Channel baseline 固定为代表性的 `BatchSize = 1`，与 BufferQueue 的 `Ba
 消费图表同时展示两种 async BufferQueue 模式，以 `ReadAllAsync` 作为 Channel 主要对比，灰色 `TryRead` 线作为同步参考。Manual Commit 使用 `AutoCommit = false`，每个 batch 后调用
 `CommitAsync`；Channel 没有内建的等价确认、checkpoint 或重放机制。
 
-## Producer 对比
+主要异步对比选择 `ChannelReader<T>.ReadAllAsync`，因为两边的方法都返回可以通过 `await foreach` 消费的异步流：
 
-Producer benchmark 使用 12 个并发 `Task.Run` producer task 写入 8,192 个 `int`。Queue 创建和 task scheduling
-都在计时方法内。Channel 的主比较使用异步 `WriteAsync`，同步 `TryWrite` 作为参考；BufferQueue 的 item 和
-`ReadOnlyMemory<int>` batch 都使用异步 `ProduceAsync`。bounded capacity 足够容纳完整 workload，因此这里不测
-producer 等待背压的路径。
-
-| Mode | Method | Mean (us) | Allocated (KB) |
-|---|---|---:|---:|
-| unbounded | `Channel.WriteAsync(item)` | 324.900 | 135.47 KB |
-| unbounded | `Channel.TryWrite(item)` (sync reference) | 281.590 | 134.53 KB |
-| unbounded | `BufferQueue.ProduceAsync(item)` | 321.910 | 54.96 KB |
-| unbounded | `BufferQueue.ProduceAsync(ReadOnlyMemory<int>)` | 36.420 | 54.90 KB |
-| bounded | `Channel.WriteAsync(item)` | 393.650 | 68.27 KB |
-| bounded | `Channel.TryWrite(item)` (sync reference) | 293.020 | 67.33 KB |
-| bounded | `BufferQueue.ProduceAsync(item)` | 350.020 | 55.13 KB |
-| bounded | `BufferQueue.ProduceAsync(ReadOnlyMemory<int>)` | 36.020 | 55.08 KB |
-
-![unbounded Producer API](memory-producer-unbounded.zh-CN.svg)
-
-![bounded Producer API](memory-producer-bounded.zh-CN.svg)
-
-源码：[ChannelVsMemoryBufferQueueProduceBenchmark.cs](../../tests/BufferQueue.Benchmarks/ChannelVsMemoryBufferQueueProduceBenchmark.cs)。
-
-### PartitionKey 路由性能
-
-以下是保留的历史路由测量，早于当前 consumer 对比，未使用当前消费 benchmark workload 重跑。下面的
-[`MemoryBufferPartitionerBenchmark`](../../tests/BufferQueue.Benchmarks/MemoryBufferPartitionerBenchmark.cs)
-测量完整的 Memory 模式 producer 路径，使用 `8` 个 partition、`8,192` 条消息重复 `832` 次、`6` 次预热和
-`15` 次测量迭代。结果为单条写入耗时，运行环境为 macOS 27.0.1、ARM64 和 .NET 10.0.0；
-所有路径均无托管内存分配。字符串 key 包含 `7` 个 UTF-16 码元；完整 key 哈希的耗时随 key 长度增加。
-
-| 路由方式 | Mean | 相对轮询 |
-| --- | ---: | ---: |
-| 轮询 | `13.40 ns` | `1.00x` |
-| `int` key | `12.03 ns` | `0.90x` |
-| `string` key（XXH3-64，完整 UTF-16 key） | `12.94 ns` | `0.97x` |
-| 自定义消息，取数值 `CustomerId` key | `11.19 ns` | `0.83x` |
-
-通过以下命令运行该 producer 基准：
-
-```bash
-dotnet run -c Release --project tests/BufferQueue.Benchmarks/BufferQueue.Benchmarks.csproj -- --filter '*MemoryBufferPartitionerBenchmark*'
+```csharp
+// ChannelReader<T>
+IAsyncEnumerable<T> ReadAllAsync(CancellationToken cancellationToken = default);
+// IBufferPullConsumer<T>
+IAsyncEnumerable<IEnumerable<T>> ConsumeAsync(CancellationToken cancellationToken = default);
 ```
 
-独立的 [`StringPartitionRoutingBenchmark`](../../tests/BufferQueue.Benchmarks/StringPartitionRoutingBenchmark.cs)
-仅测量字符串路由，使用预先构造的 `4`、`9`、`64`、`120`、`121`、`256`、`1024` 个 UTF-16 码元的 key 和 `8` 个 partition。
-`120`/`121` 两组覆盖 XXH3 的 `240` 字节长输入阈值两侧。
-它使用一次启动、`6` 次预热和 `10` 次测量迭代，目标迭代时间为 `100 ms`。
-其结果为单次路由耗时，不包含队列写入；上表数据来自 producer 基准。
-通过以下命令运行 key 长度基准：
-
-```bash
-dotnet run -c Release --project tests/BufferQueue.Benchmarks/BufferQueue.Benchmarks.csproj -- --filter '*StringPartitionRoutingBenchmark*'
-```
+Channel 每轮返回一条消息，BufferQueue 每轮返回一个 batch。`ReadAllAsync` 会持续读取直到已完成的 Channel 被读空，
+并不是把全部数据收集成一个 batch。`ChannelReader<T>.ReadAsync` 返回单次读取的 `ValueTask<T>`，属于另一项单条异步对比；
+`TryRead` 是同步参考，不是主要异步基线。
 
 ## 内存分配
 
-这些图将 BenchmarkDotNet 的 allocation 显示统一转换为 `KiB/op`（`1 KiB = 1,024 B`）。消费测试从 12 个 partition
+Producer allocation 的计时包含 queue/channel creation 和 producer task scheduling。测试使用 12 个 task 写入 8,192 条消息；
+`Channel WriteAsync` 是 async baseline，`Channel TryWrite` 是同步参考，BufferQueue 的两个 bar 分别表示逐条和 batch producer API。
+这些数值不是峰值驻留内存，也不是单条消息 allocation。
+
+![unbounded producer](memory-producer-unbounded-allocations.zh-CN.svg)
+
+![bounded producer](memory-producer-bounded-allocations.zh-CN.svg)
+
+Consumer 图将 BenchmarkDotNet 的 allocation 统一转换为 `KiB/op`（`1 KiB = 1,024 B`）。消费测试从 12 个 partition
 中消费预填充的 8,192 条消息，分别使用 1 个和 12 个 consumer；`BatchSize` 横轴按分类配置等距显示，纵轴使用对数刻度。
 队列和 consumer 的 setup 不计入测量 allocation。数值表示每次消费 8,192 条消息的 benchmark operation 分配的托管内存，
 不是峰值驻留内存，也不是单条消息 allocation。两条 Channel 参考线均取自与 `BatchSize = 1` 一起记录的结果，BatchSize 只影响 BufferQueue；Auto/Manual 曲线基本重合。
@@ -224,15 +235,6 @@ dotnet run -c Release --project tests/BufferQueue.Benchmarks/BufferQueue.Benchma
 ![bounded，1 个 consumer](memory-bounded-1-consumer-allocations.zh-CN.svg)
 
 ![bounded，12 个 consumer](memory-bounded-12-consumers-allocations.zh-CN.svg)
-
-
-Producer allocation 的计时包含 queue/channel creation 和 producer task scheduling。测试使用 12 个 task 写入 8,192 条消息；
-`Channel WriteAsync` 是 async baseline，`Channel TryWrite` 是同步参考，BufferQueue 的两个 bar 分别表示逐条和 batch producer API。
-这些数值不是峰值驻留内存，也不是单条消息 allocation。
-
-![unbounded producer](memory-producer-unbounded-allocations.zh-CN.svg)
-
-![bounded producer](memory-producer-bounded-allocations.zh-CN.svg)
 
 ## Read-path 优化测量
 

@@ -85,6 +85,10 @@ See [MemoryMappedFile storage](design/memory-mapped-file.md#flush-boundaries-and
 
 See [MemoryMappedFile storage](design/memory-mapped-file.md#recovery).
 
+### Producer Offset Persistence
+
+See [MemoryMappedFile storage](design/memory-mapped-file.md#producer-checkpoint).
+
 ### Offset Persistence
 
 See [MemoryMappedFile storage](design/memory-mapped-file.md#consumer-checkpoints).
@@ -92,10 +96,6 @@ See [MemoryMappedFile storage](design/memory-mapped-file.md#consumer-checkpoints
 ### Segment Retention
 
 See [MemoryMappedFile storage](design/memory-mapped-file.md#segment-retention).
-
-### Producer Offset Persistence
-
-See [MemoryMappedFile storage](design/memory-mapped-file.md#producer-checkpoint).
 
 ## Push Consumer Mode
 
