@@ -1,0 +1,21 @@
+Benchmark,Method,Mode,MessageSize,BatchSize,Consumers,Mean_us,Error_us,StdDev_us,Allocated,Allocated_B
+BoundedChannelVsMemoryBufferQueueConsumeBenchmark,Channel_ReadAllAsync_Batched,Bounded,8192,1,1,1197.835500,12.061494,11.846000,257.1484 KiB,263320
+BoundedChannelVsMemoryBufferQueueConsumeBenchmark,Channel_ReadAllAsync_Batched,Bounded,8192,10,1,900.464850,29.514216,33.988615,52.3984 KiB,53656
+BoundedChannelVsMemoryBufferQueueConsumeBenchmark,Channel_ReadAllAsync_Batched,Bounded,8192,50,1,793.738842,18.643729,20.722455,37.0234 KiB,37912
+BoundedChannelVsMemoryBufferQueueConsumeBenchmark,Channel_ReadAllAsync_Batched,Bounded,8192,100,1,779.516800,15.272375,17.587690,35.1016 KiB,35944
+BoundedChannelVsMemoryBufferQueueConsumeBenchmark,Channel_ReadAllAsync_Batched,Bounded,8192,1000,1,810.885600,23.921838,27.548425,36.5156 KiB,37392
+BoundedChannelVsMemoryBufferQueueConsumeBenchmark,Channel_ReadAllAsync_Batched,Bounded,8192,1,12,2525.361632,152.856012,169.899052,263.3750 KiB,269696
+BoundedChannelVsMemoryBufferQueueConsumeBenchmark,Channel_ReadAllAsync_Batched,Bounded,8192,10,12,2777.500850,162.397593,187.017310,58.8750 KiB,60288
+BoundedChannelVsMemoryBufferQueueConsumeBenchmark,Channel_ReadAllAsync_Batched,Bounded,8192,50,12,2807.491750,240.244293,276.665685,44.3438 KiB,45408
+BoundedChannelVsMemoryBufferQueueConsumeBenchmark,Channel_ReadAllAsync_Batched,Bounded,8192,100,12,2699.127842,131.536243,146.202185,43.8125 KiB,44864
+BoundedChannelVsMemoryBufferQueueConsumeBenchmark,Channel_ReadAllAsync_Batched,Bounded,8192,1000,12,2696.100750,220.518213,253.949102,54.5312 KiB,55840
+UnboundedChannelVsMemoryBufferQueueConsumeBenchmark,Channel_ReadAllAsync_Batched,Unbounded,8192,1,1,1227.838316,27.349104,30.398457,257.1484 KiB,263320
+UnboundedChannelVsMemoryBufferQueueConsumeBenchmark,Channel_ReadAllAsync_Batched,Unbounded,8192,10,1,929.906526,23.680267,26.320554,52.3984 KiB,53656
+UnboundedChannelVsMemoryBufferQueueConsumeBenchmark,Channel_ReadAllAsync_Batched,Unbounded,8192,50,1,837.535150,24.349572,28.041004,37.0234 KiB,37912
+UnboundedChannelVsMemoryBufferQueueConsumeBenchmark,Channel_ReadAllAsync_Batched,Unbounded,8192,100,1,812.734763,18.946493,21.058977,35.1016 KiB,35944
+UnboundedChannelVsMemoryBufferQueueConsumeBenchmark,Channel_ReadAllAsync_Batched,Unbounded,8192,1000,1,847.898237,25.180925,27.988532,36.5156 KiB,37392
+UnboundedChannelVsMemoryBufferQueueConsumeBenchmark,Channel_ReadAllAsync_Batched,Unbounded,8192,1,12,3220.943300,335.152895,385.962572,263.3750 KiB,269696
+UnboundedChannelVsMemoryBufferQueueConsumeBenchmark,Channel_ReadAllAsync_Batched,Unbounded,8192,10,12,3555.212250,193.549328,222.891694,58.8125 KiB,60224
+UnboundedChannelVsMemoryBufferQueueConsumeBenchmark,Channel_ReadAllAsync_Batched,Unbounded,8192,50,12,3542.770450,206.238080,237.504080,44.3438 KiB,45408
+UnboundedChannelVsMemoryBufferQueueConsumeBenchmark,Channel_ReadAllAsync_Batched,Unbounded,8192,100,12,3607.383400,202.344081,233.019744,44.6406 KiB,45712
+UnboundedChannelVsMemoryBufferQueueConsumeBenchmark,Channel_ReadAllAsync_Batched,Unbounded,8192,1000,12,3654.890300,204.607061,235.625796,50.5312 KiB,51744

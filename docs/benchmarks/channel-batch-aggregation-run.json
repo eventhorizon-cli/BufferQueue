@@ -1,0 +1,640 @@
+{
+  "schemaVersion": 1,
+  "baseCommit": "96ed0577886116008ccc7b6268bf1676bb8a1cbd",
+  "workingTreeChanges": "Public IReadOnlyList consumption API and Channel array-batching benchmark; not a released revision.",
+  "sourceAndHarnessSha256": "4fd668300cacbfc040109cb6ea66e386d959f13b8362d3592537a30b65bd4944",
+  "fingerprintFormat": "Sorted unique tracked and untracked non-ignored .cs/.csproj files under src and tests/BufferQueue.Benchmarks: UTF-8 path + NUL + file bytes + NUL.",
+  "configuration": {
+    "configuration": "Release",
+    "targetFramework": "net10.0",
+    "benchmarkDotNet": "0.15.8",
+    "runtime": ".NET 10.0.0 (10.0.0, 10.0.25.52411)",
+    "architecture": "Arm64",
+    "channel": {
+      "assembly": "System.Threading.Channels",
+      "assemblyVersion": "10.0.0.0",
+      "fileVersion": "10.0.25.52411",
+      "informationalVersion": "10.0.0+b0f34d51fccc69fd334253924abd8d6853fad7aa",
+      "source": "Microsoft.NETCore.App 10.0.0 runtime; no separate benchmark package reference"
+    },
+    "os": "macOS 27.0.1 (26A434) [Darwin 27.0.0]",
+    "dotnetSdk": "10.0.100",
+    "hardwareVerification": {
+      "model": "Apple M2 Max",
+      "physicalCores": 12,
+      "logicalCores": 12,
+      "benchmarkDotNetProcessorName": "Unknown processor"
+    }
+  },
+  "job": {
+    "launchCount": 1,
+    "warmupCount": 6,
+    "iterationCount": 20,
+    "invocationCount": 1,
+    "unrollFactor": 1,
+    "messageCount": 8192,
+    "batchSizes": [
+      1,
+      10,
+      50,
+      100,
+      1000
+    ],
+    "consumerCounts": [
+      1,
+      12
+    ],
+    "boundedCapacity": 8192,
+    "filter": "*ChannelVsMemoryBufferQueueConsumeBenchmark.Channel_ReadAllAsync_Batched"
+  },
+  "workload": {
+    "prefilled": true,
+    "commitMode": "not applicable to Channel",
+    "aggregation": "Fresh int[BatchSize] per nonempty batch, yielded as ReadOnlyMemory<int>; final partial prefix, no trim copy, pooling, or buffer reuse.",
+    "included": "Task scheduling, item reads, batch arrays, asynchronous item and batch iterators, count aggregation and validation.",
+    "excluded": "Queue construction, prefill, per-item application traversal and business processing.",
+    "completion": "Channel writer completed after prefill; every measured operation validates 8192 items."
+  },
+  "results": {
+    "file": "channel-batch-aggregation-results.csv",
+    "rows": 20,
+    "timeUnit": "microseconds",
+    "allocatedBytesColumn": "Allocated_B",
+    "confidenceInterval": "99.9%; Error_us is half-width"
+  },
+  "comparison": {
+    "allocationChartBaseline": "memory-queues-results.csv",
+    "baselineCommit": "e63d152b388a99069602a76131b9589bfd8b472c",
+    "baselineValidation": "All original 113 cases rerun successfully against the IReadOnlyList working change. Original charts retained; task/harness allocation differences are at most 72 B/op across these cases. No >10% BufferQueue timing shift with nonoverlapping reported intervals was observed.",
+    "timeCharts": "Original per-item Channel comparisons retained; array-batching times reported only in the detailed record."
+  },
+  "validation": {
+    "solutionTests": 890,
+    "frameworks": [
+      "net8.0",
+      "net10.0"
+    ],
+    "repeatedConcurrencyTests": 280,
+    "arrayBatchContractChecks": 200,
+    "arrayBatchContractCoverage": "Empty/single/partial/full drains, all five batch sizes, bounded/unbounded, 1/12 readers; exact values, unique arrays, retained batches."
+  },
+  "warnings": [
+    "Consumer iterations are shorter than BenchmarkDotNet recommended100ms; use reported uncertainty, not production-throughput claims.",
+    "macOS high-priority setup was denied."
+  ],
+  "retainedSamples": [
+    {
+      "case": "BufferQueue.Benchmarks.BoundedChannelVsMemoryBufferQueueConsumeBenchmark.Channel_ReadAllAsync_Batched(MessageSize: 8192, BatchSize: 1, Consumers: 1)",
+      "retainedNanosecondsPerOperation": [
+        1194999,
+        1211333,
+        1175291,
+        1194958,
+        1212292,
+        1200333,
+        1197041,
+        1181291,
+        1183041,
+        1216458,
+        1190624,
+        1204750,
+        1202333,
+        1211583,
+        1192083,
+        1196958
+      ],
+      "retainedCount": 16,
+      "outliersNanosecondsPerOperation": []
+    },
+    {
+      "case": "BufferQueue.Benchmarks.BoundedChannelVsMemoryBufferQueueConsumeBenchmark.Channel_ReadAllAsync_Batched(MessageSize: 8192, BatchSize: 1, Consumers: 12)",
+      "retainedNanosecondsPerOperation": [
+        2702125,
+        2540583,
+        2461583,
+        2733791,
+        2022166,
+        2861750,
+        2660708,
+        2486750,
+        2433458,
+        2396333,
+        2536667,
+        2421958,
+        2564250,
+        2475792,
+        2630333,
+        2541666,
+        2469708,
+        2513375,
+        2528875
+      ],
+      "retainedCount": 19,
+      "outliersNanosecondsPerOperation": [
+        2022166,
+        2861750
+      ]
+    },
+    {
+      "case": "BufferQueue.Benchmarks.BoundedChannelVsMemoryBufferQueueConsumeBenchmark.Channel_ReadAllAsync_Batched(MessageSize: 8192, BatchSize: 10, Consumers: 1)",
+      "retainedNanosecondsPerOperation": [
+        933229.5,
+        927270.5,
+        897813.5,
+        946021.5,
+        851812.5,
+        954270.5,
+        924854.5,
+        916187.5,
+        917895.5,
+        836479.5,
+        896854.5,
+        900604.5,
+        927729.5,
+        841312.5,
+        887896.5,
+        895396.5,
+        912771.5,
+        888729.5,
+        847312.5,
+        904854.5
+      ],
+      "retainedCount": 20,
+      "outliersNanosecondsPerOperation": []
+    },
+    {
+      "case": "BufferQueue.Benchmarks.BoundedChannelVsMemoryBufferQueueConsumeBenchmark.Channel_ReadAllAsync_Batched(MessageSize: 8192, BatchSize: 10, Consumers: 12)",
+      "retainedNanosecondsPerOperation": [
+        2577126,
+        2511959,
+        2376417,
+        2801876,
+        2883376,
+        2755751,
+        2504334,
+        2828168,
+        2519084,
+        2779168,
+        2998126,
+        2896459,
+        2741459,
+        2921876,
+        2935126,
+        2978126,
+        2958959,
+        2818584,
+        2759084,
+        3004959
+      ],
+      "retainedCount": 20,
+      "outliersNanosecondsPerOperation": []
+    },
+    {
+      "case": "BufferQueue.Benchmarks.BoundedChannelVsMemoryBufferQueueConsumeBenchmark.Channel_ReadAllAsync_Batched(MessageSize: 8192, BatchSize: 50, Consumers: 1)",
+      "retainedNanosecondsPerOperation": [
+        830083,
+        769499,
+        838667,
+        817416,
+        788500,
+        794249,
+        807708,
+        802000,
+        780042,
+        818375,
+        782208,
+        786750,
+        778333,
+        771375,
+        769875,
+        785792,
+        803833,
+        781125,
+        775208
+      ],
+      "retainedCount": 19,
+      "outliersNanosecondsPerOperation": []
+    },
+    {
+      "case": "BufferQueue.Benchmarks.BoundedChannelVsMemoryBufferQueueConsumeBenchmark.Channel_ReadAllAsync_Batched(MessageSize: 8192, BatchSize: 50, Consumers: 12)",
+      "retainedNanosecondsPerOperation": [
+        2294499.5,
+        2737541.5,
+        2348625.5,
+        2855541.5,
+        2605042.5,
+        2821624.5,
+        2519333.5,
+        2533541.5,
+        2478875.5,
+        2858167.5,
+        2911374.5,
+        3183833.5,
+        3091374.5,
+        2899458.5,
+        2974375.5,
+        3179666.5,
+        3107208.5,
+        3168500.5,
+        2922958.5,
+        2658291.5
+      ],
+      "retainedCount": 20,
+      "outliersNanosecondsPerOperation": []
+    },
+    {
+      "case": "BufferQueue.Benchmarks.BoundedChannelVsMemoryBufferQueueConsumeBenchmark.Channel_ReadAllAsync_Batched(MessageSize: 8192, BatchSize: 100, Consumers: 1)",
+      "retainedNanosecondsPerOperation": [
+        800708.5,
+        794791.5,
+        777708.5,
+        794667.5,
+        787874.5,
+        810583.5,
+        783792.5,
+        776749.5,
+        786125.5,
+        762583.5,
+        728333.5,
+        767375.5,
+        795666.5,
+        785750.5,
+        777166.5,
+        779083.5,
+        768291.5,
+        763416.5,
+        768958.5,
+        780708.5
+      ],
+      "retainedCount": 20,
+      "outliersNanosecondsPerOperation": [
+        728333.5
+      ]
+    },
+    {
+      "case": "BufferQueue.Benchmarks.BoundedChannelVsMemoryBufferQueueConsumeBenchmark.Channel_ReadAllAsync_Batched(MessageSize: 8192, BatchSize: 100, Consumers: 12)",
+      "retainedNanosecondsPerOperation": [
+        2628459,
+        2635126,
+        2454084,
+        2799376,
+        2721126,
+        2522001,
+        2764834,
+        2659250,
+        2818126,
+        2813334,
+        2761709,
+        2499834,
+        2771709,
+        2726417,
+        2426709,
+        2722542,
+        2699834,
+        2858542,
+        3000417
+      ],
+      "retainedCount": 19,
+      "outliersNanosecondsPerOperation": []
+    },
+    {
+      "case": "BufferQueue.Benchmarks.BoundedChannelVsMemoryBufferQueueConsumeBenchmark.Channel_ReadAllAsync_Batched(MessageSize: 8192, BatchSize: 1000, Consumers: 1)",
+      "retainedNanosecondsPerOperation": [
+        862875.5,
+        837083.5,
+        837000.5,
+        782833.5,
+        826000.5,
+        808125.5,
+        760000.5,
+        810166.5,
+        851875.5,
+        810208.5,
+        746875.5,
+        798958.5,
+        800791.5,
+        806041.5,
+        802416.5,
+        805041.5,
+        832958.5,
+        813625.5,
+        805916.5,
+        818916.5
+      ],
+      "retainedCount": 20,
+      "outliersNanosecondsPerOperation": [
+        746875.5,
+        760000.5
+      ]
+    },
+    {
+      "case": "BufferQueue.Benchmarks.BoundedChannelVsMemoryBufferQueueConsumeBenchmark.Channel_ReadAllAsync_Batched(MessageSize: 8192, BatchSize: 1000, Consumers: 12)",
+      "retainedNanosecondsPerOperation": [
+        2356876,
+        2290126,
+        2702084,
+        2604167,
+        2406292,
+        2496542,
+        2624959,
+        3000751,
+        2850292,
+        2821751,
+        2475668,
+        2671126,
+        2944584,
+        3233251,
+        2845334,
+        2614084,
+        2783501,
+        2418167,
+        3098793,
+        2683667
+      ],
+      "retainedCount": 20,
+      "outliersNanosecondsPerOperation": []
+    },
+    {
+      "case": "BufferQueue.Benchmarks.UnboundedChannelVsMemoryBufferQueueConsumeBenchmark.Channel_ReadAllAsync_Batched(MessageSize: 8192, BatchSize: 1, Consumers: 1)",
+      "retainedNanosecondsPerOperation": [
+        1251167,
+        1265501,
+        1226043,
+        1244542,
+        1246417,
+        1235043,
+        1243251,
+        1184501,
+        1199917,
+        1228626,
+        1189001,
+        1148417,
+        1211750,
+        1226959,
+        1225875,
+        1274542,
+        1245375,
+        1231501,
+        1250500
+      ],
+      "retainedCount": 19,
+      "outliersNanosecondsPerOperation": [
+        1148417
+      ]
+    },
+    {
+      "case": "BufferQueue.Benchmarks.UnboundedChannelVsMemoryBufferQueueConsumeBenchmark.Channel_ReadAllAsync_Batched(MessageSize: 8192, BatchSize: 1, Consumers: 12)",
+      "retainedNanosecondsPerOperation": [
+        4123291,
+        3358458,
+        3273916,
+        3326208,
+        3370833,
+        3021042,
+        3376208,
+        2929249,
+        3485874,
+        3563667,
+        3030333,
+        3621166,
+        3515041,
+        2837916,
+        3059416,
+        3509625,
+        2686541,
+        2553042,
+        2631374,
+        3145666
+      ],
+      "retainedCount": 20,
+      "outliersNanosecondsPerOperation": []
+    },
+    {
+      "case": "BufferQueue.Benchmarks.UnboundedChannelVsMemoryBufferQueueConsumeBenchmark.Channel_ReadAllAsync_Batched(MessageSize: 8192, BatchSize: 10, Consumers: 1)",
+      "retainedNanosecondsPerOperation": [
+        951937,
+        928062,
+        946312,
+        964937,
+        886187,
+        903938,
+        961062,
+        924062,
+        928271,
+        954979,
+        904729,
+        942729,
+        925896,
+        924020,
+        936688,
+        919312,
+        962187,
+        937479,
+        865437
+      ],
+      "retainedCount": 19,
+      "outliersNanosecondsPerOperation": [
+        865437
+      ]
+    },
+    {
+      "case": "BufferQueue.Benchmarks.UnboundedChannelVsMemoryBufferQueueConsumeBenchmark.Channel_ReadAllAsync_Batched(MessageSize: 8192, BatchSize: 10, Consumers: 12)",
+      "retainedNanosecondsPerOperation": [
+        3655667,
+        3456958,
+        3566458,
+        3710291,
+        3403458,
+        3586833,
+        3428666,
+        3524000,
+        3697125,
+        3785249,
+        3719083,
+        3508125,
+        3740042,
+        3079208,
+        3674458,
+        3645833,
+        3716208,
+        3809250,
+        2944708,
+        3452625
+      ],
+      "retainedCount": 20,
+      "outliersNanosecondsPerOperation": [
+        2944708
+      ]
+    },
+    {
+      "case": "BufferQueue.Benchmarks.UnboundedChannelVsMemoryBufferQueueConsumeBenchmark.Channel_ReadAllAsync_Batched(MessageSize: 8192, BatchSize: 50, Consumers: 1)",
+      "retainedNanosecondsPerOperation": [
+        878749,
+        851083,
+        843250,
+        861750,
+        843833,
+        844624,
+        849833,
+        863125,
+        879458,
+        820708,
+        826125,
+        820958,
+        833167,
+        824542,
+        823999,
+        819208,
+        880625,
+        775958,
+        787458,
+        822250
+      ],
+      "retainedCount": 20,
+      "outliersNanosecondsPerOperation": []
+    },
+    {
+      "case": "BufferQueue.Benchmarks.UnboundedChannelVsMemoryBufferQueueConsumeBenchmark.Channel_ReadAllAsync_Batched(MessageSize: 8192, BatchSize: 50, Consumers: 12)",
+      "retainedNanosecondsPerOperation": [
+        3327583,
+        3682375,
+        3696666,
+        3412249,
+        3731416,
+        3723999,
+        2825541,
+        3430792,
+        3767749,
+        3511833,
+        3647916,
+        3849125,
+        3488917,
+        3498958,
+        3535083,
+        3346875,
+        3809541,
+        3765333,
+        3332333,
+        3471125
+      ],
+      "retainedCount": 20,
+      "outliersNanosecondsPerOperation": [
+        2825541
+      ]
+    },
+    {
+      "case": "BufferQueue.Benchmarks.UnboundedChannelVsMemoryBufferQueueConsumeBenchmark.Channel_ReadAllAsync_Batched(MessageSize: 8192, BatchSize: 100, Consumers: 1)",
+      "retainedNanosecondsPerOperation": [
+        847458.5,
+        810208.5,
+        825166.5,
+        766542.5,
+        848999.5,
+        831291.5,
+        830624.5,
+        823292.5,
+        825875.5,
+        809375.5,
+        808458.5,
+        806916.5,
+        815416.5,
+        776458.5,
+        800250.5,
+        805124.5,
+        815208.5,
+        806499.5,
+        788792.5
+      ],
+      "retainedCount": 19,
+      "outliersNanosecondsPerOperation": [
+        766542.5
+      ]
+    },
+    {
+      "case": "BufferQueue.Benchmarks.UnboundedChannelVsMemoryBufferQueueConsumeBenchmark.Channel_ReadAllAsync_Batched(MessageSize: 8192, BatchSize: 100, Consumers: 12)",
+      "retainedNanosecondsPerOperation": [
+        3001000,
+        3516542,
+        3767209,
+        3518917,
+        3527209,
+        3368584,
+        3489417,
+        3765542,
+        3525917,
+        3741416,
+        3917291,
+        3434167,
+        3760541,
+        3913375,
+        3450459,
+        3919166,
+        3855500,
+        3613416,
+        3700000,
+        3362000
+      ],
+      "retainedCount": 20,
+      "outliersNanosecondsPerOperation": [
+        3001000
+      ]
+    },
+    {
+      "case": "BufferQueue.Benchmarks.UnboundedChannelVsMemoryBufferQueueConsumeBenchmark.Channel_ReadAllAsync_Batched(MessageSize: 8192, BatchSize: 1000, Consumers: 1)",
+      "retainedNanosecondsPerOperation": [
+        896229.5,
+        857479.5,
+        848604.5,
+        854021.5,
+        856020.5,
+        827187.5,
+        852895.5,
+        855687.5,
+        869770.5,
+        866729.5,
+        829646.5,
+        840562.5,
+        890437.5,
+        764396.5,
+        828396.5,
+        832063.5,
+        830604.5,
+        858562.5,
+        850770.5
+      ],
+      "retainedCount": 19,
+      "outliersNanosecondsPerOperation": [
+        764396.5
+      ]
+    },
+    {
+      "case": "BufferQueue.Benchmarks.UnboundedChannelVsMemoryBufferQueueConsumeBenchmark.Channel_ReadAllAsync_Batched(MessageSize: 8192, BatchSize: 1000, Consumers: 12)",
+      "retainedNanosecondsPerOperation": [
+        3402501,
+        3658376,
+        3940750,
+        3714167,
+        3313168,
+        3815751,
+        3839834,
+        2965750,
+        3717918,
+        3826501,
+        3626168,
+        3553334,
+        3795042,
+        3763667,
+        3387375,
+        3790126,
+        3704959,
+        3800626,
+        3898584,
+        3583209
+      ],
+      "retainedCount": 20,
+      "outliersNanosecondsPerOperation": [
+        2965750
+      ]
+    }
+  ]
+}
