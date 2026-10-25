@@ -17,6 +17,7 @@ var allBenchmarks = new[]
 {
     typeof(BlockingCollectionVsMemoryBufferQueueProduceBenchmark),
     typeof(ChannelVsMemoryBufferQueueProduceBenchmark),
+    typeof(SinglePartitionChannelVsMemoryBufferQueueProduceBenchmark),
     typeof(MemoryVsMemoryMappedFileBufferQueueProduceBenchmark),
     typeof(MemoryBufferPartitionerBenchmark),
     typeof(StringPartitionRoutingBenchmark),
@@ -25,6 +26,8 @@ var allBenchmarks = new[]
     typeof(UnboundedChannelVsMemoryBufferQueueConsumeBenchmark),
     typeof(SingleReaderChannelVsMemoryBufferQueueConsumeBenchmark),
     typeof(BoundedChannelVsMemoryBufferQueueConsumeBenchmark),
+    typeof(SinglePartitionUnboundedChannelVsMemoryBufferQueueConsumeBenchmark),
+    typeof(SinglePartitionBoundedChannelVsMemoryBufferQueueConsumeBenchmark),
     typeof(MemoryBufferOffsetBenchmark),
     typeof(MemoryCommitModeBenchmark),
     typeof(MemoryAutoCommitOptimizationBenchmark),

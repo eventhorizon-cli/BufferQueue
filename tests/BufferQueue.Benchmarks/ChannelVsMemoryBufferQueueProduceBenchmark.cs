@@ -26,6 +26,8 @@ public class ChannelVsMemoryBufferQueueProduceBenchmark
 
     [Params(8192)] public int MessageSize { get; set; }
 
+    protected virtual int PartitionCount => Environment.ProcessorCount;
+
     [GlobalSetup]
     public void Setup()
     {
@@ -90,7 +92,7 @@ public class ChannelVsMemoryBufferQueueProduceBenchmark
         var queue = new MemoryBufferQueue<int>(new MemoryBufferQueueOptions
         {
             TopicName = "test",
-            PartitionNumber = Environment.ProcessorCount,
+            PartitionNumber = PartitionCount,
             BoundedCapacity = Mode == CapacityMode.Bounded ? (ulong)MessageSize : null,
         });
         var producer = queue.GetProducer();
@@ -115,7 +117,7 @@ public class ChannelVsMemoryBufferQueueProduceBenchmark
         var queue = new MemoryBufferQueue<int>(new MemoryBufferQueueOptions
         {
             TopicName = "test",
-            PartitionNumber = Environment.ProcessorCount,
+            PartitionNumber = PartitionCount,
             BoundedCapacity = Mode == CapacityMode.Bounded ? (ulong)MessageSize : null,
         });
         var producer = queue.GetProducer();

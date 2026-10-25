@@ -2,7 +2,8 @@
 
 [English](memory-queues.md)
 
-这份报告记录根 README 图表背后的完整基准测试。汇总文件是
+这份报告是根 README 链接的历史 12 partition 归档，不是当前主图表的数据来源。README 当前的测量图表来自单 partition 报告。
+汇总文件是
 [memory-queues-results.csv](memory-queues-results.csv)，包含 8 行 producer 结果和 3 个消费 benchmark 类的 105
 行结果。CSV 保留 mean、error、standard deviation、allocation 以及每个配置；下面的表格为便于阅读主要展示
 mean 和 allocation。
@@ -10,6 +11,35 @@ mean 和 allocation。
 除特别说明外，本报告使用 Apple M2 Max（12 核）、macOS 27.0.1 / Arm64、.NET 10.0.0、runtime 自带的
 `System.Threading.Channels` 程序集 10.0.0.0（文件版本 10.0.25.52411）和 BenchmarkDotNet 0.15.8 Release 配置。
 benchmark 项目没有单独引用 `System.Threading.Channels` 包，因此这些 Channel 数据使用测试 runtime 自带的程序集。
+
+## 12 Partition 图表
+
+本节集中列出本文保留的历史 12 partition 图表。当前 README 先展示[单 partition 生产和消费报告](single-partition.zh-CN.md)；
+下列图表是原始多 partition 参考，不应与该报告当作同一次运行进行比较。
+
+![历史 unbounded producer 耗时](memory-producer-unbounded.zh-CN.svg)
+
+![历史 bounded producer 耗时](memory-producer-bounded.zh-CN.svg)
+
+![历史 unbounded producer 内存分配](memory-producer-unbounded-allocations.zh-CN.svg)
+
+![历史 bounded producer 内存分配](memory-producer-bounded-allocations.zh-CN.svg)
+
+![历史 unbounded 消费耗时，1 个 consumer](memory-unbounded-1-consumer.zh-CN.svg)
+
+![历史 unbounded 消费耗时，12 个 consumer](memory-unbounded-12-consumers.zh-CN.svg)
+
+![历史 bounded 消费耗时，1 个 consumer](memory-bounded-1-consumer.zh-CN.svg)
+
+![历史 bounded 消费耗时，12 个 consumer](memory-bounded-12-consumers.zh-CN.svg)
+
+![历史 unbounded 消费内存分配，1 个 consumer](memory-unbounded-1-consumer-allocations.zh-CN.svg)
+
+![历史 unbounded 消费内存分配，12 个 consumer](memory-unbounded-12-consumers-allocations.zh-CN.svg)
+
+![历史 bounded 消费内存分配，1 个 consumer](memory-bounded-1-consumer-allocations.zh-CN.svg)
+
+![历史 bounded 消费内存分配，12 个 consumer](memory-bounded-12-consumers-allocations.zh-CN.svg)
 
 ## Producer 对比
 
@@ -28,10 +58,6 @@ producer 等待背压的路径。
 | bounded | `Channel.TryWrite(item)` | 302.205 | 67.33 |
 | bounded | `BufferQueue.ProduceAsync(item)` | 343.133 | 55.13 |
 | bounded | `BufferQueue.ProduceAsync(ReadOnlyMemory<int>)` | 37.588 | 55.08 |
-
-![unbounded Producer API](memory-producer-unbounded.zh-CN.svg)
-
-![bounded Producer API](memory-producer-bounded.zh-CN.svg)
 
 源码：[ChannelVsMemoryBufferQueueProduceBenchmark.cs](../../tests/BufferQueue.Benchmarks/ChannelVsMemoryBufferQueueProduceBenchmark.cs)。
 
@@ -68,6 +94,10 @@ dotnet run -c Release --project tests/BufferQueue.Benchmarks/BufferQueue.Benchma
 ```
 
 ## 主要消费对比
+
+当前 README 先展示新的[单 partition 生产和消费测量](single-partition.zh-CN.md)。本文是历史 12 partition 归档，
+包括 1 个 consumer 的参考；不能根据 consumer 数量推断 partition 数量。[12 Partition 图表索引](#12-partition-图表)
+集中列出这些历史图表。
 
 本节测量预填充队列的消费路径，包含异步 BufferQueue 消费和 Channel 参考。主要 BufferQueue 行使用
 `AutoCommit = true`；Manual Commit 和同步 `TryRead` 参考在下面单独展示。
@@ -224,10 +254,6 @@ Channel 每轮返回一条消息，BufferQueue 每轮返回一个 batch。当前
 Producer allocation 的计时包含 queue/channel creation 和 producer task scheduling。测试使用 12 个 task 写入 8,192 条消息；
 `Channel WriteAsync` 是 async baseline，`Channel TryWrite` 是同步参考，BufferQueue 的两个 bar 分别表示逐条和 batch producer API。
 这些数值不是峰值驻留内存，也不是单条消息 allocation。
-
-![unbounded producer](memory-producer-unbounded-allocations.zh-CN.svg)
-
-![bounded producer](memory-producer-bounded-allocations.zh-CN.svg)
 
 Consumer 图将 BenchmarkDotNet 的 allocation 统一转换为 `KiB/op`（`1 KiB = 1,024 B`）。消费测试从 12 个 partition
 中消费预填充的 8,192 条消息，分别使用 1 个和 12 个 consumer；`BatchSize` 横轴按分类配置等距显示，纵轴使用对数刻度。
