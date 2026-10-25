@@ -15,7 +15,9 @@ public class UnboundedChannelVsMemoryBufferQueueConsumeBenchmark
 
     [Params(1, 10, 50, 100, 1000)] public int BatchSize { get; set; }
 
-    public IEnumerable<int> ConsumerCounts => new[] { 1, Environment.ProcessorCount }.Distinct();
+    public virtual IEnumerable<int> ConsumerCounts => new[] { 1, Environment.ProcessorCount }.Distinct();
+
+    protected virtual int PartitionCount => Environment.ProcessorCount;
 
     [ParamsSource(nameof(ConsumerCounts))]
     public int Consumers { get; set; }
@@ -28,13 +30,13 @@ public class UnboundedChannelVsMemoryBufferQueueConsumeBenchmark
         var unboundedMemoryBufferQueue = new MemoryBufferQueue<int>(new MemoryBufferQueueOptions
         {
             TopicName = "test-unbounded",
-            PartitionNumber = Environment.ProcessorCount
+            PartitionNumber = PartitionCount
         });
         var unboundedMemoryBufferQueueProducer = unboundedMemoryBufferQueue.GetProducer();
         var unboundedManualCommitQueue = new MemoryBufferQueue<int>(new MemoryBufferQueueOptions
         {
             TopicName = "test-unbounded-manual-commit",
-            PartitionNumber = Environment.ProcessorCount
+            PartitionNumber = PartitionCount
         });
         var unboundedManualCommitProducer = unboundedManualCommitQueue.GetProducer();
 

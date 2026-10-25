@@ -2,7 +2,8 @@
 
 [Simplified Chinese](memory-queues.zh-CN.md)
 
-This report is the detailed record behind the charts in the root README. The checked-in summary file is
+This report is the historical 12-partition archive linked from the root README, not the current main chart dataset.
+The README's current measured charts come from the single-partition report. The checked-in summary file is
 [memory-queues-results.csv](memory-queues-results.csv). It contains the eight producer rows and the 105 rows from the
 three consume benchmark classes. The CSV retains the measured mean, error, standard deviation, allocation, and every
 configuration used for the charts; the tables below keep the comparison readable by showing mean time and allocation.
@@ -11,6 +12,36 @@ Unless noted otherwise, the measurements in this report use Apple M2 Max (12 cor
 .NET 10.0.0, the runtime-provided `System.Threading.Channels` assembly 10.0.0.0 (file version 10.0.25.52411),
 and BenchmarkDotNet 0.15.8 in Release mode. The benchmark project has no separate `System.Threading.Channels`
 package reference, so these Channel rows use the framework assembly shipped with the tested runtime.
+
+## 12-Partition Charts
+
+This compact index collects the historical 12-partition charts retained by this report. The current README leads with
+the [single-partition produce and consume report](single-partition.md); these charts are the original multi-partition
+reference and must not be read as a same-run comparison with that report.
+
+![Historical unbounded producer time](memory-producer-unbounded.svg)
+
+![Historical bounded producer time](memory-producer-bounded.svg)
+
+![Historical unbounded producer allocations](memory-producer-unbounded-allocations.svg)
+
+![Historical bounded producer allocations](memory-producer-bounded-allocations.svg)
+
+![Historical unbounded consume time, 1 consumer](memory-unbounded-1-consumer.svg)
+
+![Historical unbounded consume time, 12 consumers](memory-unbounded-12-consumers.svg)
+
+![Historical bounded consume time, 1 consumer](memory-bounded-1-consumer.svg)
+
+![Historical bounded consume time, 12 consumers](memory-bounded-12-consumers.svg)
+
+![Historical unbounded consume allocations, 1 consumer](memory-unbounded-1-consumer-allocations.svg)
+
+![Historical unbounded consume allocations, 12 consumers](memory-unbounded-12-consumers-allocations.svg)
+
+![Historical bounded consume allocations, 1 consumer](memory-bounded-1-consumer-allocations.svg)
+
+![Historical bounded consume allocations, 12 consumers](memory-bounded-12-consumers-allocations.svg)
 
 ## Producer Comparison
 
@@ -30,10 +61,6 @@ not include producer backpressure waiting.
 | bounded | `Channel.TryWrite(item)` | 302.205 | 67.33 |
 | bounded | `BufferQueue.ProduceAsync(item)` | 343.133 | 55.13 |
 | bounded | `BufferQueue.ProduceAsync(ReadOnlyMemory<int>)` | 37.588 | 55.08 |
-
-![Unbounded producer APIs](memory-producer-unbounded.svg)
-
-![Bounded producer APIs](memory-producer-bounded.svg)
 
 Source: [ChannelVsMemoryBufferQueueProduceBenchmark.cs](../../tests/BufferQueue.Benchmarks/ChannelVsMemoryBufferQueueProduceBenchmark.cs).
 
@@ -71,6 +98,11 @@ dotnet run -c Release --project tests/BufferQueue.Benchmarks/BufferQueue.Benchma
 ```
 
 ## Primary Consume Comparison
+
+The current README leads with the new [single-partition produce and consume measurements](single-partition.md).
+This report is the historical 12-partition archive, including the 1-consumer reference; partition counts must not be
+inferred from consumer counts. The compact [12-partition chart index](#12-partition-charts) keeps those historical
+visuals together.
 
 This section measures prefilled queue draining through asynchronous BufferQueue consumption and Channel references.
 The primary BufferQueue rows use `AutoCommit = true`; Manual Commit and the synchronous `TryRead` reference are
@@ -238,10 +270,6 @@ Producer allocation includes queue/channel creation and producer task scheduling
 12 tasks and 8,192 items; `Channel WriteAsync` is the async baseline, `Channel TryWrite` is a synchronous reference,
 and the two BufferQueue bars are the item and batch producer APIs. These are not peak resident-memory or per-item
 allocation measurements.
-
-![unbounded producer](memory-producer-unbounded-allocations.svg)
-
-![bounded producer](memory-producer-bounded-allocations.svg)
 
 Consumer charts normalize BenchmarkDotNet's allocation display to `KiB/op` (`1 KiB = 1,024 B`). Consumption runs drain
 8,192 prefetched items from 12 partitions with 1 or 12 consumers; `BatchSize` values are categorical, and the y-axis

@@ -1,0 +1,9 @@
+Benchmark,Method,Mode,MessageSize,Partitions,Producers,Mean_us,Error_us,StdDev_us,Allocated_B
+SinglePartitionChannelVsMemoryBufferQueueProduceBenchmark,Channel_TryWrite_Concurrent,Unbounded,8192,1,12,283.092624,1.300242,1.015144,137760
+SinglePartitionChannelVsMemoryBufferQueueProduceBenchmark,Channel_WriteAsync_Concurrent,Unbounded,8192,1,12,334.381516,2.387583,2.116530,138720
+SinglePartitionChannelVsMemoryBufferQueueProduceBenchmark,MemoryBufferQueue_Produce_Concurrent,Unbounded,8192,1,12,288.760047,1.209752,1.010198,37282
+SinglePartitionChannelVsMemoryBufferQueueProduceBenchmark,MemoryBufferQueue_Produce_ReadOnlyMemoryBatch_Concurrent,Unbounded,8192,1,12,67.457196,0.281443,0.249492,37276
+SinglePartitionChannelVsMemoryBufferQueueProduceBenchmark,Channel_TryWrite_Concurrent,Bounded,8192,1,12,301.635059,1.090086,0.966333,68944
+SinglePartitionChannelVsMemoryBufferQueueProduceBenchmark,Channel_WriteAsync_Concurrent,Bounded,8192,1,12,396.067387,1.234106,1.154384,69904
+SinglePartitionChannelVsMemoryBufferQueueProduceBenchmark,MemoryBufferQueue_Produce_Concurrent,Bounded,8192,1,12,324.122233,1.958985,1.635842,37466
+SinglePartitionChannelVsMemoryBufferQueueProduceBenchmark,MemoryBufferQueue_Produce_ReadOnlyMemoryBatch_Concurrent,Bounded,8192,1,12,66.681312,0.364427,0.323055,37462

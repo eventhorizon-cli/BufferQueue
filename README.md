@@ -38,39 +38,45 @@ consumer progress when processing needs explicit acknowledgement or multiple con
 and the [BufferQueue consumer model](docs/design/consumer-model.md) for the respective semantics.
 
 The following sections compare Memory BufferQueue with `System.Threading.Channels`: production first, then consumption.
-MemoryMappedFile is not included.
+MemoryMappedFile is not included. The main charts use **one BufferQueue partition versus one Channel**;
+[12-partition results](docs/benchmarks/memory-queues.md#12-partition-charts) are available separately.
 
 Benchmark environment: Apple M2 Max (12 cores), macOS 27.0.1 / Arm64, .NET 10.0.0, runtime-provided `System.Threading.Channels` 10.0.0, BenchmarkDotNet 0.15.8 (Release).
 
 ### Production Benchmarks
 
 These charts compare asynchronous Channel `WriteAsync` with asynchronous BufferQueue item and batch writes;
-`TryWrite` is shown as a synchronous reference. The workload writes 8,192 values from 12 producer tasks.
+`TryWrite` is shown as a synchronous reference. The workload writes 8,192 values from 12 producer tasks into
+one Channel or a BufferQueue with **1 partition**. Producer concurrency remains 12 on both sides; each batch call
+submits one task's chunk (683 items, or 679 for the final chunk).
 
-![Unbounded producer APIs](docs/benchmarks/memory-producer-unbounded.svg)
+![Unbounded producer APIs](docs/benchmarks/memory-single-partition-producer-unbounded.svg)
 
-![Bounded producer APIs](docs/benchmarks/memory-producer-bounded.svg)
+![Bounded producer APIs](docs/benchmarks/memory-single-partition-producer-bounded.svg)
 
 The timed operation includes queue creation and task scheduling. Bounded capacity fits the complete workload,
 so this measures writing into available capacity, not waiting for space.
 
-For single-item async writes, BufferQueue and Channel `WriteAsync` take similar time when unbounded; BufferQueue takes
-about 12% less time when bounded. BufferQueue batch writes take about 89–90% less time than Channel single-item writes,
-reflecting the different number of API calls.
+With one partition, BufferQueue single-item async writes take about 14–18% less time than Channel `WriteAsync`.
+Batch writes take about 80–83% less time, reflecting the different number of API calls. These ranges cover
+Unbounded and Bounded results; [12-partition measurements](docs/benchmarks/memory-queues.md#12-partition-charts) are reported separately.
 
 ### Consumption Benchmarks
 
 These charts drain prefilled queues through asynchronous BufferQueue consumption and `Channel.ReadAllAsync`.
-The workload uses `8,192` `int` messages, `12` BufferQueue partitions, and `1` or `12` consumers; `BatchSize` affects
-BufferQueue only. The primary summary uses `AutoCommit = true`; the charts also include a separately measured Manual
-Commit series and a gray `Channel<T>.TryRead` synchronous reference.
+Each operation consumes `8,192` `int` messages with **1 partition / 1 consumer**, compared with one Channel and one reader.
+In these time charts, `BatchSize` affects BufferQueue only. Auto Commit and Manual Commit are measured separately,
+with a gray `Channel<T>.TryRead` synchronous reference. See the [12-partition results](docs/benchmarks/memory-queues.md#12-partition-charts)
+for one consumer scanning multiple partitions and twelve consumers reading their assigned partitions. Channel readers
+share one queue in those comparisons, so the multi-consumer results also reflect a different concurrency organization.
 
 This comparison measures batch consumption capability when draining a backlog: BufferQueue retrieves batches and
 adds their `Count()`, while Channel retrieves and counts individual items without collecting them into arrays. This captures the reduction in API calls
 and asynchronous iterations from batching. BufferQueue's batch creation and element copying are included; application-side
 per-item traversal and business processing are excluded. [Separate traversal measurements](docs/benchmarks/batch-enumeration.md)
 cover that additional cost. [Channel array-batching results](docs/benchmarks/channel-batch-aggregation.md) separately
-record the elapsed time and allocation when Channel also returns batches.
+record the elapsed time and allocation when Channel also returns batches; the [single-partition report](docs/benchmarks/single-partition.md)
+includes the same adapter for the new 1-partition scenario.
 The time charts below compare the native APIs. Array batching adds application-side work to Channel; its extra
 elapsed time is not a slowdown of Channel's native read API, so those timings remain in the linked report.
 
@@ -78,17 +84,14 @@ elapsed time is not a slowdown of Channel's native read API, so those timings re
 one-consumer workload at BatchSize 10–100. See the [consumption allocation charts](#consumption-allocations) below
 for the supplementary Channel + array batching curve. This is an allocation comparison, not an elapsed-time claim.**
 
-#### Unbounded
+#### 1 Partition / 1 Consumer
 
-![Unbounded queue benchmark, 1 consumer](docs/benchmarks/memory-unbounded-1-consumer.svg)
+One BufferQueue partition versus one Channel, each with one consumer. This shows the batch API comparison without
+parallel consumption across partitions; the APIs still differ in batch ownership and commit semantics.
 
-![Unbounded queue benchmark, 12 consumers](docs/benchmarks/memory-unbounded-12-consumers.svg)
+![Unbounded consumption, 1 partition and 1 consumer](docs/benchmarks/memory-single-partition-unbounded-time.svg)
 
-#### Bounded
-
-![Bounded queue benchmark, 1 consumer](docs/benchmarks/memory-bounded-1-consumer.svg)
-
-![Bounded queue benchmark, 12 consumers](docs/benchmarks/memory-bounded-12-consumers.svg)
+![Bounded consumption, 1 partition and 1 consumer](docs/benchmarks/memory-single-partition-bounded-time.svg)
 
 Manual Commit measurements include `CommitAsync` after every returned batch.
 
@@ -98,11 +101,9 @@ acknowledgement, checkpoint, or replay.
 
 In this prefilled workload, compared with `Channel.ReadAllAsync`, BufferQueue with Auto Commit shows:
 
-- **1 consumer, BatchSize = 1:** elapsed time is about 2.0–2.6× Channel's; Channel is faster for this single-item case.
-- **1 consumer, larger batches:** BatchSize = 10 reduces elapsed time by about 53–63%; BatchSize = 50–100 reduces it by
-  about 87–92%. These ranges cover both bounded and unbounded results.
-- **12 consumers:** BufferQueue has lower mean elapsed time at all five measured batch sizes in both modes. Channel
-  readers share one queue, while BufferQueue consumers read assigned partitions, so the comparison also reflects that concurrency difference.
+- **1 partition / 1 consumer, BatchSize = 1:** mean elapsed time is about 2.5–2.7× Channel's; Channel is faster for this single-item case.
+- **1 partition / 1 consumer, larger batches:** BatchSize = 10 reduces mean elapsed time by about 49–53%; BatchSize = 50–100 reduces it by
+  about 85–93%, across Bounded and Unbounded results. Short iterations have visible uncertainty, especially for the small Unbounded batches.
 
 Batching provides the clearest benefit when messages are already available. A larger configured BatchSize does not
 ensure a full batch under sparse traffic; these results measure draining a backlog, not per-message delivery latency.
@@ -117,11 +118,12 @@ tails, where allocation is reduced.
 
 #### Production Allocations
 
-![Unbounded producer allocations](docs/benchmarks/memory-producer-unbounded-allocations.svg)
+![Unbounded producer allocations](docs/benchmarks/memory-single-partition-producer-unbounded-allocations.svg)
 
-![Bounded producer allocations](docs/benchmarks/memory-producer-bounded-allocations.svg)
+![Bounded producer allocations](docs/benchmarks/memory-single-partition-producer-bounded-allocations.svg)
 
-Production allocates about 55 KiB for BufferQueue versus 135 / 68 KiB for Channel `WriteAsync` (unbounded / bounded).
+With one partition, both BufferQueue write APIs allocate about 36.4 / 36.6 KiB versus 135.5 / 68.3 KiB for
+Channel `WriteAsync` (Unbounded / Bounded).
 
 #### Consumption Allocations
 
@@ -131,25 +133,25 @@ batch; it never pools or reuses returned arrays. BatchSize controls both BufferQ
 array creation and filling are included in allocation.
 
 BufferQueue likewise returns independent snapshots that remain valid after later pulls, commits, and segment recycling.
-For one consumer at BatchSize 100, Channel array batching allocates about **35.1 KiB**, versus **35.3 KiB** for BufferQueue;
+With 1 partition / 1 consumer at BatchSize 100, Channel array batching allocates about **35.1 KiB**, versus **35.3 KiB** for BufferQueue;
 this is an allocation comparison, not an elapsed-time claim. The raw Channel per-item allocation reference remains useful
 for native item handoff, but it does not materialize retained batches and is therefore a limited reference for this
 batch-consumption comparison. See the [per-item Channel allocation reference](docs/benchmarks/memory-queues.md#per-item-channel-reference)
-and the [complete array-batching measurements](docs/benchmarks/channel-batch-aggregation.md) for elapsed times,
-allocation at every configuration, and the different partition/tail-batch behavior.
+and the complete [single-partition](docs/benchmarks/single-partition.md) and [12-partition array-batching measurements](docs/benchmarks/channel-batch-aggregation.md)
+for elapsed times, allocation at every configuration, and the different partition/tail-batch behavior.
 
-![Unbounded consumption allocations, 1 consumer](docs/benchmarks/memory-unbounded-1-consumer-allocations.svg)
+##### 1 Partition / 1 Consumer
 
-![Unbounded consumption allocations, 12 consumers](docs/benchmarks/memory-unbounded-12-consumers-allocations.svg)
+![Unbounded consumption allocations, 1 partition and 1 consumer](docs/benchmarks/memory-single-partition-unbounded-allocations.svg)
 
-![Bounded consumption allocations, 1 consumer](docs/benchmarks/memory-bounded-1-consumer-allocations.svg)
+![Bounded consumption allocations, 1 partition and 1 consumer](docs/benchmarks/memory-single-partition-bounded-allocations.svg)
 
-![Bounded consumption allocations, 12 consumers](docs/benchmarks/memory-bounded-12-consumers-allocations.svg)
-
-For one-consumer draining, BufferQueue allocates about 193 / 35.3 / 33.6 KiB at BatchSize 1 / 100 / 1000, with
+For 1 partition / 1 consumer, BufferQueue allocates about 193 / 35.3 / 33.5 KiB at BatchSize 1 / 100 / 1000, with
 similar Auto / Manual results; Channel array batching allocates about 257 / 35.1 / 36.5 KiB.
 
-See [memory queue benchmark details](docs/benchmarks/memory-queues.md) for the complete setup, signatures, and results.
+See the [single-partition benchmark report](docs/benchmarks/single-partition.md) for the complete setup and measurements,
+and the [12-partition charts](docs/benchmarks/memory-queues.md#12-partition-charts) for the other topologies. These runs
+were measured separately and do not establish a partition-scaling speedup.
 
 ## Applicable Scenarios
 

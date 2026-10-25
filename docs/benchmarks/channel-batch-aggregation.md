@@ -2,6 +2,9 @@
 
 [简体中文](channel-batch-aggregation.zh-CN.md)
 
+The additional [single-partition report](single-partition.md) measures this same adapter alongside BufferQueue with
+1 partition / 1 consumer. The results in this report retain the original 12-partition comparison.
+
 This report records the Channel array-batching comparator whose allocation appears alongside the
 [memory queue benchmark](memory-queues.md). The ordinary Channel `ReadAllAsync` rows remain the raw single-item
 baseline. This additional workload represents an application that reads those items and materializes independent

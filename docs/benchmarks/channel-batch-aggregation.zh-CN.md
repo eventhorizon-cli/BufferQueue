@@ -2,6 +2,9 @@
 
 [English](channel-batch-aggregation.md)
 
+新增的[单 Partition 报告](single-partition.zh-CN.md)使用同一聚合路径，对比 1 Partition / 1 Consumer 的 BufferQueue。
+本文结果保留原来的 12 Partition 对比。
+
 本报告说明与[内存队列 benchmark](memory-queues.zh-CN.md)配套的 Channel allocation 对照 workload。普通 Channel
 `ReadAllAsync` 行仍然是原始的单条读取 baseline。本 workload 表示应用读取这些单条数据后自行创建并填充独立数组，
 再按 batch 处理；它不改变 Channel API，也不替换已有 baseline。

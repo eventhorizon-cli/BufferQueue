@@ -1,0 +1,266 @@
+{
+  "schemaVersion": 1,
+  "baseCommit": "3243e7017e9275dd61bb753af716c7c0d23c5ab2",
+  "workingTreeChanges": "Single-partition producer and consumer subclasses; production library unchanged.",
+  "sourceAndHarnessSha256": "66fa5020afed6abe3bc58a028db3f276b72b0cca6e2ce963b41ea92ee84848b3",
+  "fingerprintFormat": "Sorted .cs/.csproj paths under src and tests/BufferQueue.Benchmarks, excluding bin/obj; UTF-8 path + NUL + file bytes + NUL.",
+  "hostEnvironment": {
+    "BenchmarkDotNetCaption": "BenchmarkDotNet",
+    "BenchmarkDotNetVersion": "0.15.8",
+    "OsVersion": "macOS 27.0.1 (26A434) [Darwin 27.0.0]",
+    "ProcessorName": "Unknown processor",
+    "PhysicalProcessorCount": null,
+    "PhysicalCoreCount": null,
+    "LogicalCoreCount": null,
+    "RuntimeVersion": ".NET 10.0.0 (10.0.0, 10.0.25.52411)",
+    "Architecture": "Arm64",
+    "HasAttachedDebugger": false,
+    "HasRyuJit": true,
+    "Configuration": "RELEASE",
+    "DotNetCliVersion": "10.0.100",
+    "ChronometerFrequency": {
+      "Hertz": 1000000000
+    },
+    "HardwareTimerKind": "Unknown"
+  },
+  "hardwareVerification": {
+    "model": "Apple M2 Max",
+    "physicalCores": 12,
+    "logicalCores": 12,
+    "method": "sysctl verified on same machine during companion consumer run"
+  },
+  "channel": {
+    "assembly": "System.Threading.Channels",
+    "runtimeProvided": true,
+    "runtimeVersion": ".NET 10.0.0",
+    "singleReader": false,
+    "singleWriter": false
+  },
+  "job": {
+    "id": "Fixed",
+    "configuration": "Release",
+    "targetFramework": "net10.0",
+    "launchCount": 1,
+    "warmupCount": 6,
+    "iterationCount": 15,
+    "invocationCount": "BenchmarkDotNet automatic pilot selection",
+    "messages": 8192,
+    "partitions": 1,
+    "producers": 12,
+    "boundedCapacity": 8192,
+    "segmentSize": 1024,
+    "producerChunkSizes": [
+      683,
+      683,
+      683,
+      683,
+      683,
+      683,
+      683,
+      683,
+      683,
+      683,
+      683,
+      679
+    ]
+  },
+  "command": "dotnet run --project tests/BufferQueue.Benchmarks -c Release -- --filter '*SinglePartitionChannelVsMemoryBufferQueueProduceBenchmark*' --exporters json",
+  "workload": {
+    "included": "Queue creation, task scheduling, writes and waiting for all 12 producer tasks.",
+    "excluded": "GlobalSetup creates chunks before timing; no consumers or application business processing.",
+    "batchApi": "Each task submits its complete ReadOnlyMemory<int> chunk in one ProduceAsync call; per-item APIs write all items individually.",
+    "backpressure": "Bounded capacity equals the complete workload; no producer capacity wait is needed.",
+    "commitMode": "Not applicable: producer-only workload.",
+    "routing": "Default round robin to one partition; the same Channel instance is shared by all writers.",
+    "comparison": "One partition does not imply one producer; both sides have 12 producer tasks. Historical 12-partition results are not same-run scaling measurements."
+  },
+  "results": {
+    "file": "single-partition-producer-results.csv",
+    "rows": 8,
+    "timeUnit": "microseconds",
+    "allocationColumn": "Allocated_B",
+    "confidenceInterval": "99.9%; Error_us is half-width"
+  },
+  "warnings": [
+    "High-priority setup was denied. CPU identity was verified separately with sysctl."
+  ],
+  "retainedSamples": [
+    {
+      "case": "BufferQueue.Benchmarks.SinglePartitionChannelVsMemoryBufferQueueProduceBenchmark.Channel_TryWrite_Concurrent(Mode: Unbounded, MessageSize: 8192)",
+      "nanosecondsPerOperation": [
+        281631.2861328125,
+        282618.93701171875,
+        283301.83935546875,
+        282427.18505859375,
+        283184.44775390625,
+        282593.87158203125,
+        284865.39697265625,
+        281793.45703125,
+        283583.88232421875,
+        282540.42578125,
+        284215.1083984375,
+        284355.65185546875
+      ],
+      "retainedCount": 12,
+      "outliersNanosecondsPerOperation": [],
+      "memoryTotalOperations": 2048
+    },
+    {
+      "case": "BufferQueue.Benchmarks.SinglePartitionChannelVsMemoryBufferQueueProduceBenchmark.Channel_WriteAsync_Concurrent(Mode: Unbounded, MessageSize: 8192)",
+      "nanosecondsPerOperation": [
+        335003.4384765625,
+        331469.1162109375,
+        331085.3681640625,
+        336751.46484375,
+        335181.78271484375,
+        338713.70458984375,
+        332951.3955078125,
+        334464.1923828125,
+        334651.85546875,
+        332953.7353515625,
+        333146.6064453125,
+        336713.92822265625,
+        333073.8525390625,
+        335180.7861328125
+      ],
+      "retainedCount": 14,
+      "outliersNanosecondsPerOperation": [
+        338713.70458984375
+      ],
+      "memoryTotalOperations": 2048
+    },
+    {
+      "case": "BufferQueue.Benchmarks.SinglePartitionChannelVsMemoryBufferQueueProduceBenchmark.MemoryBufferQueue_Produce_Concurrent(Mode: Unbounded, MessageSize: 8192)",
+      "nanosecondsPerOperation": [
+        288917.94873046875,
+        287974.01953125,
+        289959.3916015625,
+        287547.36328125,
+        287426.8798828125,
+        289385.39599609375,
+        288966.9189453125,
+        289934.89599609375,
+        289753.58056640625,
+        288534.46435546875,
+        286914.48974609375,
+        289519.75537109375,
+        289045.51220703125
+      ],
+      "retainedCount": 13,
+      "outliersNanosecondsPerOperation": [],
+      "memoryTotalOperations": 2048
+    },
+    {
+      "case": "BufferQueue.Benchmarks.SinglePartitionChannelVsMemoryBufferQueueProduceBenchmark.MemoryBufferQueue_Produce_ReadOnlyMemoryBatch_Concurrent(Mode: Unbounded, MessageSize: 8192)",
+      "nanosecondsPerOperation": [
+        67285.38006591797,
+        67223.50567626953,
+        67954.07611083984,
+        67375.67645263672,
+        67868.1996459961,
+        67436.72686767578,
+        67418.2738647461,
+        67312.86614990234,
+        67181.40155029297,
+        67545.4507446289,
+        67478.80047607422,
+        67669.89129638672,
+        67084.97100830078,
+        67565.52130126953
+      ],
+      "retainedCount": 14,
+      "outliersNanosecondsPerOperation": [],
+      "memoryTotalOperations": 8192
+    },
+    {
+      "case": "BufferQueue.Benchmarks.SinglePartitionChannelVsMemoryBufferQueueProduceBenchmark.Channel_TryWrite_Concurrent(Mode: Bounded, MessageSize: 8192)",
+      "nanosecondsPerOperation": [
+        300946.3095703125,
+        301830.89208984375,
+        300778.86962890625,
+        300801.859375,
+        301059.48876953125,
+        302351.11474609375,
+        301418.13134765625,
+        302009.01318359375,
+        302958.048828125,
+        303553.77197265625,
+        302102.783203125,
+        301662.41455078125,
+        301658.345703125,
+        299759.7861328125
+      ],
+      "retainedCount": 14,
+      "outliersNanosecondsPerOperation": [],
+      "memoryTotalOperations": 2048
+    },
+    {
+      "case": "BufferQueue.Benchmarks.SinglePartitionChannelVsMemoryBufferQueueProduceBenchmark.Channel_WriteAsync_Concurrent(Mode: Bounded, MessageSize: 8192)",
+      "nanosecondsPerOperation": [
+        396694.17333984375,
+        393711.73095703125,
+        395273.294921875,
+        396221.76123046875,
+        397166.32080078125,
+        393875.48828125,
+        396517.2529296875,
+        397450.0732421875,
+        395018.798828125,
+        396873.61669921875,
+        397019.4091796875,
+        395748.1279296875,
+        396522.13525390625,
+        397034.60693359375,
+        395884.0126953125
+      ],
+      "retainedCount": 15,
+      "outliersNanosecondsPerOperation": [],
+      "memoryTotalOperations": 2048
+    },
+    {
+      "case": "BufferQueue.Benchmarks.SinglePartitionChannelVsMemoryBufferQueueProduceBenchmark.MemoryBufferQueue_Produce_Concurrent(Mode: Bounded, MessageSize: 8192)",
+      "nanosecondsPerOperation": [
+        322196.67578125,
+        326624.1455078125,
+        323380.47265625,
+        322795.71533203125,
+        322224.24267578125,
+        322787.943359375,
+        324246.0322265625,
+        323497.029296875,
+        325546.91552734375,
+        323245.54443359375,
+        325009.19580078125,
+        324737.69091796875,
+        327297.42431640625
+      ],
+      "retainedCount": 13,
+      "outliersNanosecondsPerOperation": [],
+      "memoryTotalOperations": 2048
+    },
+    {
+      "case": "BufferQueue.Benchmarks.SinglePartitionChannelVsMemoryBufferQueueProduceBenchmark.MemoryBufferQueue_Produce_ReadOnlyMemoryBatch_Concurrent(Mode: Bounded, MessageSize: 8192)",
+      "nanosecondsPerOperation": [
+        66719.36547851562,
+        66475.84033203125,
+        66369.50170898438,
+        66352.75268554688,
+        66469.80297851562,
+        66828.30810546875,
+        67382.54296875,
+        67236.07385253906,
+        66456.04968261719,
+        66550.66931152344,
+        66948.04895019531,
+        66461.04943847656,
+        66483.19506835938,
+        66805.16052246094
+      ],
+      "retainedCount": 14,
+      "outliersNanosecondsPerOperation": [
+        67382.54296875
+      ],
+      "memoryTotalOperations": 8192
+    }
+  ]
+}

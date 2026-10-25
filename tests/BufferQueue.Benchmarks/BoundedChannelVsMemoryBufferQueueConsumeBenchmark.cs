@@ -15,7 +15,9 @@ public class BoundedChannelVsMemoryBufferQueueConsumeBenchmark
 
     [Params(1, 10, 50, 100, 1000)] public int BatchSize { get; set; }
 
-    public IEnumerable<int> ConsumerCounts => new[] { 1, Environment.ProcessorCount }.Distinct();
+    public virtual IEnumerable<int> ConsumerCounts => new[] { 1, Environment.ProcessorCount }.Distinct();
+
+    protected virtual int PartitionCount => Environment.ProcessorCount;
 
     [ParamsSource(nameof(ConsumerCounts))]
     public int Consumers { get; set; }
@@ -32,14 +34,14 @@ public class BoundedChannelVsMemoryBufferQueueConsumeBenchmark
         var boundedMemoryBufferQueue = new MemoryBufferQueue<int>(new MemoryBufferQueueOptions
         {
             TopicName = "test-bounded",
-            PartitionNumber = Environment.ProcessorCount,
+            PartitionNumber = PartitionCount,
             BoundedCapacity = (ulong)MessageSize
         });
         var boundedMemoryBufferQueueProducer = boundedMemoryBufferQueue.GetProducer();
         var boundedManualCommitQueue = new MemoryBufferQueue<int>(new MemoryBufferQueueOptions
         {
             TopicName = "test-bounded-manual-commit",
-            PartitionNumber = Environment.ProcessorCount,
+            PartitionNumber = PartitionCount,
             BoundedCapacity = (ulong)MessageSize
         });
         var boundedManualCommitProducer = boundedManualCommitQueue.GetProducer();
