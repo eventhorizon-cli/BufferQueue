@@ -39,7 +39,8 @@ and the [BufferQueue consumer model](docs/design/consumer-model.md) for the resp
 
 The following sections compare Memory BufferQueue with `System.Threading.Channels`: production first, then consumption.
 MemoryMappedFile is not included. The main charts use **one BufferQueue partition versus one Channel**;
-[12-partition results](docs/benchmarks/memory-queues.md#12-partition-charts) are available separately.
+[12-partition results](docs/benchmarks/memory-queues.md#12-partition-charts) likewise show lower elapsed time than Channel's
+async APIs for batch writes and consumption at the measured BatchSize values of 10–1000, in both Unbounded and Bounded modes.
 
 Benchmark environment: Apple M2 Max (12 cores), macOS 27.0.1 / Arm64, .NET 10.0.0, runtime-provided `System.Threading.Channels` 10.0.0, BenchmarkDotNet 0.15.8 (Release).
 
@@ -59,7 +60,8 @@ so this measures writing into available capacity, not waiting for space.
 
 With one partition, BufferQueue single-item async writes take about 14–18% less time than Channel `WriteAsync`.
 Batch writes take about 80–83% less time, reflecting the different number of API calls. These ranges cover
-Unbounded and Bounded results; [12-partition measurements](docs/benchmarks/memory-queues.md#12-partition-charts) are reported separately.
+Unbounded and Bounded results. The [12-partition measurements](docs/benchmarks/memory-queues.md#12-partition-charts)
+also favor batch writes, with about 89–90% less elapsed time than Channel `WriteAsync`.
 
 ### Consumption Benchmarks
 
@@ -69,6 +71,8 @@ In these time charts, `BatchSize` affects BufferQueue only. Auto Commit and Manu
 with a gray `Channel<T>.TryRead` synchronous reference. See the [12-partition results](docs/benchmarks/memory-queues.md#12-partition-charts)
 for one consumer scanning multiple partitions and twelve consumers reading their assigned partitions. Channel readers
 share one queue in those comparisons, so the multi-consumer results also reflect a different concurrency organization.
+With 12 partitions, both Auto and Manual Commit take less time than `Channel.ReadAllAsync` at the measured BatchSize
+values of 10–1000, with either 1 or 12 consumers, in both capacity modes.
 
 This comparison measures batch consumption capability when draining a backlog: BufferQueue retrieves batches and
 adds their `Count()`, while Channel retrieves and counts individual items without collecting them into arrays. This captures the reduction in API calls
@@ -138,7 +142,8 @@ this is an allocation comparison, not an elapsed-time claim. The raw Channel per
 for native item handoff, but it does not materialize retained batches and is therefore a limited reference for this
 batch-consumption comparison. See the [per-item Channel allocation reference](docs/benchmarks/memory-queues.md#per-item-channel-reference)
 and the complete [single-partition](docs/benchmarks/single-partition.md) and [12-partition array-batching measurements](docs/benchmarks/channel-batch-aggregation.md)
-for elapsed times, allocation at every configuration, and the different partition/tail-batch behavior.
+for elapsed times, allocation at every configuration, and the different partition/tail-batch behavior. With 12 partitions
+and one consumer, allocation is likewise close to Channel + array batching at BatchSize 10–100.
 
 ##### 1 Partition / 1 Consumer
 
@@ -150,8 +155,9 @@ For 1 partition / 1 consumer, BufferQueue allocates about 193 / 35.3 / 33.5 KiB 
 similar Auto / Manual results; Channel array batching allocates about 257 / 35.1 / 36.5 KiB.
 
 See the [single-partition benchmark report](docs/benchmarks/single-partition.md) for the complete setup and measurements,
-and the [12-partition charts](docs/benchmarks/memory-queues.md#12-partition-charts) for the other topologies. These runs
-were measured separately and do not establish a partition-scaling speedup.
+and the [12-partition charts](docs/benchmarks/memory-queues.md#12-partition-charts), which also show lower batch-write
+and batch-consumption times than Channel's async APIs in the cases described above. These runs were measured separately
+and do not establish a partition-scaling speedup.
 
 ## Applicable Scenarios
 

@@ -37,7 +37,8 @@ BufferQueue 当前提供两种存储模式：
 具体语义参见 [Channel 文档](https://learn.microsoft.com/en-us/dotnet/core/extensions/channels)和 [BufferQueue 消费模型](docs/design/consumer-model.zh-CN.md)。
 
 下面按写入、消费的顺序展示 Memory BufferQueue 与 `System.Threading.Channels` 的性能对比，不包含 MemoryMappedFile。
-主图统一比较 **一个 BufferQueue Partition 与一个 Channel**；[12 Partition 结果](docs/benchmarks/memory-queues.zh-CN.md#12-partition-图表)单独展示。
+主图统一比较 **一个 BufferQueue Partition 与一个 Channel**；[12 Partition 结果](docs/benchmarks/memory-queues.zh-CN.md#12-partition-图表)中，
+批量写入和实测 BatchSize 10～1000 的消费也比 Channel 对应的 async API 耗时更低，Unbounded 和 Bounded 均如此。
 
 测试环境：Apple M2 Max（12 核），macOS 27.0.1 / Arm64，.NET 10.0.0，内置 `System.Threading.Channels` 10.0.0，BenchmarkDotNet 0.15.8（Release）。
 
@@ -55,7 +56,7 @@ BufferQueue 当前提供两种存储模式：
 
 单 Partition 下，BufferQueue 单条 async 写入比 Channel `WriteAsync` 耗时约少 14–18%，batch 写入约少 80–83%，
 其中也体现了 API 调用次数的差异。范围涵盖 Unbounded 和 Bounded 两种模式；
-[12 Partition 测量](docs/benchmarks/memory-queues.zh-CN.md#12-partition-图表)单独保留。
+[12 Partition 测量](docs/benchmarks/memory-queues.zh-CN.md#12-partition-图表)中，batch 写入同样更快，比 Channel `WriteAsync` 耗时约少 89–90%。
 
 ### 消费性能
 
@@ -64,6 +65,8 @@ BufferQueue 使用 **1 Partition / 1 Consumer**，Channel 使用一个实例和�
 耗时图中的 `BatchSize` 只影响 BufferQueue；Auto Commit、Manual Commit 分别测量，灰色的 `Channel<T>.TryRead` 为同步参考。
 [12 Partition 结果](docs/benchmarks/memory-queues.zh-CN.md#12-partition-图表)分别展示一个 consumer 轮询多个 partition，
 以及 12 个 consumer 读取各自 partition 的情况。Channel 的 reader 共享同一个队列，因此多 consumer 结果也包含并发组织方式的差异。
+12 Partition 下，在实测 BatchSize 10～1000、1 或 12 个 consumer 的配置中，Auto 和 Manual Commit
+都比 `Channel.ReadAllAsync` 耗时更低，Unbounded 和 Bounded 均如此。
 
 这项对比衡量积压数据的批量消费能力：BufferQueue 按批取出并累加 `Count()`，Channel 逐条取出并计数，不聚合成数组，
 体现批量 API 减少调用和异步迭代次数的收益。BufferQueue 创建批次和复制元素的成本已计入；
@@ -127,7 +130,8 @@ Channel 数组聚合约分配 **35.1 KiB**，BufferQueue 约 **35.3 KiB**；这�
 分配量仍能反映原生数据交接的成本，但未包含生成可保留批次的成本，因此对本批量消费对比的参考有限。详见
 [Channel 逐条读取内存分配参考](docs/benchmarks/memory-queues.zh-CN.md#channel-逐条读取参考)，以及完整的
 [单 Partition 测量](docs/benchmarks/single-partition.zh-CN.md)和[12 Partition 数组聚合测量](docs/benchmarks/channel-batch-aggregation.zh-CN.md)，
-其中记录各配置的耗时、分配，以及分区和尾部批次行为的差异。
+其中记录各配置的耗时、分配，以及分区和尾部批次行为的差异。12 Partition、单 consumer 下，
+BatchSize 10～100 的分配量也与 Channel 加上数组聚合后基本持平。
 
 1 Partition / 1 Consumer 下，BatchSize 1 / 100 / 1000 的 BufferQueue 分配约为 193 / 35.3 / 33.5 KiB，Auto / Manual 结果接近；
 Channel 数组聚合约为 257 / 35.1 / 36.5 KiB。
@@ -139,7 +143,8 @@ Channel 数组聚合约为 257 / 35.1 / 36.5 KiB。
 ![Bounded 消费分配，1 Partition 和 1 Consumer](docs/benchmarks/memory-single-partition-bounded-allocations.zh-CN.svg)
 
 完整配置和测量数据见[单 Partition benchmark 报告](docs/benchmarks/single-partition.zh-CN.md)，其他拓扑见
-[12 Partition 图表](docs/benchmarks/memory-queues.zh-CN.md#12-partition-图表)。两组数据来自独立测量，不能据此计算增加 partition 带来的加速比。
+[12 Partition 图表](docs/benchmarks/memory-queues.zh-CN.md#12-partition-图表)，其中批量写入和批量消费在上述配置下也比 Channel 对应的 async API 耗时更低。
+两组数据来自独立测量，不能据此计算增加 partition 带来的加速比。
 
 ## 适用场景
 
