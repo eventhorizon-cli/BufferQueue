@@ -167,7 +167,7 @@
     "runnerWarnings": "High-priority setup was denied in sandbox; consume iterations were short; sysctl exporter access was denied where reported."
   },
   "results": {
-    "file": "memory-queues-results.csv",
+    "file": "memory-multi-partition-results.csv",
     "rows": 113,
     "allocatedBytesColumn": "Allocated_B",
     "timeUnit": "microseconds"

@@ -27,7 +27,8 @@ BufferQueue 当前提供两种存储模式：
 |---|---|---|
 | 主要定位 | 进程内生产者与消费者之间的异步数据交接 | 带分区、消费组和进度管理的批量处理 |
 | 批量 API | 逐条读写，应用可以自行组 batch | 支持批量生产和消费，每次最多返回 BatchSize 条已可用数据 |
-| 多消费者 | 多个 reader 竞争读取同一个队列 | 组内按 partition 分工，不同 group 独立消费 |
+| 分区 | 没有内建 Partition 概念 | 一个 Topic 可以配置多个 Partition |
+| 多消费者 | 多个 reader 竞争读取同一个队列 | 同一 group 内，每个 Partition 最多分配给一个 Consumer；不同 group 独立消费 |
 | 消费确认与重放 | 读取即移除，没有内建的处理确认和重放机制 | 支持 Auto Commit 和 **Manual Commit**，未提交的 batch 可以再次交付 |
 | 顺序 | FIFO 读取，并行处理的完成顺序可能不同 | partition 内有序，跨 partition 不保证全局顺序 |
 | 容量与背压 | bounded / unbounded；bounded 支持等待或丢弃策略 | Memory 支持 bounded / unbounded、等待或失败；容量释放取决于最慢 group 的已提交进度 |
@@ -37,67 +38,97 @@ BufferQueue 当前提供两种存储模式：
 具体语义参见 [Channel 文档](https://learn.microsoft.com/en-us/dotnet/core/extensions/channels)和 [BufferQueue 消费模型](docs/design/consumer-model.zh-CN.md)。
 
 下面按写入、消费的顺序展示 Memory BufferQueue 与 `System.Threading.Channels` 的性能对比，不包含 MemoryMappedFile。
-主图统一比较 **一个 BufferQueue Partition 与一个 Channel**；[12 Partition 结果](docs/benchmarks/memory-queues.zh-CN.md#12-partition-图表)中，
-批量写入和实测 BatchSize 10～1000 的消费也比 Channel 对应的 async API 耗时更低，Unbounded 和 Bounded 均如此。
+
+BufferQueue 在同一个 Consumer Group 内，**一个 Partition 最多分配给一个 Consumer**；
+因此必须满足 **Partition 数量 >= 同组 Consumer 数量**，一个 Consumer 可以负责多个 Partition。
+不同 Group 可以独立消费同一个 Partition，各自维护进度。Channel 没有 Partition 概念，多个 reader 竞争读取同一个实例。
+
+这种分工也服务于**消费进度管理**。BufferQueue 按 `Consumer Group + Partition` 记录进度，由该组负责这个 Partition 的
+Consumer 读取和提交。这样就不需要协调多个 Consumer 在同一 Partition 上乱序完成批次后的提交位置。
+手动提交模式下，应用可以处理完批次再提交，未提交的批次保留重放机会；不同 Group 则可以按各自的速度独立推进。
+
+同组 Consumer 不会争抢同一 Partition 的读取位置，可以并行读取各自的数据，减少共享队列读取时的竞争。
+Memory 模式读取已发布数据时不获取追加锁，但提交和容量管理仍需要同步；分区分工不等于整个消费流程无锁。
+实际吞吐还取决于 BatchSize、各 Partition 的数据分布和业务处理成本，具体并发规则见[分区与并发设计](docs/design/partitioning-and-concurrency.zh-CN.md)。
+
+**已测的 1 和 12 Partition 配置均体现了批量写入和消费的优势**：在这些测试中，BufferQueue 的 batch 写入比 Channel
+`WriteAsync` 耗时更低；消费预填充队列时，在实测 BatchSize 为 10、50、100、1000 的配置下，Auto 和 Manual Commit
+也都比 `Channel.ReadAllAsync` 耗时更低，unbounded 和 bounded 均如此。具体配置和数据见
+[单 Partition 报告](docs/benchmarks/memory-single-partition.zh-CN.md)和[12 Partition 报告](docs/benchmarks/memory-multi-partition.zh-CN.md)。
+
+**主图优先展示 12 Partition 测试**，是为了展示 12 个 Consumer 各自负责一个 Partition 的消费方式，并让写入和消费采用相同的分区数。
+单 Partition 在同一组内只能使用一个 Consumer，其图表和报告作为补充链接保留在下文。主图配置如下：
+
+| 测试 | BufferQueue | Channel |
+|---|---|---|
+| 写入 | 12 个 Partition，12 个 Producer task | 一个实例，12 个 Producer task |
+| 消费 | 12 个 Partition，同一 Group 的 12 个 Consumer，每个负责一个 Partition | 一个实例，12 个 reader 竞争读取 |
+
+两边的并发任务数相同，消费分工方式不同，结果会体现这一差异。写入和消费分别测量，不是同时生产和消费的端到端测试。
 
 测试环境：Apple M2 Max（12 核），macOS 27.0.1 / Arm64，.NET 10.0.0，内置 `System.Threading.Channels` 10.0.0，BenchmarkDotNet 0.15.8（Release）。
 
 ### 写入性能
 
 这些图表比较异步 Channel `WriteAsync` 与异步 BufferQueue 单条和 batch 写入；`TryWrite` 作为同步参考。
-测试由 12 个 producer task 向一个 Channel 或包含 **1 个 partition** 的 BufferQueue 写入 8,192 条数据，两边 producer 并发数均为 12。
+测试由 12 个 producer task 向一个 Channel 或包含 **12 个 Partition** 的 BufferQueue 写入 8,192 条数据，两边 producer 并发数均为 12。
+BufferQueue 的 Producer task 共享 topic producer，消息按默认的轮询规则路由到 Partition，task 与 Partition 不一一绑定。
 每次 batch 调用提交一个 task 的数据块：通常为 683 条，最后一块为 679 条。
 
-![unbounded Producer API](docs/benchmarks/memory-single-partition-producer-unbounded.zh-CN.svg)
+![unbounded 写入，BufferQueue 12 Partitions，两边均为 12 Producer tasks](docs/benchmarks/memory-multi-partition-produce-unbounded-time.zh-CN.svg)
 
-![bounded Producer API](docs/benchmarks/memory-single-partition-producer-bounded.zh-CN.svg)
+![bounded 写入，BufferQueue 12 Partitions，两边均为 12 Producer tasks](docs/benchmarks/memory-multi-partition-produce-bounded-time.zh-CN.svg)
 
 计时包含队列创建和任务调度。bounded 容量足够容纳全部数据，因此测量的是有可用容量时的写入成本，不包含等待空间的耗时。
 
-单 Partition 下，BufferQueue 单条 async 写入比 Channel `WriteAsync` 耗时约少 14–18%，batch 写入约少 80–83%，
-其中也体现了 API 调用次数的差异。范围涵盖 Unbounded 和 Bounded 两种模式；
-[12 Partition 测量](docs/benchmarks/memory-queues.zh-CN.md#12-partition-图表)中，batch 写入同样更快，比 Channel `WriteAsync` 耗时约少 89–90%。
+[12 Partition 测量](docs/benchmarks/memory-multi-partition.zh-CN.md#写入性能)中，BufferQueue batch 写入比 Channel `WriteAsync`
+耗时约少 89–90%，涵盖 unbounded 和 bounded 两种模式，其中也体现了 API 调用次数的差异。
+
+单 Partition 结果也可查看：[unbounded 写入图](docs/benchmarks/memory-single-partition-produce-unbounded-time.zh-CN.svg)、
+[bounded 写入图](docs/benchmarks/memory-single-partition-produce-bounded-time.zh-CN.svg)，两边仍各用 12 个 Producer task。
+在这组单 Partition 测量中，BufferQueue 单条 async 写入比 Channel `WriteAsync` 耗时约少 14–18%，batch 写入约少 80–83%。
 
 ### 消费性能
 
 这些图表通过异步 BufferQueue 消费和 `Channel.ReadAllAsync` 消费预填充队列中的 `8,192` 条 `int` 消息。
-BufferQueue 使用 **1 Partition / 1 Consumer**，Channel 使用一个实例和一个 reader。
+两边都使用 **12 个 Consumer**，每个 Consumer 在独立的 task 中运行。BufferQueue 的同组 Consumer 各自读取一个 Partition，
+Channel 的 12 个 reader 共享一个实例。这组结果同时体现了批量 API 和两种消费组织方式的差异。
+
 耗时图中的 `BatchSize` 只影响 BufferQueue；Auto Commit、Manual Commit 分别测量，灰色的 `Channel<T>.TryRead` 为同步参考。
-[12 Partition 结果](docs/benchmarks/memory-queues.zh-CN.md#12-partition-图表)分别展示一个 consumer 轮询多个 partition，
-以及 12 个 consumer 读取各自 partition 的情况。Channel 的 reader 共享同一个队列，因此多 consumer 结果也包含并发组织方式的差异。
-12 Partition 下，在实测 BatchSize 10～1000、1 或 12 个 consumer 的配置中，Auto 和 Manual Commit
-都比 `Channel.ReadAllAsync` 耗时更低，Unbounded 和 Bounded 均如此。
 
 这项对比衡量积压数据的批量消费能力：BufferQueue 按批取出并累加 `Count()`，Channel 逐条取出并计数，不聚合成数组，
 体现批量 API 减少调用和异步迭代次数的收益。BufferQueue 创建批次和复制元素的成本已计入；
 不包含应用侧逐条遍历和业务处理，这部分额外成本见[单独的遍历测量](docs/benchmarks/batch-enumeration.zh-CN.md)。
 Channel 也返回批次时的耗时和分配，单独记录在[数组聚合测量](docs/benchmarks/channel-batch-aggregation.zh-CN.md)中；
-新增 1 Partition 场景下的同一聚合路径记录在[单 Partition 测量](docs/benchmarks/single-partition.zh-CN.md)中。
+[单 Partition 测量](docs/benchmarks/memory-single-partition.zh-CN.md)保留两边各使用一个 Consumer 的耗时和分配结果。
 下方耗时图比较原生 API。数组聚合是在 Channel 之上增加的应用侧工作，额外耗时不能归因于 Channel 原生读取变慢，
 因此这组耗时仅放在链接文档中。
 
-**本次单 consumer、BatchSize 10～100 时，Channel 加上应用侧数组聚合后，内存分配与 BufferQueue 基本持平。
-理解分配差距，请看下方[消费内存分配图](#消费分配量)中的“Channel + 应用侧数组聚合”曲线；此结论不代表耗时持平。**
+理解分配差距，请看下方[消费内存分配图](#消费分配量)中的“Channel + 应用侧数组聚合”曲线。
+这些图同样使用 12 个 Consumer，统计双方返回独立批次的分配成本。
 
-#### 1 Partition / 1 Consumer
+#### 12 个 Consumer
 
-一个 BufferQueue partition 对比一个 Channel，两边各用一个 consumer。这组结果展示不涉及跨 partition 并行消费时的
-批量 API 差异；两者的批次所有权和 commit 语义仍然不同。
+BufferQueue 使用 12 个 Partition，Channel 使用一个共享实例。数据来自[12 Partition 测量](docs/benchmarks/memory-multi-partition.zh-CN.md#消费性能)。
 
-![Unbounded 消费，1 Partition 和 1 Consumer](docs/benchmarks/memory-single-partition-unbounded-time.zh-CN.svg)
+![unbounded 消费，BufferQueue 12 Partitions / 12 Consumers，Channel 12 readers](docs/benchmarks/memory-multi-partition-consume-unbounded-12-consumers-time.zh-CN.svg)
 
-![Bounded 消费，1 Partition 和 1 Consumer](docs/benchmarks/memory-single-partition-bounded-time.zh-CN.svg)
+![bounded 消费，BufferQueue 12 Partitions / 12 Consumers，Channel 12 readers](docs/benchmarks/memory-multi-partition-consume-bounded-12-consumers-time.zh-CN.svg)
 
 Manual Commit 的计时包含每批读取后的 `CommitAsync`。
 
 **手动提交（Manual Commit）是 BufferQueue 的功能优势**：应用可以先成功处理 batch，再调用 `CommitAsync`，未提交的 batch
 保留重放机会。`Channel<T>` 没有内建的等价确认、checkpoint 或重放机制。
 
-在这组预填充队列测试中，启用 Auto Commit 的 BufferQueue 与 `Channel.ReadAllAsync` 相比：
+在这组 12 Consumer 的预填充队列测试中，实测 BatchSize 10～1000 时，Auto 和 Manual Commit
+都比 `Channel.ReadAllAsync` 耗时更低，unbounded 和 bounded 均如此。短迭代存在可见波动，误差和完整配置见测量报告。
 
-- **1 Partition / 1 Consumer，BatchSize = 1**：平均耗时约为 Channel 的 2.5–2.7 倍，逐条消费场景仍是 Channel 更快。
-- **1 Partition / 1 Consumer，增大 batch**：BatchSize = 10 时平均耗时减少约 49–53%；BatchSize = 50–100 时减少约 85–93%，
-  涵盖 Bounded 和 Unbounded 两种模式。短迭代存在可见波动，尤其是 Unbounded 的小 batch 测量。
+单 Partition 的结果也可以直接查看：[unbounded 消费图](docs/benchmarks/memory-single-partition-consume-unbounded-1-consumer-time.zh-CN.svg)、
+[bounded 消费图](docs/benchmarks/memory-single-partition-consume-bounded-1-consumer-time.zh-CN.svg)，两边均只有一个 Consumer。
+在这组预填充测试中，**单 Partition 的批量消费也比 `Channel.ReadAllAsync` 更快**：启用 Auto Commit 时，
+BatchSize = 10 的平均耗时减少约 49–53%，BatchSize = 50、100 时减少约 85–93%，涵盖 unbounded 和 bounded 两种模式。
+BatchSize = 1 时仍是 Channel 更快，BufferQueue 平均耗时约为它的 2.5–2.7 倍。
+完整配置和误差见[单 Partition / 单 Consumer 报告](docs/benchmarks/memory-single-partition.zh-CN.md)；这些结论不能套用到上面的 12 Consumer 图表。
 
 数据已经积累时，批量消费的收益更明显。低流量下，调大 BatchSize 不代表每次都能取满；这里测量的是消费积压数据的耗时，
 不是单条消息的交付延迟。
@@ -111,12 +142,16 @@ Manual Commit 的计时包含每批读取后的 `CommitAsync`。
 
 #### 写入分配量
 
-单 Partition 下，BufferQueue 两种写入 API 在 Unbounded / Bounded 下分别约分配 36.4 / 36.6 KiB，
-Channel `WriteAsync` 分别约为 135.5 / 68.3 KiB。
+12 Partition 下，BufferQueue 两种写入 API 在 unbounded 和 bounded 下的分配量约为 54.9–55.1 KiB，
+Channel `WriteAsync` 在两种模式下分别约为 135.5 / 68.3 KiB。
 
-![unbounded 写入内存分配](docs/benchmarks/memory-single-partition-producer-unbounded-allocations.zh-CN.svg)
+![unbounded 写入分配，BufferQueue 12 Partitions，两边均为 12 Producer tasks](docs/benchmarks/memory-multi-partition-produce-unbounded-allocations.zh-CN.svg)
 
-![bounded 写入内存分配](docs/benchmarks/memory-single-partition-producer-bounded-allocations.zh-CN.svg)
+![bounded 写入分配，BufferQueue 12 Partitions，两边均为 12 Producer tasks](docs/benchmarks/memory-multi-partition-produce-bounded-allocations.zh-CN.svg)
+
+单 Partition 的写入分配图：[unbounded](docs/benchmarks/memory-single-partition-produce-unbounded-allocations.zh-CN.svg)、
+[bounded](docs/benchmarks/memory-single-partition-produce-bounded-allocations.zh-CN.svg)。该配置下，BufferQueue 两种写入 API
+在 unbounded / bounded 下分别约分配 36.4 / 36.6 KiB。
 
 #### 消费分配量
 
@@ -125,26 +160,28 @@ Auto / Manual Commit 分配量基本一致，主图合并为一条 `Auto/Manual 
 每批填入一个新建的 `int[BatchSize]`，最后不满的一批只返回已填充前缀，不池化或复用已返回数组。BatchSize 同时
 控制 BufferQueue 和新增的 Channel 数组聚合路径，数组创建和填充的成本计入测量。
 
-BufferQueue 同样返回独立快照，在后续 pull、commit 和 segment 回收后仍然有效。1 Partition / 1 Consumer、BatchSize 100 时，
-Channel 数组聚合约分配 **35.1 KiB**，BufferQueue 约 **35.3 KiB**；这是分配对比，不代表耗时持平。Channel 逐条读取的
+BufferQueue 同样返回独立快照，在后续 pull、commit 和 segment 回收后仍然有效。下图沿用 **12 个 Consumer** 的配置：
+BufferQueue 每个 Consumer 读取自己的 Partition，Channel 的 12 个 reader 共享一个实例并各自组 batch。
+不同的分工方式会影响尾部不满批次的数量和分配量。Channel 逐条读取的
 分配量仍能反映原生数据交接的成本，但未包含生成可保留批次的成本，因此对本批量消费对比的参考有限。详见
-[Channel 逐条读取内存分配参考](docs/benchmarks/memory-queues.zh-CN.md#channel-逐条读取参考)，以及完整的
-[单 Partition 测量](docs/benchmarks/single-partition.zh-CN.md)和[12 Partition 数组聚合测量](docs/benchmarks/channel-batch-aggregation.zh-CN.md)，
-其中记录各配置的耗时、分配，以及分区和尾部批次行为的差异。12 Partition、单 consumer 下，
-BatchSize 10～100 的分配量也与 Channel 加上数组聚合后基本持平。
+[Channel 逐条读取内存分配参考](docs/benchmarks/memory-multi-partition.zh-CN.md#channel-逐条读取参考)，以及完整的
+[单 Partition 测量](docs/benchmarks/memory-single-partition.zh-CN.md)和[12 Partition 数组聚合测量](docs/benchmarks/channel-batch-aggregation.zh-CN.md)，
+其中记录各配置的耗时、分配，以及分区和尾部批次行为的差异。
 
-1 Partition / 1 Consumer 下，BatchSize 1 / 100 / 1000 的 BufferQueue 分配约为 193 / 35.3 / 33.5 KiB，Auto / Manual 结果接近；
-Channel 数组聚合约为 257 / 35.1 / 36.5 KiB。
+##### 12 个 Consumer
 
-##### 1 Partition / 1 Consumer
+![unbounded 消费分配，BufferQueue 12 Partitions / 12 Consumers，Channel 12 readers](docs/benchmarks/memory-multi-partition-consume-unbounded-12-consumers-allocations.zh-CN.svg)
 
-![Unbounded 消费分配，1 Partition 和 1 Consumer](docs/benchmarks/memory-single-partition-unbounded-allocations.zh-CN.svg)
+![bounded 消费分配，BufferQueue 12 Partitions / 12 Consumers，Channel 12 readers](docs/benchmarks/memory-multi-partition-consume-bounded-12-consumers-allocations.zh-CN.svg)
 
-![Bounded 消费分配，1 Partition 和 1 Consumer](docs/benchmarks/memory-single-partition-bounded-allocations.zh-CN.svg)
+作为单 Consumer 参考，1 Partition / 1 Consumer 下，BatchSize 1 / 100 / 1000 的 BufferQueue 分配约为
+193 / 35.3 / 33.5 KiB，Auto / Manual 结果接近；Channel 数组聚合约为 257 / 35.1 / 36.5 KiB。
+单 Consumer、BatchSize 10～100 的分配量基本持平，1 或 12 Partition 的记录均如此；这不代表耗时持平。
 
-完整配置和测量数据见[单 Partition benchmark 报告](docs/benchmarks/single-partition.zh-CN.md)，其他拓扑见
-[12 Partition 图表](docs/benchmarks/memory-queues.zh-CN.md#12-partition-图表)，其中批量写入和批量消费在上述配置下也比 Channel 对应的 async API 耗时更低。
-两组数据来自独立测量，不能据此计算增加 partition 带来的加速比。
+完整配置和测量数据见[12 Partition benchmark 报告](docs/benchmarks/memory-multi-partition.zh-CN.md)和
+[Channel 数组聚合测量](docs/benchmarks/channel-batch-aggregation.zh-CN.md)。
+[单 Partition benchmark 报告](docs/benchmarks/memory-single-partition.zh-CN.md)保留单 Partition 写入和单 Consumer 参考的数据。
+单 Partition 与 12 Partition 数据来自独立测量，不能据此计算增加 partition 带来的加速比。
 
 ## 适用场景
 
@@ -153,6 +190,10 @@ Channel 数组聚合约为 257 / 35.1 / 36.5 KiB。
 如果只需要在当前进程内缓存数据，并且优先考虑消费吞吐，可以使用 Memory 模式。
 
 如果生产的数据和已提交消费进度需要在进程重启后保留，可以使用 MemoryMappedFile 模式。MemoryMappedFile 模式是面向单个 active queue 实例的本地持久化机制，不负责协调多个进程同时写入同一个 topic directory。
+
+如果需要合并并发请求进行批量处理，并让调用方等待各自的结果，可以参考基于 BufferQueue 构建的衍生项目
+[RequestBatcher](https://github.com/eventhorizon-cli/RequestBatcher)。它在批量消费之上提供请求合并、Handler 批次并发控制和结果回传，
+适用于数据库、缓存和下游 API 支持批量操作的场景。
 
 ## 功能设计
 1. 支持创建多个 Topic，每个 Topic 可以有多种数据类型。每一对 Topic 和数据类型对应一个独立的缓冲区。
@@ -278,7 +319,7 @@ Unicode 规范化。在受支持的小端 .NET 环境中，重启前后映射保
 已有 MMF 数据仍可读取，但路由实现升级后同 key 的新消息可能进入其他 partition，因此不保证跨升级的按 key 顺序。
 路由契约和持久化约束参见[分区与并发设计](docs/design/partitioning-and-concurrency.zh-CN.md)。
 
-详细的历史测量、方法和复现命令见[保留的 PartitionKey 路由 benchmark](docs/benchmarks/memory-queues.zh-CN.md#partitionkey-路由性能)。
+详细的历史测量、方法和复现命令见[保留的 PartitionKey 路由 benchmark](docs/benchmarks/memory-multi-partition.zh-CN.md#partitionkey-路由性能)。
 
 ### MemoryMappedFile 模式注册
 
