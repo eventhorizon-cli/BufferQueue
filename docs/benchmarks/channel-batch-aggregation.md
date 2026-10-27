@@ -2,11 +2,11 @@
 
 [简体中文](channel-batch-aggregation.zh-CN.md)
 
-The additional [single-partition report](single-partition.md) measures this same adapter alongside BufferQueue with
+The additional [single-partition report](memory-single-partition.md) measures this same adapter alongside BufferQueue with
 1 partition / 1 consumer. The results in this report retain the original 12-partition comparison.
 
 This report records the Channel array-batching comparator whose allocation appears alongside the
-[memory queue benchmark](memory-queues.md). The ordinary Channel `ReadAllAsync` rows remain the raw single-item
+[memory queue benchmark](memory-multi-partition.md). The ordinary Channel `ReadAllAsync` rows remain the raw single-item
 baseline. This additional workload represents an application that reads those items and materializes independent
 arrays before processing them as batches; it does not change the Channel API or replace the existing baseline.
 
@@ -112,7 +112,7 @@ Channel scheduling and different partial-batch distribution affect time and allo
 describe elapsed time only; they are not allocation error bars.
 
 README consumption allocation charts compare this adapter with BufferQueue batch snapshots. The
-[per-item Channel allocation charts](memory-queues.md#per-item-channel-reference) remain available separately; elapsed-time
+[per-item Channel allocation charts](memory-multi-partition.md#per-item-channel-reference) remain available separately; elapsed-time
 charts continue to use the existing raw Channel baseline. The array-comparator times are recorded here for completeness, not as a replacement
 for the primary asynchronous time comparison or as a general throughput claim.
 Chart legends distinguish `per-item reads` from `array batching`.
@@ -124,13 +124,13 @@ The shared aggregation helper is [`ChannelBatchConsumption`](../../tests/BufferQ
 
 ## Batch Allocation Charts
 
-![Unbounded, 1 consumer(s)](memory-unbounded-1-consumer-allocations.svg)
+![Unbounded, 1 consumer(s)](memory-multi-partition-consume-unbounded-1-consumer-allocations.svg)
 
-![Unbounded, 12 consumer(s)](memory-unbounded-12-consumers-allocations.svg)
+![Unbounded, 12 consumer(s)](memory-multi-partition-consume-unbounded-12-consumers-allocations.svg)
 
-![Bounded, 1 consumer(s)](memory-bounded-1-consumer-allocations.svg)
+![Bounded, 1 consumer(s)](memory-multi-partition-consume-bounded-1-consumer-allocations.svg)
 
-![Bounded, 12 consumer(s)](memory-bounded-12-consumers-allocations.svg)
+![Bounded, 12 consumer(s)](memory-multi-partition-consume-bounded-12-consumers-allocations.svg)
 
 ## Reproduce
 

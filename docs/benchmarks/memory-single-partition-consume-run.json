@@ -67,7 +67,7 @@
     "topology": "One BufferQueue partition versus one shared Channel; both use one consumer. Existing 12-partition measurements remain separate historical runs."
   },
   "results": {
-    "file": "single-partition-results.csv",
+    "file": "memory-single-partition-consume-results.csv",
     "rows": 50,
     "timeUnit": "microseconds",
     "allocationColumn": "Allocated_B",

@@ -63,7 +63,7 @@
     "confidenceInterval": "99.9%; Error_us is half-width"
   },
   "comparison": {
-    "allocationChartBaseline": "memory-queues-results.csv",
+    "allocationChartBaseline": "memory-multi-partition-results.csv",
     "baselineCommit": "e63d152b388a99069602a76131b9589bfd8b472c",
     "baselineValidation": "All original 113 cases rerun successfully against the IReadOnlyList working change. Original charts retained; task/harness allocation differences are at most 72 B/op across these cases. No >10% BufferQueue timing shift with nonoverlapping reported intervals was observed.",
     "timeCharts": "Original per-item Channel comparisons retained; array-batching times reported only in the detailed record."

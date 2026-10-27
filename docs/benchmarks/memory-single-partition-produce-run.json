@@ -75,7 +75,7 @@
     "comparison": "One partition does not imply one producer; both sides have 12 producer tasks. Historical 12-partition results are not same-run scaling measurements."
   },
   "results": {
-    "file": "single-partition-producer-results.csv",
+    "file": "memory-single-partition-produce-results.csv",
     "rows": 8,
     "timeUnit": "microseconds",
     "allocationColumn": "Allocated_B",

@@ -2,10 +2,10 @@
 
 [English](channel-batch-aggregation.md)
 
-新增的[单 Partition 报告](single-partition.zh-CN.md)使用同一聚合路径，对比 1 Partition / 1 Consumer 的 BufferQueue。
+新增的[单 Partition 报告](memory-single-partition.zh-CN.md)使用同一聚合路径，对比 1 Partition / 1 Consumer 的 BufferQueue。
 本文结果保留原来的 12 Partition 对比。
 
-本报告说明与[内存队列 benchmark](memory-queues.zh-CN.md)配套的 Channel allocation 对照 workload。普通 Channel
+本报告说明与[内存队列 benchmark](memory-multi-partition.zh-CN.md)配套的 Channel allocation 对照 workload。普通 Channel
 `ReadAllAsync` 行仍然是原始的单条读取 baseline。本 workload 表示应用读取这些单条数据后自行创建并填充独立数组，
 再按 batch 处理；它不改变 Channel API，也不替换已有 baseline。
 
@@ -100,7 +100,7 @@ standard deviation 和 allocated bytes；下面列出全部 20 行，展示 mean
 分配一个数组；`BatchSize=1000` 时，最后的部分数组和 reader 拓扑细节会影响结果。十二个 consumer 时，共享 Channel 的调度
 和不同的部分 batch 分布会影响耗时与分配。表中的 Error 和 StdDev 仅描述耗时，不是内存分配的误差范围。
 
-README 消费 allocation 图对比本对照与 BufferQueue 返回批次的成本；[Channel 逐条读取图](memory-queues.zh-CN.md#channel-逐条读取参考)保留在详情中。
+README 消费 allocation 图对比本对照与 BufferQueue 返回批次的成本；[Channel 逐条读取图](memory-multi-partition.zh-CN.md#channel-逐条读取参考)保留在详情中。
 耗时主图继续使用现有的原始 Channel baseline。这里记录数组
 对照的耗时只是为了完整性，不替换主要的异步耗时对比，也不是普遍吞吐结论。
 图例使用 `逐条读取` 表示原始 Channel baseline，使用 `数组聚合` 表示本对照。
@@ -114,13 +114,13 @@ README 消费 allocation 图对比本对照与 BufferQueue 返回批次的成本
 
 ## 批次内存分配图
 
-![Unbounded, 1 个 consumer](memory-unbounded-1-consumer-allocations.zh-CN.svg)
+![Unbounded, 1 个 consumer](memory-multi-partition-consume-unbounded-1-consumer-allocations.zh-CN.svg)
 
-![Unbounded, 12 个 consumer](memory-unbounded-12-consumers-allocations.zh-CN.svg)
+![Unbounded, 12 个 consumer](memory-multi-partition-consume-unbounded-12-consumers-allocations.zh-CN.svg)
 
-![Bounded, 1 个 consumer](memory-bounded-1-consumer-allocations.zh-CN.svg)
+![Bounded, 1 个 consumer](memory-multi-partition-consume-bounded-1-consumer-allocations.zh-CN.svg)
 
-![Bounded, 12 个 consumer](memory-bounded-12-consumers-allocations.zh-CN.svg)
+![Bounded, 12 个 consumer](memory-multi-partition-consume-bounded-12-consumers-allocations.zh-CN.svg)
 
 ## 复现
 
