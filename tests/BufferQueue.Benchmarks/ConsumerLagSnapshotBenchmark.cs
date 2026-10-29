@@ -44,7 +44,7 @@ public class MemoryConsumerLagSnapshotQueryBenchmark
     }
 }
 
-[SimpleJob(RuntimeMoniker.Net10_0, launchCount: 1, warmupCount: 3, iterationCount: 5, invocationCount: 256)]
+[SimpleJob(RuntimeMoniker.Net10_0, launchCount: 1, warmupCount: 3, iterationCount: 5, invocationCount: 1024)]
 public class MemoryConsumerLagSnapshotSamplingBenchmark
 {
     private const int BatchSize = 64;
