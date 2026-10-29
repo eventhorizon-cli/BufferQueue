@@ -14,6 +14,12 @@ internal interface IBufferPartition<TItem>
 {
     int PartitionId { get; }
 
+    bool TryGetLagSnapshot(string groupName, out BufferConsumerLagSnapshot snapshot)
+    {
+        snapshot = default;
+        return false;
+    }
+
     void RegisterConsumer(IBufferPartitionConsumer<TItem> consumer);
 
     void UnregisterConsumer(IBufferPartitionConsumer<TItem> consumer);

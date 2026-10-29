@@ -46,6 +46,30 @@ consumer 接口实现、mock 和 push handler 需要更新参数或返回类型�
 `CommitAsync` 前推进。这在当前进程内提供 at-least-once 语义。对 MemoryMappedFile 模式而言，
 已经到达 flush 边界的记录也会在进程重启后保留该语义；`CommitAsync` 本身会强制建立该边界。
 
+### 近似 Lag Snapshot
+
+`IBufferPullConsumer<out TItem>.TryGetLagSnapshot(out BufferConsumerLagSnapshot snapshot)` 返回该 pull
+consumer 所负责 partition 的近似 `OffsetLag` 合计。现有的 `TopicName` 和 `GroupName` 用于识别 topic 与 consumer
+group。返回 `true` 表示结果可用；`OffsetLag == 0` 是有效结果。返回 `false` 时，`snapshot` 为默认值，
+表示实现不支持此 API、consumer 没有已分配的 partition，或所需 reader 不可用（包括已释放的
+MemoryMappedFile partition）。自定义接口实现通过默认实现保持兼容：返回 `false` 和 `default`。
+
+结果类型为 `BufferConsumerLagSnapshot(ulong OffsetLag, BufferOffsetUnit Unit)`；Memory 使用
+`BufferOffsetUnit.Items`，MemoryMappedFile 使用 `BufferOffsetUnit.Bytes`。每个 partition 按当前已发布的
+结束位置减去 committed position 计算。读取结果是近似值：不做一致性重试，也不加 snapshot 锁；负值按
+零处理。Memory 会按 offset 回绕语义计算，聚合结果在溢出时饱和到 `ulong.MaxValue`。任何必需的
+partition reader 不可用时都不返回部分聚合值。
+
+Memory 的 item lag 包括手动提交模式下已交付但尚未提交的 batch；Auto-commit 会在应用代码开始处理前
+排除该 batch。MemoryMappedFile 的 byte lag 按当前内存中的已发布写入位置减去该组已提交位置计算，
+写入位置不取可能滞后的 `producer.offset` 检查点。字节跨度包含记录长度、结束标记和 segment 尾部填充，
+因此正数不代表一定存在可读取的消息。手动提交模式下，它同样包含已交付但未提交的 batch；Auto-commit 后则排除该 batch。同一 group 中不同 consumer 的 lag
+可以相加，因为 partition 分配互不重叠；不同 group 的进度相互独立。
+
+查询是被动的：不会创建 reader、pull 或 commit 数据、释放 Memory 容量，也不会执行磁盘 IO。它不分配结果
+对象，查询复杂度为 O(该 consumer 负责的 partition 数)。该值用于监控，不适合作为流控信号或精确的
+队列空判断。此 API 不增加热路径计数器，也不改变持久化格式。
+
 group、consumer、partition、顺序和分配之间的关系参见
 [Partition 与并发](partitioning-and-concurrency.zh-CN.md)。
 

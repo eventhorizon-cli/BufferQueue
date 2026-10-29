@@ -213,6 +213,14 @@ Use `CreatePullConsumers<T>(options, consumerNumber)` to divide the group's
 partitions between multiple consumers. The consumer count cannot exceed the
 topic's partition count.
 
+`TryGetLagSnapshot(out BufferConsumerLagSnapshot snapshot)` returns the total byte lag of this pull
+consumer's assigned partitions (`Unit = BufferOffsetUnit.Bytes`). It subtracts the group's committed
+positions from current in-memory published write positions, including unflushed data. The byte span
+includes record framing and segment padding; it is not an item count. Manual Commit includes pulled
+but uncommitted batches; Auto Commit excludes a batch before application processing. The query can
+run when metrics are collected; concurrent writes or commits make the observation approximate.
+`true` with zero is valid; `false` means the snapshot is unavailable.
+
 New data arriving while a consumer becomes idle wakes consumption without requiring another write.
 
 ## Push consumers
@@ -313,6 +321,8 @@ partitions so stopped consumers do not receive wake-ups or retain registrations
 after shutdown.
 
 ## MessagePack
+
+The minimum MessagePack dependency is 3.1.9, which fixes [GHSA-qhrr-8q5h-9q3h](https://github.com/advisories/GHSA-qhrr-8q5h-9q3h).
 
 Reference MessagePack directly from the application so its analyzer and source
 generator run in the application project:

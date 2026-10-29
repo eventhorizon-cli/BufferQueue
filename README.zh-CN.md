@@ -626,6 +626,19 @@ public class Foo1PullConsumerHostService(
 }
 ```
 
+`TryGetLagSnapshot` 返回当前 pull consumer 所负责 partition 的 `OffsetLag` 合计及单位：Memory 为
+`Items`，MemoryMappedFile 为 `Bytes`。手动提交时包含已拉取但未提交的 batch；Auto Commit 在应用处理前
+推进进度，因此不再包含该 batch。可以随指标采集周期调用，并发写入或提交时结果为近似值。
+MMF 的字节跨度包含记录长度、结束标记和 segment 尾部填充。完整约定参见
+[Consumer 模型](docs/design/consumer-model.zh-CN.md)。
+
+~~~csharp
+if (consumer.TryGetLagSnapshot(out var snapshot))
+{
+    Console.WriteLine($"{snapshot.OffsetLag} {snapshot.Unit}");
+}
+~~~
+
 #### Push 模式消费者
 
 push 模式的消费者示例：

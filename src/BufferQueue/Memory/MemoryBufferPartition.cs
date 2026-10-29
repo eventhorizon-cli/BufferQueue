@@ -59,6 +59,22 @@ internal sealed class MemoryBufferPartition<T>
 
     public int PartitionId { get; }
 
+    public bool TryGetLagSnapshot(string groupName, out BufferConsumerLagSnapshot snapshot)
+    {
+        snapshot = default;
+        if (!_readers.TryGet(groupName, out var reader))
+        {
+            return false;
+        }
+
+        var tail = _tail;
+        var publishedPosition = tail.StartOffset + (ulong)tail.Count;
+        // Signed modular distance preserves wrap and clamps a newer commit against an older tail sample.
+        var distance = unchecked((long)(publishedPosition - reader.ReadPosition));
+        snapshot = new(distance > 0 ? (ulong)distance : 0, BufferOffsetUnit.Items);
+        return true;
+    }
+
     internal object AppendLock => _appendLock;
 
     internal object? AppendCoordinator => _appendCoordinator;
@@ -391,17 +407,17 @@ internal sealed class MemoryBufferPartition<T>
     private sealed class Reader(MemoryBufferSegment<T> currentSegment, MemoryBufferPartitionOffset currentOffset)
     {
         private MemoryBufferSegment<T> _currentSegment = currentSegment;
-        private MemoryBufferPartitionOffset _readPosition = currentOffset;
+        private ulong _readPosition = currentOffset.Index;
         private int _lastReadCount;
 
-        public MemoryBufferPartitionOffset ReadPosition => _readPosition;
+        public MemoryBufferPartitionOffset ReadPosition => new(Volatile.Read(ref _readPosition));
 
         public bool TryRead(int batchSize, [NotNullWhen(true)] out IReadOnlyList<T>? items)
             => batchSize == 1 ? TryReadSingle(out items) : TryReadBatch(batchSize, out items);
 
         private bool TryReadSingle([NotNullWhen(true)] out IReadOnlyList<T>? items)
         {
-            var readPosition = _readPosition;
+            var readPosition = ReadPosition;
             var currentSegment = _currentSegment;
             while (currentSegment.EndOffset < readPosition && currentSegment.NextSegment is { } nextSegment)
             {
@@ -423,7 +439,7 @@ internal sealed class MemoryBufferPartition<T>
         private bool TryReadBatch(int batchSize, [NotNullWhen(true)] out IReadOnlyList<T>? items)
         {
             var remainingCount = batchSize;
-            var readPosition = _readPosition;
+            var readPosition = ReadPosition;
             var currentSegment = _currentSegment;
             T[]? result = null;
             T singleItem = default!;
@@ -523,8 +539,9 @@ internal sealed class MemoryBufferPartition<T>
 
         public void MoveNext()
         {
-            _readPosition += (ulong)_lastReadCount;
-            while (_currentSegment.EndOffset < _readPosition && _currentSegment.NextSegment != null)
+            var readPosition = ReadPosition + (ulong)_lastReadCount;
+            Volatile.Write(ref _readPosition, readPosition.Index);
+            while (_currentSegment.EndOffset < readPosition && _currentSegment.NextSegment != null)
             {
                 _currentSegment = _currentSegment.NextSegment!;
             }

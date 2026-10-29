@@ -153,6 +153,11 @@ consumer 数量必须介于 1 和该 topic 的 partition 数量之间。创建�
 对于采用 `Wait` 模式的 bounded Memory topic，容量不足时写入会等待。应启动消费并提交进度来释放容量，避免先等待
 超过可用容量的写入全部完成后才开始消费。
 
+`TryGetLagSnapshot(out BufferConsumerLagSnapshot snapshot)` 返回当前 pull consumer 所负责 partition 的
+未提交条数合计，`Unit` 为 `BufferOffsetUnit.Items`。Manual Commit 包含已拉取但未提交的 batch；Auto Commit
+在应用处理前推进进度，因此不再包含该 batch。可以随指标采集周期调用，并发写入或提交时结果为近似值。
+返回 `true` 且合计为零是有效结果；返回 `false` 表示 snapshot 不可用。
+
 `BatchSize` 是上限：只有一条数据可用时，稀疏 pull 不会分配完整大小的 batch；segment 复用后，已返回的数据仍保持稳定，
 Auto Commit 和 Manual Commit 的行为相同。
 singleton batch 支持重复和彼此独立的交错枚举。每个 `foreach` 创建自己的紧凑 enumerator；

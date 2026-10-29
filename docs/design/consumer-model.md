@@ -50,6 +50,38 @@ When `AutoCommit` is false, the consumer read position does not advance until
 In MemoryMappedFile mode it also applies across process restarts for records that have reached a
 flush boundary; `CommitAsync` itself forces that boundary.
 
+### Approximate Lag Snapshot
+
+`IBufferPullConsumer<out TItem>.TryGetLagSnapshot(out BufferConsumerLagSnapshot snapshot)` reports
+an approximate aggregate for only the partitions assigned to that pull consumer. The existing
+`TopicName` and `GroupName` identify the topic and consumer group. A `true` result means the
+snapshot is available; `OffsetLag == 0` is a valid result. A `false` result returns the default
+snapshot and means the implementation does not support the API, the consumer has no assigned
+partitions, or a required reader is unavailable (including a disposed MemoryMappedFile partition).
+Custom interface implementations remain compatible through a default implementation that returns
+`false` and `default`.
+
+The result is `BufferConsumerLagSnapshot(ulong OffsetLag, BufferOffsetUnit Unit)`, where
+`BufferOffsetUnit.Items` is the Memory unit and `BufferOffsetUnit.Bytes` is the MemoryMappedFile
+unit. Each partition contributes its currently published end position minus its committed
+position. Reads are approximate: there is no consistency retry or snapshot lock, and negative
+samples are clamped to zero. Memory offset wrap is respected, and aggregate addition saturates at
+`ulong.MaxValue`. No partial aggregate is returned if a required partition reader is unavailable.
+
+For Memory, item lag includes delivered but uncommitted batches in manual-commit mode; auto-commit
+excludes a batch before application processing starts. For MemoryMappedFile, byte lag is the current
+in-memory published write position minus the group's committed position; the write position is not
+taken from the potentially older producer checkpoint. It includes record
+framing and segment padding, so positive byte lag does not guarantee a readable message. It also
+includes delivered but uncommitted batches in manual-commit mode and excludes a batch after
+auto-commit. Lags from consumers in the same group are additive because their partition assignments do not overlap;
+different groups track independent progress.
+
+The query is passive: it does not create readers, pull or commit data, release Memory capacity, or
+perform disk IO. It allocates no result objects and takes O(partitions) time. Use it for monitoring,
+not flow control or an exact empty-queue check. It adds no hot-path counters and changes no
+persistent format.
+
 The relationship between groups, consumers, partitions, ordering, and assignment is described in
 [Partitioning and concurrency](partitioning-and-concurrency.md).
 

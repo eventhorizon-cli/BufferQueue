@@ -6,6 +6,22 @@ namespace BufferQueue.Tests;
 public class BufferPullConsumerTests
 {
     [Fact]
+    public void Lag_Snapshot_Is_Unavailable_When_A_Partition_Does_Not_Support_Statistics()
+    {
+        var consumer = new BufferPullConsumer<int>(new BufferPullConsumerOptions
+        {
+            TopicName = "test",
+            GroupName = "group"
+        });
+        var memory = new MemoryBufferPartition<int>(0, 2);
+        consumer.AssignPartitions(memory, new TestPartition(1));
+        memory.Enqueue(42);
+
+        Assert.False(consumer.TryGetLagSnapshot(out var snapshot));
+        Assert.Equal(default, snapshot);
+    }
+
+    [Fact]
     public async Task Notification_Between_Empty_Scan_And_Wait_Is_Not_Lost()
     {
         var first = new TestPartition(0);

@@ -106,8 +106,25 @@ internal sealed class MemoryMappedFileBufferPartition<T>
                 _consumers.Clear();
             }
 
-            _disposed = true;
+            Volatile.Write(ref _disposed, true);
         }
+    }
+
+    public bool TryGetLagSnapshot(string groupName, out BufferConsumerLagSnapshot snapshot)
+    {
+        if (Volatile.Read(ref _disposed) || !_consumerReaders.TryGetValue(groupName, out var reader))
+        {
+            snapshot = default;
+            return false;
+        }
+
+        var writeOffset = Volatile.Read(ref _writeOffset);
+        var committedOffset = reader.ReadOffset;
+        var offsetLag = writeOffset > committedOffset
+            ? (ulong)(writeOffset - committedOffset)
+            : 0UL;
+        snapshot = new BufferConsumerLagSnapshot(offsetLag, BufferOffsetUnit.Bytes);
+        return true;
     }
 
     public void RegisterConsumer(IBufferPartitionConsumer<T> consumer)
@@ -1021,7 +1038,7 @@ internal sealed class MemoryMappedFileBufferPartition<T>
 
         public bool CreatedCheckpoint { get; } = createdCheckpoint;
 
-        public long ReadOffset => _readOffset;
+        public long ReadOffset => Volatile.Read(ref _readOffset);
 
         public long NextReadOffset => _nextReadOffset;
 
@@ -1049,11 +1066,11 @@ internal sealed class MemoryMappedFileBufferPartition<T>
             return true;
         }
 
-        public void MoveNext() => _readOffset = _nextReadOffset;
+        public void MoveNext() => Volatile.Write(ref _readOffset, _nextReadOffset);
 
         public void MoveReadOffsetTo(long offset)
         {
-            _readOffset = offset;
+            Volatile.Write(ref _readOffset, offset);
             _nextReadOffset = Math.Max(_nextReadOffset, offset);
         }
     }

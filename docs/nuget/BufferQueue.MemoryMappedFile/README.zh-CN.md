@@ -186,6 +186,13 @@ public sealed class OrderProjectionWorker(IBufferQueue queue) : BackgroundServic
 使用 `CreatePullConsumers<T>(options, consumerNumber)` 可以将一个 group 的 partition 分配给多个 consumer。
 consumer 数量不能超过该 topic 的 partition 数量。
 
+`TryGetLagSnapshot(out BufferConsumerLagSnapshot snapshot)` 返回当前 pull consumer 所负责 partition 的
+字节 lag 合计，`Unit` 为 `BufferOffsetUnit.Bytes`。它按当前内存中的已发布写入位置减去该组已提交位置计算，
+包含尚未 flush 的数据。字节跨度包含记录长度、结束标记和 segment 尾部填充，不表示消息条数。
+Manual Commit 包含已拉取但未提交的 batch；Auto Commit 在应用处理前推进进度，因此不再包含该 batch。
+可以随指标采集周期调用，并发写入或提交时结果为近似值。返回 `true` 且合计为零是有效结果；
+返回 `false` 表示 snapshot 不可用。
+
 Consumer 转入空闲等待期间到达的新数据会唤醒消费流程，无需再写入一条消息才能继续处理。
 
 ## Push consumer
@@ -276,6 +283,8 @@ batch 的 handler）完成后才返回 `StopAsync`。Handler 异常和 loop 级�
 consumer 不会继续收到唤醒通知，也不会在停止后保留注册。
 
 ## MessagePack
+
+MessagePack 依赖的最低版本为 3.1.9，该版本修复了 [GHSA-qhrr-8q5h-9q3h](https://github.com/advisories/GHSA-qhrr-8q5h-9q3h)。
 
 应用项目应直接引用 MessagePack，使其 analyzer 和 source generator 在应用项目中运行：
 
