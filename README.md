@@ -677,6 +677,20 @@ public class Foo1PullConsumerHostService(
 }
 ```
 
+`TryGetLagSnapshot` returns the total offset lag of the partitions assigned to this pull consumer,
+along with its unit: `Items` for Memory or `Bytes` for MemoryMappedFile. Manual Commit includes pulled
+but uncommitted batches; Auto Commit excludes a batch before application processing starts. The query
+can run when metrics are collected; concurrent writes or commits make the observation approximate.
+MMF byte lag includes record framing and segment padding. See the
+[consumer model](docs/design/consumer-model.md) for the full contract.
+
+~~~csharp
+if (consumer.TryGetLagSnapshot(out var snapshot))
+{
+    Console.WriteLine($"{snapshot.OffsetLag} {snapshot.Unit}");
+}
+~~~
+
 #### Push Mode Consumer
 
 Push mode consumer example:

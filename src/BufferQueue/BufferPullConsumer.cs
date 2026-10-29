@@ -22,6 +22,47 @@ internal sealed class BufferPullConsumer<TItem>(BufferPullConsumerOptions option
 
     public string GroupName => options.GroupName;
 
+    public bool TryGetLagSnapshot(out BufferConsumerLagSnapshot snapshot)
+    {
+        snapshot = default;
+        var partitions = _assignedPartitions;
+        if (partitions.Length == 0)
+        {
+            return false;
+        }
+
+        ulong total = 0;
+        var unit = default(BufferOffsetUnit);
+        for (var i = 0; i < partitions.Length; i++)
+        {
+            if (!partitions[i].TryGetLagSnapshot(GroupName, out var partitionSnapshot))
+            {
+                return false;
+            }
+
+            if (i == 0)
+            {
+                unit = partitionSnapshot.Unit;
+            }
+            else if (unit != partitionSnapshot.Unit)
+            {
+                return false;
+            }
+
+            total = ulong.MaxValue - total < partitionSnapshot.OffsetLag
+                ? ulong.MaxValue
+                : total + partitionSnapshot.OffsetLag;
+        }
+
+        if (!ReferenceEquals(partitions, _assignedPartitions))
+        {
+            return false;
+        }
+
+        snapshot = new(total, unit);
+        return true;
+    }
+
     public void AssignPartitions(params IBufferPartition<TItem>[] partitions)
     {
         _partitionIndex = 0;

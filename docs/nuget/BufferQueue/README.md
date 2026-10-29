@@ -181,6 +181,12 @@ history.
 For a bounded Memory topic in `Wait` mode, writes wait when capacity is unavailable. Start consumption and commit
 progress to release capacity instead of waiting for writes beyond the available capacity to finish first.
 
+`TryGetLagSnapshot(out BufferConsumerLagSnapshot snapshot)` returns the total item lag of this pull
+consumer's assigned partitions (`Unit = BufferOffsetUnit.Items`). Manual Commit includes pulled but
+uncommitted batches; Auto Commit excludes a batch before application processing. The query can run
+when metrics are collected; concurrent writes or commits make the observation approximate.
+`true` with zero is valid; `false` means the snapshot is unavailable.
+
 `BatchSize` is an upper limit: sparse pulls avoid allocating a full-size batch when only one item is available, returned values remain stable after segment recycling, and the behavior is the same with Auto Commit and Manual Commit.
 Singleton batches support repeated and independent overlapping enumeration. Each `foreach` creates
 its own compact enumerator; retaining a batch after commit does not expose recycled segment storage.

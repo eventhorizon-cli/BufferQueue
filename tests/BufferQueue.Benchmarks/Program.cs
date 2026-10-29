@@ -39,6 +39,8 @@ var allBenchmarks = new[]
     typeof(PullConsumerSchedulingBenchmark),
     typeof(MemoryVsMemoryMappedFileBufferQueueConsumeBenchmark),
     typeof(MemoryMappedFileSerializerDeserializeBenchmark),
+    typeof(MemoryConsumerLagSnapshotQueryBenchmark),
+    typeof(MemoryConsumerLagSnapshotSamplingBenchmark),
 };
 
 new BenchmarkSwitcher(allBenchmarks).Run(args, config);

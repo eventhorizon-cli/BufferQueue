@@ -312,6 +312,62 @@ public sealed class MemoryBufferPartitionWrapTests
         Assert.Equal(new[] { 10, 11 }, items);
     }
 
+    [Fact]
+    public void Lag_Snapshot_Preserves_Wrap_And_Excludes_Committed_Retained_Items()
+    {
+        var segment = CreateSegment(new(ulong.MaxValue - 1), 2, 10, 11);
+        var partition = SeedPartition(segment, segment);
+        var consumer = new BufferPullConsumer<int>(new BufferPullConsumerOptions
+        {
+            TopicName = "lag",
+            GroupName = "group"
+        });
+        consumer.AssignPartitions(partition);
+        Assert.True(partition.TryGetLagSnapshot("group", out var snapshot));
+        Assert.Equal(2UL, snapshot.OffsetLag);
+        Assert.True(partition.TryPull("group", 2, out _));
+        partition.Commit("group");
+        Assert.True(partition.TryGetLagSnapshot("group", out snapshot));
+        Assert.Equal(0UL, snapshot.OffsetLag);
+
+        for (var item = 0; item < 8; item++)
+        {
+            partition.Enqueue(item);
+            Assert.True(partition.TryGetLagSnapshot("group", out snapshot));
+            Assert.Equal(1UL, snapshot.OffsetLag);
+            Assert.True(partition.TryPull("group", 1, out var items));
+            Assert.Equal(new[] { item }, items);
+            partition.Commit("group");
+        }
+
+        Assert.True(partition.TryGetLagSnapshot("group", out snapshot));
+        Assert.Equal(0UL, snapshot.OffsetLag);
+    }
+
+    [Fact]
+    public void Lag_Snapshot_Clamps_An_Older_Published_Position_To_Zero()
+    {
+        var oldTail = CreateSegment(new(ulong.MaxValue - 1), 2, 10, 11);
+        var newTail = CreateSegment(new(0), 2, 12);
+        Link(oldTail, newTail);
+        var partition = SeedPartition(oldTail, newTail);
+        Assert.True(partition.TryPull("group", 3, out _));
+        partition.Commit("group");
+        // Model sampling a previous tail before observing a newer commit across the wrap boundary.
+        SetPrivateField(partition, "_tail", oldTail);
+        Assert.True(partition.TryGetLagSnapshot("group", out var snapshot));
+        Assert.Equal(0UL, snapshot.OffsetLag);
+    }
+
+    [Fact]
+    public void Lag_Snapshot_Does_Not_Create_An_Absent_Reader()
+    {
+        var partition = new MemoryBufferPartition<int>(0, 2);
+        Assert.False(partition.TryGetLagSnapshot("missing", out var snapshot));
+        Assert.Equal(default, snapshot);
+        Assert.Throws<InvalidOperationException>(() => partition.Commit("missing"));
+    }
+
     private static MemoryBufferSegment<int> CreateSegment(
         MemoryBufferPartitionOffset startOffset,
         int capacity,
