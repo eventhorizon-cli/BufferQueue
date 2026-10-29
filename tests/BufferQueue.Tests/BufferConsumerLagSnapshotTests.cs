@@ -97,6 +97,16 @@ public sealed class BufferConsumerLagSnapshotTests
     }
 
     [Fact]
+    public void Unassignment_During_Sampling_Discards_The_Result()
+    {
+        var consumer = new BufferPullConsumer<int>(Options());
+        consumer.AssignPartitions(new LagPartition(1, BufferOffsetUnit.Items, consumer.UnassignPartitions));
+
+        Assert.False(consumer.TryGetLagSnapshot(out var snapshot));
+        Assert.Equal(default, snapshot);
+    }
+
+    [Fact]
     public void Custom_Consumer_Default_Implementation_Returns_False()
     {
         IBufferPullConsumer<int> consumer = new CustomConsumer();
@@ -223,11 +233,12 @@ public sealed class BufferConsumerLagSnapshotTests
         public ValueTask CommitAsync() => throw new NotSupportedException();
     }
 
-    private sealed class LagPartition(ulong lag, BufferOffsetUnit unit) : IBufferPartition<int>
+    private sealed class LagPartition(ulong lag, BufferOffsetUnit unit, Action? onSnapshot = null) : IBufferPartition<int>
     {
         public int PartitionId => 0;
         public bool TryGetLagSnapshot(string groupName, out BufferConsumerLagSnapshot snapshot)
         {
+            onSnapshot?.Invoke();
             snapshot = new(lag, unit);
             return true;
         }
